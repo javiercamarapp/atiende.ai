@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage } from '@/lib/whatsapp/send';
 import { createServerSupabase } from '@/lib/supabase/server';
+import { z } from 'zod';
+
+const SendSchema = z.object({
+  conversationId: z.string().uuid(),
+  phoneNumberId: z.string().min(1),
+  to: z.string().min(1),
+  text: z.string().min(1).max(4096),
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +30,12 @@ export async function POST(req: NextRequest) {
     }
 
     const tenantId = tenant.id;
-    const { conversationId, phoneNumberId, to, text } = await req.json();
+    const body = await req.json();
+    const parsed = SendSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 });
+    }
+    const { conversationId, phoneNumberId, to, text } = parsed.data;
 
     // Verify conversation belongs to the authenticated tenant
     const { data: conversation } = await supabaseAdmin

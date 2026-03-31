@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-12-18.acacia' as any });
+// Stripe SDK version mismatch
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-12-18.acacia' as string & Stripe.LatestApiVersion });
 
 const PLAN_PRICES: Record<string,string> = {
   basic:'price_basic_499_mxn', pro:'price_pro_999_mxn', premium:'price_premium_1499_mxn',

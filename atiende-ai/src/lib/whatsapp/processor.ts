@@ -100,6 +100,41 @@ async function handleSingleMessage(
     return; // silently drop if tenant limit exceeded
   }
 
+  // ═══ 1.6 PLAN ENFORCEMENT ═══
+  if (tenant.plan === 'free_trial' && tenant.trial_ends_at) {
+    const trialEnd = new Date(tenant.trial_ends_at as string);
+    if (trialEnd < new Date()) {
+      await sendTextMessage(
+        phoneNumberId,
+        senderPhone,
+        'Tu periodo de prueba ha terminado. Para seguir usando nuestro servicio, por favor actualiza tu plan en el panel de administracion. Gracias por probar nuestro servicio.'
+      );
+      return;
+    }
+  }
+
+  const planMsgLimits: Record<string, number> = { free_trial: 50, basic: 500, pro: 2000, premium: 10000 };
+  const monthlyLimit = planMsgLimits[tenant.plan] || 50;
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const { count: monthlyCount } = await supabaseAdmin
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('tenant_id', tenant.id)
+    .eq('direction', 'outbound')
+    .eq('sender_type', 'bot')
+    .gte('created_at', monthStart.toISOString());
+
+  if ((monthlyCount ?? 0) >= monthlyLimit) {
+    await sendTextMessage(
+      phoneNumberId,
+      senderPhone,
+      'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.'
+    );
+    return;
+  }
+
   // ═══ 2. MARCAR COMO LEIDO ═══
   await markAsRead(phoneNumberId, messageId).catch((err) => {
     // Non-critical: log but do not disrupt message processing

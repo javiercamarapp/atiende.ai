@@ -1,16 +1,38 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Bell, LogOut } from 'lucide-react';
+import { Bell, LogOut, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { getPlanLimit } from '@/lib/analytics/roi';
+import Link from 'next/link';
 
-export function DashHeader({ tenant }: { tenant: any }) {
+const PAGE_NAMES: Record<string, string> = {
+  '/': 'Dashboard',
+  '/home': 'Dashboard',
+  '/conversations': 'Conversaciones',
+  '/appointments': 'Citas',
+  '/orders': 'Pedidos',
+  '/leads': 'Leads',
+  '/calls': 'Llamadas',
+  '/agents': 'Agents Marketplace',
+  '/knowledge': 'Base Conocimiento',
+  '/analytics': 'Analytics',
+  '/settings': 'Configuracion',
+  '/playground': 'Playground',
+  '/webhooks': 'Webhooks',
+};
+
+interface TenantHeader { id: string; plan: string; status: string; }
+export function DashHeader({ tenant }: { tenant: TenantHeader }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [usage, setUsage] = useState<number | null>(null);
   const limit = getPlanLimit(tenant.plan);
+
+  const currentPage = PAGE_NAMES[pathname] || PAGE_NAMES['/' + pathname.split('/')[1]] || pathname.split('/').pop() || 'Dashboard';
+  const isHome = pathname === '/' || pathname === '/home';
 
   useEffect(() => {
     async function fetchUsage() {
@@ -46,11 +68,19 @@ export function DashHeader({ tenant }: { tenant: any }) {
   };
 
   return (
-    <header className="h-14 bg-white border-b flex items-center justify-between px-6">
+    <header className="h-14 bg-white border-b flex items-center justify-between px-6 pl-14 md:pl-6">
       <div>
-        <h2 className="font-semibold text-gray-800">{tenant.name}</h2>
+        <div className="text-sm text-zinc-500 flex items-center">
+          <Link href="/home" className="hover:text-zinc-700 transition-colors">Dashboard</Link>
+          {!isHome && (
+            <>
+              <ChevronRight className="w-3 h-3 inline mx-1" />
+              <span className="text-zinc-900 font-medium">{currentPage}</span>
+            </>
+          )}
+        </div>
         <p className="text-xs text-gray-400">
-          {tenant.status === 'active' ? '🟢 Agente activo' : '🟡 ' + tenant.status}
+          {tenant.status === 'active' ? 'Agente activo' : tenant.status}
         </p>
       </div>
       <div className="flex items-center gap-4">

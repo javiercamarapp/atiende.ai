@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
           console.error('[conekta-webhook] Failed to update tenant plan:', error.message);
           return NextResponse.json({ error: 'DB update failed' }, { status: 500 });
         }
-        console.log(`[conekta-webhook] Tenant ${tenantId} upgraded to ${plan}`);
+        console.warn(`[conekta-webhook] Tenant ${tenantId} upgraded to ${plan}`);
         break;
       }
 
@@ -85,13 +85,13 @@ export async function POST(req: NextRequest) {
               currency: data?.currency,
             },
           });
-          console.log(`[conekta-webhook] Order expired for tenant ${tenantId}`);
+          console.warn(`[conekta-webhook] Order expired for tenant ${tenantId}`);
         }
         break;
       }
 
       default:
-        console.log(`[conekta-webhook] Unhandled event type: ${eventType}`);
+        console.warn(`[conekta-webhook] Unhandled event type: ${eventType}`);
     }
 
     return NextResponse.json({ received: true });

@@ -1,8 +1,12 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, MessageSquare, Calendar, ShoppingBag, Users, Phone, Bot, BookOpen, BarChart3, Settings, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Calendar, ShoppingBag, Users, Phone, Bot, BookOpen, BarChart3, Settings, TrendingUp, Menu } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 const ICONS: Record<string,any> = {
   dashboard:LayoutDashboard, conversations:MessageSquare, appointments:Calendar,
@@ -12,13 +16,12 @@ const ICONS: Record<string,any> = {
 const LABELS: Record<string,string> = {
   dashboard:'Dashboard', conversations:'Conversaciones', appointments:'Citas',
   orders:'Pedidos', leads:'Leads', calls:'Llamadas', agents:'Agents Marketplace',
-  knowledge:'Base Conocimiento', analytics:'Analytics', settings:'Configuración',
+  knowledge:'Base Conocimiento', analytics:'Analytics', settings:'Configuracion',
 };
 
-export function Sidebar({ tenant, modules }: { tenant:any; modules:string[] }) {
-  const path = usePathname();
+function SidebarContent({ tenant, modules, path, onNavigate }: { tenant:any; modules:string[]; path:string; onNavigate?:()=>void }) {
   return (
-    <aside className="w-64 bg-white border-r flex flex-col">
+    <>
       <div className="p-4 border-b">
         <h1 className="font-bold text-lg text-blue-600">atiende.ai</h1>
         <p className="text-xs text-gray-500 truncate mt-1">{tenant.name}</p>
@@ -35,7 +38,7 @@ export function Sidebar({ tenant, modules }: { tenant:any; modules:string[] }) {
           const href = mod === 'dashboard' ? '/' : '/' + mod;
           const active = mod === 'dashboard' ? path === '/' : path.startsWith('/' + mod);
           return (
-            <Link key={mod} href={href}
+            <Link key={mod} href={href} onClick={onNavigate}
               className={cn('flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition',
                 active ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100')}>
               <Icon className="w-4 h-4" />{LABELS[mod] || mod}
@@ -47,10 +50,39 @@ export function Sidebar({ tenant, modules }: { tenant:any; modules:string[] }) {
         <div className="bg-gray-50 rounded-lg p-3">
           <p className="text-xs font-medium text-gray-500">Plan: {tenant.plan}</p>
           <p className="text-xs text-gray-400 mt-1">
-            {tenant.has_chat_agent && '💬 Chat '}{tenant.has_voice_agent && '📞 Voz'}
+            {tenant.has_chat_agent && 'Chat '}{tenant.has_voice_agent && 'Voz'}
           </p>
         </div>
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function Sidebar({ tenant, modules }: { tenant:any; modules:string[] }) {
+  const path = usePathname();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-64 bg-white border-r flex-col">
+        <SidebarContent tenant={tenant} modules={modules} path={path} />
+      </aside>
+
+      {/* Mobile hamburger button */}
+      <div className="fixed top-3 left-3 z-50 md:hidden">
+        <Button variant="outline" size="icon" onClick={() => setOpen(true)} className="bg-white shadow-md">
+          <Menu className="w-5 h-5" />
+        </Button>
+      </div>
+
+      {/* Mobile sheet sidebar */}
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="left" className="p-0 w-64 flex flex-col">
+          <VisuallyHidden><SheetTitle>Menu de navegacion</SheetTitle></VisuallyHidden>
+          <SidebarContent tenant={tenant} modules={modules} path={path} onNavigate={() => setOpen(false)} />
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

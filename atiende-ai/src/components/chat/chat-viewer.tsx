@@ -9,8 +9,25 @@ import Link from 'next/link';
 import { ConversationTags } from '@/components/chat/conversation-tags';
 import { ConversationNotes, type ConversationNote } from '@/components/chat/conversation-notes';
 
+interface ChatConversation {
+  id: string;
+  customer_name?: string;
+  customer_phone: string;
+  channel: string;
+  status: string;
+  tags?: string[];
+  notes?: ConversationNote[];
+}
+interface ChatMessage {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  sender_type: 'customer' | 'bot' | 'human' | 'system';
+  content: string;
+  created_at: string;
+  wa_status?: string;
+}
 export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }:{
-  conversation: any; messages: any[]; tenantId: string; phoneNumberId: string;
+  conversation: ChatConversation; messages: ChatMessage[]; tenantId: string; phoneNumberId: string;
 }) {
   const [status, setStatus] = useState(conversation.status);
   const [reply, setReply] = useState('');

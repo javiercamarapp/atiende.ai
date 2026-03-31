@@ -2,7 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export async function logWebhook(params: {
   tenantId?: string;
-  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell';
+  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell' | 'delivery';
   eventType?: string;
   direction?: 'inbound' | 'outbound';
   statusCode?: number;

@@ -8,7 +8,7 @@ export interface Tenant {
   chat_system_prompt: string|null; voice_system_prompt: string|null; welcome_message: string|null;
   llm_primary: string; llm_sensitive: string; llm_classifier: string;
   temperature: number; bot_name: string; timezone: string;
-  business_hours: Record<string,string>; config: Record<string,any>;
+  business_hours: Record<string,string>; config: Record<string, unknown>;
   stripe_customer_id: string|null; conekta_customer_id: string|null;
   trial_ends_at: string|null; created_at: string;
 }

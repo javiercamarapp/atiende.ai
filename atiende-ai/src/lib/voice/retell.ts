@@ -11,7 +11,7 @@ export async function createRetellAgent(tenant: {
   name: string;
   voice_system_prompt?: string;
   elevenlabs_voice_id?: string;
-  config?: any;
+  config?: Record<string, unknown>;
 }) {
   const { data } = await axios.post(`${RETELL}/create-agent`, {
     agent_name: `${tenant.name} - Voz`,

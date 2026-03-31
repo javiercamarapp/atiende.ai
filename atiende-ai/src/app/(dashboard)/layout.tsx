@@ -17,7 +17,11 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
       <Sidebar tenant={tenant} modules={modules} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <DashHeader tenant={tenant} />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );

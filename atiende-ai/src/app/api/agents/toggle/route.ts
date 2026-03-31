@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createServerSupabase } from '@/lib/supabase/server';
+import { z } from 'zod';
+
+const ToggleSchema = z.object({
+  agentId: z.string().uuid(),
+  action: z.enum(['activate', 'deactivate']),
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +27,12 @@ export async function POST(req: NextRequest) {
     }
 
     const tenantId = tenant.id;
-    const { agentId, action } = await req.json();
+    const body = await req.json();
+    const parsed = ToggleSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 });
+    }
+    const { agentId, action } = parsed.data;
 
     if (action === 'activate') {
       await supabaseAdmin.from('tenant_agents').upsert(
