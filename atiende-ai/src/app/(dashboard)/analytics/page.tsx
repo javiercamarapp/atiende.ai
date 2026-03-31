@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { Card } from '@/components/ui/card';
 import { DashCharts } from '@/components/dashboard/charts';
+import { LLMCosts } from '@/components/dashboard/llm-costs';
 import { calculateROI } from '@/lib/analytics/roi';
 
 export default async function AnalyticsPage() {
@@ -12,6 +13,46 @@ export default async function AnalyticsPage() {
   const roi = calculateROI(tenant!, analytics || []);
   const totalMsgs = (analytics || []).reduce((s, d) => s + (d.messages_inbound || 0), 0);
   const totalCost = (analytics || []).reduce((s, d) => s + (d.llm_cost_usd || 0), 0);
+
+  // LLM Cost data: cost distribution by model
+  const ago30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const monthStart = startOfMonth.toISOString();
+
+  const { data: modelRows } = await supabase
+    .from('messages')
+    .select('model_used, cost_usd')
+    .eq('tenant_id', tenant!.id)
+    .gte('created_at', monthStart)
+    .not('model_used', 'is', null);
+
+  // Aggregate model costs in JS (Supabase JS client doesn't support GROUP BY)
+  const modelMap = new Map<string, { count: number; total_cost: number }>();
+  for (const row of modelRows || []) {
+    if (!row.model_used) continue;
+    const entry = modelMap.get(row.model_used) || { count: 0, total_cost: 0 };
+    entry.count += 1;
+    entry.total_cost += Number(row.cost_usd) || 0;
+    modelMap.set(row.model_used, entry);
+  }
+  const modelCosts = Array.from(modelMap.entries()).map(([model_used, v]) => ({
+    model_used,
+    count: v.count,
+    total_cost: v.total_cost,
+  }));
+
+  const totalMonthCost = modelCosts.reduce((s, m) => s + m.total_cost, 0);
+
+  // Daily cost trend (last 30 days) from daily_analytics
+  const ago30Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const dailyCosts = (analytics || [])
+    .filter((d) => d.date >= ago30Date)
+    .map((d) => ({
+      date: d.date as string,
+      cost: Number(d.llm_cost_usd) || 0,
+    }));
 
   return (
     <div className="space-y-6">
@@ -35,6 +76,15 @@ export default async function AnalyticsPage() {
         </Card>
       </div>
       <DashCharts tenant={tenant} data={analytics || []} />
+
+      <div className="pt-4 border-t">
+        <h2 className="text-lg font-bold mb-4">Costos de AI</h2>
+        <LLMCosts
+          modelCosts={modelCosts}
+          dailyCosts={dailyCosts}
+          totalMonthCost={totalMonthCost}
+        />
+      </div>
     </div>
   );
 }
