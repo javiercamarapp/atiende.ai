@@ -305,6 +305,49 @@ florist: $50, optics: $65
 
 ---
 
+## GSTACK QUALITY STANDARDS (Garry Tan / YC)
+
+Aplicar en CADA archivo que se cree:
+
+### /review (Staff Engineer) — Code Quality
+- SQL injection vectors: SIEMPRE usar parametrized queries, NUNCA string concat
+- Auth boundary violations: validar auth en CADA API route
+- Unhandled error states: SIEMPRE try/catch con logging
+- Race conditions: usar transactions donde sea necesario
+- Secrets exposure: NUNCA hardcodear keys, SIEMPRE process.env
+- Type safety: NUNCA `any` sin justificacion, preferir tipos estrictos
+- Silent failures: NUNCA catch vacio, SIEMPRE log el error
+
+### /cso (Chief Security Officer) — OWASP Top 10
+- A01 Broken Access Control: RLS en Supabase + verificar tenant_id en CADA query
+- A02 Crypto Failures: wa_token encriptado, NUNCA almacenar CURP/RFC/tarjetas
+- A03 Injection: parametrized queries, sanitizar inputs de WhatsApp
+- A04 Insecure Design: rate limiting obligatorio (Upstash Redis)
+- A05 Misconfiguration: .env.local en .gitignore, CORS restringido
+- A06 Vulnerable Components: mantener deps actualizadas
+- A07 Auth Failures: Supabase Auth + JWT + middleware en rutas protegidas
+- A08 Integrity Failures: verificar WA_APP_SECRET en webhooks
+- A09 Logging: audit_log table, Sentry-ready
+- A10 SSRF: validar URLs externas antes de fetch
+
+### /plan-eng-review — Architecture
+- Diagramas ASCII de flujo de datos
+- Edge cases documentados
+- State machines para conversaciones (active → human_handoff → resolved)
+- Test matrices por modulo
+
+### /qa — Testing
+- Regression tests para cada bug fix
+- Atomic commits (1 fix = 1 commit)
+- Browser testing para dashboard
+
+### /ship — Release
+- npm run build DEBE pasar antes de push
+- Test coverage auditado
+- Docs actualizados con cambios
+
+---
+
 ## PROBLEMAS CONOCIDOS Y FIXES
 
 1. Agregar `checkbox` a shadcn (step-4 lo importa)
