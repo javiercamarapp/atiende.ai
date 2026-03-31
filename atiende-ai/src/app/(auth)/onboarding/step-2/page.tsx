@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,11 @@ export default function Step2() {
   const [selected, setSelected] = useState('');
   const router = useRouter();
 
+  useEffect(() => {
+    const saved = localStorage.getItem('ob_agent_type');
+    if (saved) setSelected(saved);
+  }, []);
+
   return (
     <div>
       <div className="text-center mb-6">
@@ -81,15 +86,20 @@ export default function Step2() {
         ))}
       </div>
 
-      <Button
-        className="w-full mt-6" size="lg" disabled={!selected}
-        onClick={() => {
-          localStorage.setItem('ob_agent_type', selected);
-          router.push('/onboarding/step-3');
-        }}
-      >
-        Siguiente →
-      </Button>
+      <div className="flex gap-3 mt-6">
+        <Button variant="outline" size="lg" onClick={() => router.push('/onboarding/step-1')}>
+          ← Anterior
+        </Button>
+        <Button
+          className="flex-1" size="lg" disabled={!selected}
+          onClick={() => {
+            localStorage.setItem('ob_agent_type', selected);
+            router.push('/onboarding/step-3');
+          }}
+        >
+          Siguiente →
+        </Button>
+      </div>
     </div>
   );
 }

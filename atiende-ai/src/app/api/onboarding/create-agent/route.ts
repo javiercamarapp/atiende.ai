@@ -32,6 +32,10 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+    const { checkApiRateLimit } = await import('@/lib/api-rate-limit');
+    if (await checkApiRateLimit(`${user.id}:create_agent`, 3, 60)) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
 
     const body = await req.json();
     const {
@@ -231,6 +235,19 @@ REGLAS PARA EL PROMPT:
 
     // 7. INSERTAR DASHBOARD CONFIG (si no existe)
     // Los dashboard configs se pre-insertan via SQL seed
+
+    // 8. ENVIAR EMAIL DE BIENVENIDA
+    try {
+      const { sendEmail } = await import('@/lib/email/send');
+      const { welcomeEmail } = await import('@/lib/email/templates');
+      if (businessInfo.email) {
+        const { subject, html } = welcomeEmail(businessInfo.name, businessInfo.ownerName || '');
+        await sendEmail({ to: businessInfo.email, subject, html });
+      }
+    } catch (emailErr) {
+      // Non-blocking — agent creation should succeed even if email fails
+      console.error('Welcome email failed:', emailErr);
+    }
 
     return NextResponse.json({ success: true, tenantId: tenant.id });
 

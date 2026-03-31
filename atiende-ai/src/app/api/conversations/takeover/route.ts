@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createServerSupabase } from '@/lib/supabase/server';
+
+const TakeoverSchema = z.object({
+  conversationId: z.string().uuid(),
+  action: z.enum(['takeover', 'release']),
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,7 +26,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No tenant found' }, { status: 403 });
     }
 
-    const { conversationId, action } = await req.json();
+    const body = await req.json();
+    const parsed = TakeoverSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const { conversationId, action } = parsed.data;
 
     // Verify conversation belongs to the authenticated tenant
     const { data: conversation } = await supabaseAdmin

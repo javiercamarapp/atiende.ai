@@ -17,6 +17,11 @@ export default function Step4() {
   useEffect(() => {
     const type = localStorage.getItem('ob_business_type') || 'other';
     setQuestions(getQuestions(type));
+
+    const savedAnswers = localStorage.getItem('ob_answers');
+    if (savedAnswers) {
+      try { setAnswers(JSON.parse(savedAnswers)); } catch (err) { console.error('Parse error:', err); }
+    }
   }, []);
 
   const updateAnswer = (key: string, value: string | boolean | string[]) => {
@@ -127,16 +132,21 @@ export default function Step4() {
         ))}
       </div>
 
-      <Button
-        className="w-full mt-6" size="lg"
-        disabled={!allRequiredFilled}
-        onClick={() => {
-          localStorage.setItem('ob_answers', JSON.stringify(answers));
-          router.push('/onboarding/step-5');
-        }}
-      >
-        Siguiente →
-      </Button>
+      <div className="flex gap-3 mt-6">
+        <Button variant="outline" size="lg" onClick={() => router.push('/onboarding/step-3')}>
+          ← Anterior
+        </Button>
+        <Button
+          className="flex-1" size="lg"
+          disabled={!allRequiredFilled}
+          onClick={() => {
+            localStorage.setItem('ob_answers', JSON.stringify(answers));
+            router.push('/onboarding/step-5');
+          }}
+        >
+          Siguiente →
+        </Button>
+      </div>
     </div>
   );
 }
