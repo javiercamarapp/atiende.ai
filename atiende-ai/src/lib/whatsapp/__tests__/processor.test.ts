@@ -2,36 +2,81 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock setup ──────────────────────────────────────────────
 
-const mockSingle = vi.fn();
-const mockHead = vi.fn(() => ({ count: 0 }));
-const mockSelect = vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn(() => ({ single: mockSingle })) })) })) }));
-const mockInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: vi.fn(() => ({ data: { id: 'conv-1', status: 'active', customer_name: null } })) })) }));
-const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => ({})) }));
-const mockOrder = vi.fn(() => ({ limit: vi.fn(() => ({ data: [] })) }));
+// Track per-table mock behavior
+let tenantResult: any = { data: null };
+let contactResult: any = { data: null };
+let conversationResult: any = { data: null };
+let monthlyCountResult: any = { count: 0 };
+let messagesHistory: any = { data: [] };
 
-function buildChain() {
-  return {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    gte: vi.fn().mockReturnThis(),
-    order: vi.fn(() => ({ limit: vi.fn(() => ({ data: [] })) })),
-    single: mockSingle,
-    insert: mockInsert,
-    update: mockUpdate,
-    limit: vi.fn(() => ({ data: [] })),
-  };
+const mockInsertMessages = vi.fn(() => ({
+  select: vi.fn(() => ({ single: vi.fn(() => ({ data: null })) })),
+}));
+const mockInsertContacts = vi.fn(() => ({
+  select: vi.fn(() => ({
+    single: vi.fn(() => ({ data: { id: 'contact-1', name: null } })),
+  })),
+}));
+const mockInsertConversations = vi.fn(() => ({
+  select: vi.fn(() => ({
+    single: vi.fn(() => ({ data: { id: 'conv-1', status: 'active', customer_name: null } })),
+  })),
+}));
+const mockUpdateConversations = vi.fn(() => ({ eq: vi.fn() }));
+
+function makeChainable(terminalValue: () => any) {
+  const chain: any = {};
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.gte = vi.fn().mockImplementation(() => terminalValue());
+  chain.order = vi.fn().mockReturnValue({ limit: vi.fn().mockImplementation(() => messagesHistory) });
+  chain.limit = vi.fn().mockReturnValue({ data: [] });
+  chain.single = vi.fn().mockImplementation(() => terminalValue());
+  chain.insert = vi.fn().mockReturnValue({
+    select: vi.fn(() => ({ single: vi.fn(() => ({ data: null })) })),
+  });
+  chain.update = vi.fn().mockReturnValue({ eq: vi.fn() });
+  return chain;
 }
 
-const chainInstance = buildChain();
-
-const mockFrom = vi.fn(() => chainInstance);
+// Call counters to track which single() call we're on per table
+let tenantSingleCount = 0;
+let contactSingleCount = 0;
+let conversationSingleCount = 0;
 
 vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: { from: (...args: unknown[]) => mockFrom(...args) },
+  supabaseAdmin: {
+    from: (table: string) => {
+      if (table === 'tenants') {
+        const chain = makeChainable(() => tenantResult);
+        return chain;
+      }
+      if (table === 'contacts') {
+        const chain = makeChainable(() => contactResult);
+        chain.insert = mockInsertContacts;
+        return chain;
+      }
+      if (table === 'conversations') {
+        const chain = makeChainable(() => conversationResult);
+        chain.insert = mockInsertConversations;
+        chain.update = mockUpdateConversations;
+        return chain;
+      }
+      if (table === 'messages') {
+        const chain = makeChainable(() => monthlyCountResult);
+        chain.insert = mockInsertMessages;
+        chain.order = vi.fn().mockReturnValue({
+          limit: vi.fn().mockImplementation(() => messagesHistory),
+        });
+        return chain;
+      }
+      return makeChainable(() => ({ data: null }));
+    },
+  },
 }));
 
 const mockGenerateResponse = vi.fn(() => ({
-  text: 'Hola, con gusto le ayudo.',
+  text: 'Con gusto le ayudo.',
   model: 'test-model',
   tokensIn: 10,
   tokensOut: 20,
@@ -49,13 +94,13 @@ vi.mock('@/lib/llm/classifier', () => ({
   classifyIntent: (...args: unknown[]) => mockClassifyIntent(...args),
 }));
 
-const mockSearchKnowledge = vi.fn(() => 'Horario: 9am-6pm');
+const mockSearchKnowledge = vi.fn(() => '');
 vi.mock('@/lib/rag/search', () => ({
   searchKnowledge: (...args: unknown[]) => mockSearchKnowledge(...args),
 }));
 
 const mockValidateResponse = vi.fn(
-  (text: string, _b: unknown, _c: unknown, _d: unknown) => ({ valid: true, text })
+  (text: string) => ({ valid: true, text })
 );
 vi.mock('@/lib/guardrails/validate', () => ({
   validateResponse: (...args: unknown[]) => mockValidateResponse(...args),
@@ -86,7 +131,7 @@ import { processIncomingMessage } from '../processor';
 
 // ── Helpers ─────────────────────────────────────────────────
 
-const TENANT: Record<string, unknown> = {
+const TENANT = {
   id: 'tenant-1',
   name: 'Clinica Dental Test',
   status: 'active',
@@ -101,47 +146,31 @@ const TENANT: Record<string, unknown> = {
 
 function makeBody(msg: Record<string, unknown>) {
   return {
-    entry: [
-      {
-        changes: [
-          {
-            value: {
-              messages: [{ id: 'msg-1', from: '5219991234567', type: 'text', ...msg }],
-              metadata: { phone_number_id: 'phone-123', display_phone_number: '+5219990001111' },
-            },
-          },
-        ],
-      },
-    ],
+    entry: [{
+      changes: [{
+        value: {
+          messages: [{ id: 'msg-1', from: '5219991234567', type: 'text', ...msg }],
+          metadata: { phone_number_id: 'phone-123', display_phone_number: '+5219990001111' },
+        },
+      }],
+    }],
   };
 }
 
-function setupTenantFound(tenant = TENANT) {
-  // tenant lookup
-  mockSingle.mockResolvedValueOnce({ data: tenant });
-  // contact lookup - not found
-  mockSingle.mockResolvedValueOnce({ data: null });
-  // contact insert
-  mockInsert.mockReturnValueOnce({
-    select: vi.fn(() => ({ single: vi.fn(() => ({ data: { id: 'contact-1', name: null } })) })),
-  });
-  // conversation lookup - not found (new)
-  mockSingle.mockResolvedValueOnce({ data: null });
-  // conversation insert
-  mockInsert.mockReturnValueOnce({
-    select: vi.fn(() => ({
-      single: vi.fn(() => ({ data: { id: 'conv-1', status: 'active', customer_name: null } })),
-    })),
-  });
+/** Sets up mocks for an existing contact + existing conversation */
+function setupExisting(tenant = TENANT) {
+  tenantResult = { data: tenant };
+  contactResult = { data: { id: 'contact-1', name: 'Juan' } };
+  conversationResult = { data: { id: 'conv-1', status: 'active', customer_name: 'Juan' } };
+  monthlyCountResult = { count: 0 };
 }
 
-function setupTenantFoundExisting(tenant = TENANT) {
-  // tenant
-  mockSingle.mockResolvedValueOnce({ data: tenant });
-  // contact found
-  mockSingle.mockResolvedValueOnce({ data: { id: 'contact-1', name: 'Juan' } });
-  // conversation found
-  mockSingle.mockResolvedValueOnce({ data: { id: 'conv-1', status: 'active', customer_name: 'Juan' } });
+/** Sets up mocks for a new contact + new conversation */
+function setupNew(tenant = TENANT) {
+  tenantResult = { data: tenant };
+  contactResult = { data: null };
+  conversationResult = { data: null };
+  monthlyCountResult = { count: 0 };
 }
 
 // ── Reset ───────────────────────────────────────────────────
@@ -149,26 +178,11 @@ function setupTenantFoundExisting(tenant = TENANT) {
 beforeEach(() => {
   vi.clearAllMocks();
 
-  // Reset chain defaults
-  chainInstance.select = vi.fn().mockReturnThis();
-  chainInstance.eq = vi.fn().mockReturnThis();
-  chainInstance.gte = vi.fn().mockReturnThis();
-  chainInstance.order = vi.fn(() => ({ limit: vi.fn(() => ({ data: [] })) }));
-  chainInstance.single = mockSingle;
-  chainInstance.insert = mockInsert;
-  chainInstance.update = mockUpdate;
-
-  // defaults
-  mockSingle.mockResolvedValue({ data: null });
-  mockInsert.mockReturnValue({
-    select: vi.fn(() => ({
-      single: vi.fn(() => ({ data: { id: 'new-1', status: 'active', customer_name: null } })),
-    })),
-  });
-  mockUpdate.mockReturnValue({ eq: vi.fn(() => ({})) });
-
-  // monthly count head query - return low count
-  mockHead.mockReturnValue({ count: 0 });
+  tenantResult = { data: null };
+  contactResult = { data: null };
+  conversationResult = { data: null };
+  monthlyCountResult = { count: 0 };
+  messagesHistory = { data: [] };
 
   mockCheckRateLimit.mockReturnValue({ allowed: true });
   mockCheckTenantLimit.mockReturnValue({ allowed: true });
@@ -188,7 +202,7 @@ beforeEach(() => {
 
 describe('processIncomingMessage', () => {
   it('processes a text message successfully', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola, buenos dias' } }));
     expect(mockMarkAsRead).toHaveBeenCalled();
     expect(mockGenerateResponse).toHaveBeenCalled();
@@ -196,13 +210,13 @@ describe('processIncomingMessage', () => {
   });
 
   it('calls transcribeAudio for audio messages', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'audio', audio: { id: 'audio-123' } }));
     expect(mockTranscribeAudio).toHaveBeenCalledWith('audio-123');
   });
 
   it('extracts caption from image messages', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(
       makeBody({ type: 'image', image: { caption: 'mi diente roto' } })
     );
@@ -210,14 +224,13 @@ describe('processIncomingMessage', () => {
   });
 
   it('handles image without caption', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'image', image: {} }));
-    // Should still process with "[Imagen recibida]"
     expect(mockGenerateResponse).toHaveBeenCalled();
   });
 
   it('extracts filename from document messages', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(
       makeBody({ type: 'document', document: { filename: 'receta.pdf' } })
     );
@@ -225,7 +238,7 @@ describe('processIncomingMessage', () => {
   });
 
   it('extracts coordinates from location messages', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(
       makeBody({ type: 'location', location: { latitude: 20.97, longitude: -89.62 } })
     );
@@ -233,27 +246,23 @@ describe('processIncomingMessage', () => {
   });
 
   it('stops processing when tenant is not found', async () => {
-    mockSingle.mockResolvedValueOnce({ data: null });
+    tenantResult = { data: null };
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockGenerateResponse).not.toHaveBeenCalled();
     expect(mockSendTextMessage).not.toHaveBeenCalled();
   });
 
   it('skips AI response when conversation is in human_handoff', async () => {
-    // tenant
-    mockSingle.mockResolvedValueOnce({ data: TENANT });
-    // contact
-    mockSingle.mockResolvedValueOnce({ data: { id: 'contact-1', name: 'Juan' } });
-    // conversation with human_handoff
-    mockSingle.mockResolvedValueOnce({ data: { id: 'conv-1', status: 'human_handoff', customer_name: 'Juan' } });
+    setupExisting();
+    conversationResult = { data: { id: 'conv-1', status: 'human_handoff', customer_name: 'Juan' } };
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Necesito ayuda' } }));
     expect(mockGenerateResponse).not.toHaveBeenCalled();
     // But message should still be saved
-    expect(mockFrom).toHaveBeenCalled();
+    expect(mockInsertMessages).toHaveBeenCalled();
   });
 
   it('drops message when phone is rate limited', async () => {
-    mockSingle.mockResolvedValueOnce({ data: TENANT });
+    setupExisting();
     mockCheckRateLimit.mockReturnValue({ allowed: false });
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockGenerateResponse).not.toHaveBeenCalled();
@@ -261,22 +270,18 @@ describe('processIncomingMessage', () => {
   });
 
   it('drops message when tenant limit exceeded', async () => {
-    mockSingle.mockResolvedValueOnce({ data: TENANT });
-    mockCheckRateLimit.mockReturnValue({ allowed: true });
+    setupExisting();
     mockCheckTenantLimit.mockReturnValue({ allowed: false });
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockGenerateResponse).not.toHaveBeenCalled();
   });
 
   it('sends trial ended message when trial expired', async () => {
-    const trialTenant = {
+    setupExisting({
       ...TENANT,
       plan: 'free_trial',
       trial_ends_at: '2020-01-01T00:00:00Z',
-    };
-    mockSingle.mockResolvedValueOnce({ data: trialTenant });
-    mockCheckRateLimit.mockReturnValue({ allowed: true });
-    mockCheckTenantLimit.mockReturnValue({ allowed: true });
+    });
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'phone-123',
@@ -287,20 +292,8 @@ describe('processIncomingMessage', () => {
   });
 
   it('sends plan limit message when monthly count exceeded', async () => {
-    const limitedTenant = { ...TENANT, plan: 'basic' };
-    mockSingle.mockResolvedValueOnce({ data: limitedTenant });
-    mockCheckRateLimit.mockReturnValue({ allowed: true });
-    mockCheckTenantLimit.mockReturnValue({ allowed: true });
-
-    // Override the select chain for monthly count query
-    // The from('messages') call for count check returns high count
-    const countChain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      gte: vi.fn().mockReturnValue({ count: 9999 }),
-    };
-    mockFrom.mockReturnValueOnce(countChain as any);
-
+    setupExisting({ ...TENANT, plan: 'basic' });
+    monthlyCountResult = { count: 9999 };
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'phone-123',
@@ -310,7 +303,7 @@ describe('processIncomingMessage', () => {
   });
 
   it('sends welcome message for new conversations', async () => {
-    setupTenantFound(TENANT);
+    setupNew(TENANT);
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'hola' } }));
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'phone-123',
@@ -320,27 +313,27 @@ describe('processIncomingMessage', () => {
   });
 
   it('classifies intent correctly', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     mockClassifyIntent.mockReturnValue('APPOINTMENT');
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Quiero una cita' } }));
     expect(mockClassifyIntent).toHaveBeenCalledWith('Quiero una cita');
   });
 
   it('calls RAG search with correct tenant ID', async () => {
-    setupTenantFoundExisting();
-    await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Cuanto cuesta la limpieza?' } }));
-    expect(mockSearchKnowledge).toHaveBeenCalledWith('tenant-1', 'Cuanto cuesta la limpieza?');
+    setupExisting();
+    await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Cuanto cuesta?' } }));
+    expect(mockSearchKnowledge).toHaveBeenCalledWith('tenant-1', 'Cuanto cuesta?');
   });
 
   it('selects model using routing rules', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     mockClassifyIntent.mockReturnValue('PRICING');
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Precios' } }));
     expect(mockSelectModel).toHaveBeenCalledWith('PRICING', 'dental', 'pro');
   });
 
   it('validates response with guardrails', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockValidateResponse).toHaveBeenCalledWith(
       'Con gusto le ayudo.',
@@ -351,28 +344,30 @@ describe('processIncomingMessage', () => {
   });
 
   it('saves outbound message to DB', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola que tal' } }));
-    // insert is called for inbound + outbound
-    expect(mockInsert).toHaveBeenCalled();
+    // insert called for inbound + outbound
+    expect(mockInsertMessages).toHaveBeenCalled();
+    const calls = mockInsertMessages.mock.calls;
+    expect(calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it('updates conversation with last_message_at', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola que tal' } }));
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateConversations).toHaveBeenCalledWith(
       expect.objectContaining({ last_message_at: expect.any(String) })
     );
   });
 
   it('handles sticker messages', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(makeBody({ type: 'sticker' }));
     expect(mockGenerateResponse).toHaveBeenCalled();
   });
 
   it('handles interactive button_reply', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(
       makeBody({
         type: 'interactive',
@@ -383,7 +378,7 @@ describe('processIncomingMessage', () => {
   });
 
   it('handles interactive list_reply', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(
       makeBody({
         type: 'interactive',
@@ -407,11 +402,10 @@ describe('processIncomingMessage', () => {
   });
 
   it('sanitizes HTML from input', async () => {
-    setupTenantFoundExisting();
+    setupExisting();
     await processIncomingMessage(
       makeBody({ type: 'text', text: { body: '<script>alert("xss")</script>Hola' } })
     );
-    // The content passed should be sanitized - no HTML tags
     expect(mockClassifyIntent).toHaveBeenCalledWith(expect.not.stringContaining('<script>'));
   });
 });
