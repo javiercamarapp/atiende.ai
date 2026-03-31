@@ -1,3 +1,5 @@
+import { supabaseAdmin } from '@/lib/supabase/admin';
+
 const HOURLY_RATES: Record<string,number> = {
   dental:75,medical:75,nutritionist:70,psychologist:80,restaurant:55,taqueria:50,
   cafe:50,hotel:80,real_estate:100,salon:60,barbershop:55,spa:65,gym:55,
@@ -37,4 +39,29 @@ export function calculateROI(
     hoursSaved:Math.round(hrSaved*10)/10, staffSavingsMXN:Math.round(staffSav),
     afterHoursRevenueMXN:Math.round(afterRev), noShowSavingsMXN:Math.round(noShowSav),
     totalSavingsMXN:Math.round(total), monthlyCostMXN:cost, roiPercent:Math.round(roi) };
+}
+
+export async function getMonthlyUsage(tenantId: string) {
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const { count } = await supabaseAdmin
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .eq('direction', 'inbound')
+    .gte('created_at', startOfMonth.toISOString());
+
+  return count || 0;
+}
+
+export function getPlanLimit(plan: string): number {
+  const limits: Record<string, number> = {
+    free_trial: 100,
+    basic: 500,
+    pro: 2000,
+    premium: 999999, // unlimited
+  };
+  return limits[plan] || 100;
 }

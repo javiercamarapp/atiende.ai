@@ -40,7 +40,14 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }:{
             <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${m.direction==='outbound'?m.sender_type==='human'?'bg-purple-100':'bg-blue-100':'bg-white border'}`}>
               {m.direction==='outbound'&&<p className="text-[10px] font-medium mb-0.5 opacity-60">{m.sender_type==='human'?'👤 Tú':'🤖 Bot'}</p>}
               <p className="text-sm">{m.content}</p>
-              <p className="text-[10px] opacity-40 text-right mt-1">{new Date(m.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</p>
+              <p className="text-[10px] opacity-40 text-right mt-1 flex items-center justify-end gap-1">
+                {new Date(m.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}
+                {m.direction==='outbound'&&(
+                  <span className={m.wa_status==='read'?'text-blue-500':''}>
+                    {m.wa_status==='read'?'✓✓':m.wa_status==='delivered'?'✓✓':'✓'}
+                  </span>
+                )}
+              </p>
             </div></div>))}
         <div ref={bottom}/>
       </div>
