@@ -13,7 +13,8 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { CreditCard, FileText, AlertTriangle } from 'lucide-react';
+import { CreditCard, FileText, AlertTriangle, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Plan {
   key: string;
@@ -96,6 +97,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
           name: tenant?.name,
         }),
       });
+      if (!r.ok) throw new Error('Checkout failed');
       const d = await r.json();
       if (method === 'stripe' && d.url) window.location.href = d.url;
       if (method === 'oxxo' && d.oxxoReference) {
@@ -104,6 +106,8 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
       if (method === 'spei' && d.clabe) {
         window.location.href = `/settings/billing/oxxo?clabe=${d.clabe}&amount=${d.amount || ''}&expires=${d.expiresAt || ''}`;
       }
+    } catch {
+      toast.error('Error al procesar el pago');
     } finally {
       setLoading('');
     }
@@ -232,6 +236,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                     onClick={() => upgrade(p.key, 'stripe')}
                     disabled={!!loading}
                   >
+                    {loading === p.key + 'stripe' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
                     Tarjeta
                   </Button>
                   <Button
@@ -241,6 +246,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                     onClick={() => upgrade(p.key, 'oxxo')}
                     disabled={!!loading}
                   >
+                    {loading === p.key + 'oxxo' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
                     OXXO
                   </Button>
                   <Button
@@ -250,6 +256,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                     onClick={() => upgrade(p.key, 'spei')}
                     disabled={!!loading}
                   >
+                    {loading === p.key + 'spei' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
                     SPEI
                   </Button>
                 </div>

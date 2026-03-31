@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { X, Plus, Tag } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 const TAG_SUGGESTIONS = ['VIP', 'Queja', 'Oportunidad', 'Urgente', 'Seguimiento'] as const;
 
@@ -35,12 +36,19 @@ export function ConversationTags({
 
   const saveTags = async (newTags: string[]) => {
     setSaving(true);
-    const supabase = createClient();
-    await supabase
-      .from('conversations')
-      .update({ tags: newTags })
-      .eq('id', conversationId);
-    setSaving(false);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('conversations')
+        .update({ tags: newTags })
+        .eq('id', conversationId);
+      if (error) throw error;
+      toast.success('Etiquetas actualizadas');
+    } catch {
+      toast.error('Error al guardar etiquetas');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const addTag = (tag: string) => {

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MessageSquare, CheckCircle, AlertCircle } from 'lucide-react';
@@ -8,6 +8,12 @@ export default function Step5() {
   const router = useRouter();
   const [status, setStatus] = useState<'idle'|'connecting'|'connected'|'error'>('idle');
   const [skip, setSkip] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ob_wa_connected');
+    if (saved === 'true') setStatus('connected');
+    if (saved === 'false') setSkip(true);
+  }, []);
 
   const connectWhatsApp = () => {
     setStatus('connecting');
@@ -117,13 +123,18 @@ export default function Step5() {
         </button>
       )}
 
-      <Button
-        className="w-full mt-6" size="lg"
-        disabled={status !== 'connected' && !skip}
-        onClick={() => router.push('/onboarding/step-6')}
-      >
-        {status === 'connected' ? 'Siguiente →' : 'Continuar sin WA →'}
-      </Button>
+      <div className="flex gap-3 mt-6">
+        <Button variant="outline" size="lg" onClick={() => router.push('/onboarding/step-4')}>
+          ← Anterior
+        </Button>
+        <Button
+          className="flex-1" size="lg"
+          disabled={status !== 'connected' && !skip}
+          onClick={() => router.push('/onboarding/step-6')}
+        >
+          {status === 'connected' ? 'Siguiente →' : 'Continuar sin WA →'}
+        </Button>
+      </div>
     </div>
   );
 }

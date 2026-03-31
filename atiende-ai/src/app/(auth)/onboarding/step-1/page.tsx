@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,11 @@ const TYPES = [
 export default function Step1() {
   const [selected, setSelected] = useState('');
   const router = useRouter();
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ob_business_type');
+    if (saved) setSelected(saved);
+  }, []);
 
   return (
     <div>
