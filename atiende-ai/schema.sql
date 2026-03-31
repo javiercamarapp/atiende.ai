@@ -449,3 +449,21 @@ USING (tenant_id = get_user_tenant_id());
 -- marketplace_agents es publico (lectura)
 CREATE POLICY "public_read" ON marketplace_agents FOR SELECT
 USING (true);
+
+-- SEED: 15 Marketplace Agents
+INSERT INTO marketplace_agents (slug, name, description, category, icon, price_mxn, trigger_type, trigger_config, required_plan) VALUES
+('cobrador', 'Cobrador', 'Recordatorios de pago automáticos', 'cobranza', '💰', 499, 'cron', '{"schedule":"0 10 * * 1,3,5"}', 'basic'),
+('resenas', 'Reseñas Google', 'Solicita reseñas post-servicio', 'marketing', '⭐', 299, 'event', '{"event":"appointment.completed","delay":"24h"}', 'basic'),
+('reactivacion', 'Reactivación', 'Contacta clientes inactivos 90+ días', 'marketing', '🔄', 399, 'cron', '{"schedule":"0 10 1 * *"}', 'pro'),
+('cumpleanos', 'Cumpleaños', 'Felicitación + oferta especial', 'marketing', '🎂', 199, 'cron', '{"schedule":"0 9 * * *"}', 'basic'),
+('referidos', 'Referidos', 'Programa de referidos post-reseña positiva', 'marketing', '🤝', 299, 'event', '{"event":"review.positive"}', 'pro'),
+('nps', 'NPS Survey', 'Encuesta 3 preguntas post-servicio', 'analytics', '📊', 199, 'event', '{"event":"appointment.completed","delay":"2h"}', 'basic'),
+('reportes', 'Reportes Semanales', 'Resumen semanal por email al dueño', 'analytics', '📈', 299, 'cron', '{"schedule":"0 9 * * 1"}', 'pro'),
+('faq_builder', 'FAQ Builder', 'Detecta gaps en knowledge base', 'analytics', '🧠', 199, 'cron', '{"schedule":"0 0 * * 0"}', 'pro'),
+('seguimiento', 'Seguimiento Post-Servicio', 'Instrucciones de cuidado post-servicio', 'ops', '📋', 299, 'event', '{"event":"appointment.completed","delay":"4h"}', 'basic'),
+('optimizador', 'Optimizador de Agenda', 'Recupera cancelaciones contactando lista de espera', 'ops', '📅', 399, 'event', '{"event":"appointment.cancelled"}', 'pro'),
+('bilingue', 'Bilingüe', 'Detecta idioma y responde en el mismo', 'ops', '🌐', 299, 'event', '{"event":"conversation.new"}', 'pro'),
+('inventario', 'Inventario', 'Verifica stock al recibir pedido', 'ops', '📦', 299, 'event', '{"event":"order.new"}', 'pro'),
+('calificador', 'Calificador de Leads', 'BANT scoring automático 0-100', 'ventas', '🎯', 399, 'event', '{"event":"conversation.new"}', 'pro'),
+('upselling', 'Upselling', 'Recomienda servicios complementarios', 'ventas', '💎', 299, 'event', '{"event":"appointment.completed"}', 'basic'),
+('redes_sociales', 'Redes Sociales', 'Responde comentarios y redirige a WhatsApp', 'marketing', '📱', 399, 'event', '{"event":"social.comment"}', 'pro');

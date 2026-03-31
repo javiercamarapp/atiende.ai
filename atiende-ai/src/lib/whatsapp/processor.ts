@@ -5,6 +5,7 @@ import { searchKnowledge } from '@/lib/rag/search';
 import { validateResponse } from '@/lib/guardrails/validate';
 import { sendTextMessage, markAsRead } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
+import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
 
 export async function processIncomingMessage(body: any) {
   for (const entry of body.entry || []) {
@@ -40,6 +41,17 @@ async function handleSingleMessage(
   if (!tenant) {
     console.warn('Tenant no encontrado para:', phoneNumberId);
     return;
+  }
+
+  // ═══ 1.5 RATE LIMITING ═══
+  const rateLimited = await checkRateLimit(senderPhone);
+  if (!rateLimited.allowed) {
+    return; // silently drop if rate limited
+  }
+
+  const tenantLimited = await checkTenantLimit(tenant.id, tenant.plan);
+  if (!tenantLimited.allowed) {
+    return; // silently drop if tenant limit exceeded
   }
 
   // ═══ 2. MARCAR COMO LEIDO ═══
@@ -217,7 +229,7 @@ async function handleSingleMessage(
   const responseTime = Date.now() - startTime;
 
   // ═══ 13. VALIDAR ANTI-ALUCINACION ═══
-  const validation = validateResponse(result.text, tenant, ragContext);
+  const validation = validateResponse(result.text, tenant, ragContext, content);
   const finalText = validation.valid ? validation.text : validation.text;
 
   // ═══ 14. ENVIAR RESPUESTA POR WHATSAPP ═══
