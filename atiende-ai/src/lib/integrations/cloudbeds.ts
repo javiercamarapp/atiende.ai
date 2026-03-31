@@ -43,7 +43,53 @@ export async function createReservation(opts: {
   checkOut: string;
   roomTypeId: string;
 }) {
-  // Similar flow — POST a /api/v1.2/postReservation
-  // Implementar cuando el hotel conecte su cuenta Cloudbeds
-  return null;
+  if (!process.env.CLOUDBEDS_CLIENT_ID) return null;
+  try {
+    // OAuth2 token
+    const tokenRes = await axios.post('https://hotels.cloudbeds.com/api/v1.2/access_token', {
+      grant_type: 'client_credentials',
+      client_id: process.env.CLOUDBEDS_CLIENT_ID,
+      client_secret: process.env.CLOUDBEDS_CLIENT_SECRET,
+    });
+    const token = tokenRes.data.access_token;
+
+    const [firstName, ...lastParts] = opts.guestName.split(' ');
+    const lastName = lastParts.join(' ') || firstName;
+
+    const { data } = await axios.post(
+      'https://api.cloudbeds.com/api/v1.2/postReservation',
+      {
+        startDate: opts.checkIn,
+        endDate: opts.checkOut,
+        roomTypeID: opts.roomTypeId,
+        guestFirstName: firstName,
+        guestLastName: lastName,
+        guestEmail: opts.guestEmail,
+        guestPhone: opts.guestPhone,
+        paymentMethod: 'cash',
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!data.success) {
+      console.error('Cloudbeds reservation failed:', data.message);
+      return null;
+    }
+
+    return {
+      reservationId: data.reservationID,
+      status: data.status,
+      guestName: opts.guestName,
+      checkIn: opts.checkIn,
+      checkOut: opts.checkOut,
+      roomTypeId: opts.roomTypeId,
+    };
+  } catch (e) {
+    if (axios.isAxiosError(e) && e.response?.status === 409) {
+      console.error('Cloudbeds: Room unavailable for selected dates');
+      return null;
+    }
+    console.error('Cloudbeds reservation error:', e);
+    return null;
+  }
 }

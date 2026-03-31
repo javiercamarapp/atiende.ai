@@ -6,7 +6,15 @@ function fmt(n:number) {
   return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(n);
 }
 
-export function ROIWidget({ roi }: { roi: any }) {
+interface ROIData {
+  messagesSaved: number;
+  hoursSaved: number;
+  totalSavingsMXN: number;
+  roiPercent: number;
+  monthlyCostMXN: number;
+}
+
+export function ROIWidget({ roi }: { roi: ROIData }) {
   return (
     <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200">
       <CardHeader className="pb-2">

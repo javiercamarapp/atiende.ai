@@ -4,8 +4,15 @@ import { logWebhook } from '@/lib/webhook-logger';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
-  const apiKey = req.headers.get('x-retell-api-key');
-  if (apiKey !== process.env.RETELL_API_KEY) {
+
+  // Support both Bearer token (official Retell webhook signature) and legacy x-retell-api-key header
+  const authHeader = req.headers.get('authorization');
+  const legacyApiKey = req.headers.get('x-retell-api-key');
+  const isAuthorized =
+    (authHeader && authHeader === `Bearer ${process.env.RETELL_API_KEY}`) ||
+    (legacyApiKey && legacyApiKey === process.env.RETELL_API_KEY);
+
+  if (!isAuthorized) {
     logWebhook({ provider: 'retell', eventType: 'auth_failed', statusCode: 401, error: 'Invalid API key', durationMs: Date.now() - startTime });
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

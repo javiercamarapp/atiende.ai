@@ -4,7 +4,7 @@ const SR_API = process.env.SOFTRESTAURANT_API_URL || 'https://api.softrestaurant
 const SR_KEY = process.env.SOFTRESTAURANT_API_KEY;
 
 // Obtener menú del restaurante desde SoftRestaurant
-export async function getMenuFromSR(): Promise<any[]> {
+export async function getMenuFromSR(): Promise<Record<string, unknown>[]> {
   if (!SR_KEY) return [];
   try {
     const { data } = await axios.get(`${SR_API}/api/menu`, {
@@ -60,7 +60,7 @@ export async function syncMenuToRAG(tenantId: string) {
 
   // Ingestar menú actualizado
   const menuText = 'MENÚ COMPLETO:\n' +
-    menu.map((item: any) =>
+    menu.map((item: Record<string, unknown>) =>
       `${item.nombre || item.name} - $${item.precio || item.price} MXN` +
       (item.descripcion ? ` (${item.descripcion})` : '')
     ).join('\n');

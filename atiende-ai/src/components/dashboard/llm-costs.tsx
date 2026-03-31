@@ -91,8 +91,8 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ name, percent }) =>
-                      `${name}: ${(percent * 100).toFixed(0)}%`
+                    label={({ name, percent }: { name?: string; percent?: number }) =>
+                      `${name ?? ''}: ${((percent ?? 0) * 100).toFixed(0)}%`
                     }
                     labelLine={false}
                   >
@@ -100,7 +100,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => `$${value.toFixed(4)}`} />
+                  <Tooltip formatter={(value) => `$${Number(value).toFixed(4)}`} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -121,7 +121,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" fontSize={10} />
                   <YAxis fontSize={10} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
-                  <Tooltip formatter={(value: number) => `$${value.toFixed(4)}`} />
+                  <Tooltip formatter={(value) => `$${Number(value).toFixed(4)}`} />
                   <Bar dataKey="costo" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

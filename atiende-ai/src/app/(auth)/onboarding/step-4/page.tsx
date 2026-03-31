@@ -12,14 +12,14 @@ import { getQuestions, type Question } from '@/lib/onboarding/questions';
 export default function Step4() {
   const router = useRouter();
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answers, setAnswers] = useState<Record<string, string | boolean | string[]>>({});
 
   useEffect(() => {
     const type = localStorage.getItem('ob_business_type') || 'other';
     setQuestions(getQuestions(type));
   }, []);
 
-  const updateAnswer = (key: string, value: any) => {
+  const updateAnswer = (key: string, value: string | boolean | string[]) => {
     setAnswers(prev => ({ ...prev, [key]: value }));
   };
 
@@ -28,8 +28,8 @@ export default function Step4() {
     .every(q => {
       const val = answers[q.key];
       if (q.type === 'boolean') return val !== undefined;
-      if (q.type === 'multi_select') return val && val.length > 0;
-      return val && String(val).trim().length > 0;
+      if (q.type === 'multi_select') return Array.isArray(val) && val.length > 0;
+      return val !== undefined && val !== '' && String(val).trim().length > 0;
     });
 
   return (
@@ -57,7 +57,7 @@ export default function Step4() {
               <Input
                 className="mt-1"
                 placeholder={q.placeholder}
-                value={answers[q.key] || ''}
+                value={String(answers[q.key] ?? '')}
                 onChange={e => updateAnswer(q.key, e.target.value)}
               />
             )}
@@ -67,7 +67,7 @@ export default function Step4() {
                 className="mt-1"
                 rows={4}
                 placeholder={q.placeholder}
-                value={answers[q.key] || ''}
+                value={String(answers[q.key] ?? '')}
                 onChange={e => updateAnswer(q.key, e.target.value)}
               />
             )}
@@ -75,7 +75,7 @@ export default function Step4() {
             {q.type === 'boolean' && (
               <div className="flex items-center gap-2 mt-1">
                 <Switch
-                  checked={answers[q.key] || false}
+                  checked={Boolean(answers[q.key])}
                   onCheckedChange={v => updateAnswer(q.key, v)}
                 />
                 <span className="text-sm text-gray-600">
@@ -89,9 +89,9 @@ export default function Step4() {
                 {q.options.map(opt => (
                   <label key={opt} className="flex items-center gap-2 text-sm">
                     <Checkbox
-                      checked={(answers[q.key] || []).includes(opt)}
+                      checked={Array.isArray(answers[q.key]) && (answers[q.key] as string[]).includes(opt)}
                       onCheckedChange={checked => {
-                        const curr = answers[q.key] || [];
+                        const curr = Array.isArray(answers[q.key]) ? (answers[q.key] as string[]) : [];
                         updateAnswer(q.key,
                           checked
                             ? [...curr, opt]
@@ -109,7 +109,7 @@ export default function Step4() {
               <Input
                 type="number" className="mt-1"
                 placeholder={q.placeholder}
-                value={answers[q.key] || ''}
+                value={String(answers[q.key] ?? '')}
                 onChange={e => updateAnswer(q.key, e.target.value)}
               />
             )}
@@ -119,7 +119,7 @@ export default function Step4() {
               <Input
                 className="mt-2"
                 placeholder={q.followUp}
-                value={answers[`${q.key}_detail`] || ''}
+                value={String(answers[`${q.key}_detail`] ?? '')}
                 onChange={e => updateAnswer(`${q.key}_detail`, e.target.value)}
               />
             )}

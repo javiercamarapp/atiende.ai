@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createCheckoutSession } from '@/lib/billing/stripe';
 import { createOxxoPayment, createSpeiPayment } from '@/lib/billing/conekta';
 import { createServerSupabase } from '@/lib/supabase/server';
+import { z } from 'zod';
+
+const CheckoutSchema = z.object({
+  plan: z.enum(['basic', 'pro', 'premium']),
+  method: z.enum(['stripe', 'oxxo', 'spei']),
+  email: z.string().email(),
+  name: z.string().optional(),
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,18 +30,23 @@ export async function POST(req: NextRequest) {
     }
 
     const tenantId = tenant.id;
-    const { email, plan, method, name } = await req.json();
+    const body = await req.json();
+    const parsed = CheckoutSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 });
+    }
+    const { email, plan, method, name = '' } = parsed.data;
 
     if (method === 'stripe') {
       const s = await createCheckoutSession(tenantId, email, plan);
       return NextResponse.json({ url: s.url });
     }
     if (method === 'oxxo') {
-      const r = await createOxxoPayment(tenantId, email, plan, name);
+      const r = await createOxxoPayment(tenantId, email || '', plan, name || '');
       return NextResponse.json(r);
     }
     if (method === 'spei') {
-      const r = await createSpeiPayment(tenantId, email, plan, name);
+      const r = await createSpeiPayment(tenantId, email || '', plan, name || '');
       return NextResponse.json(r);
     }
 

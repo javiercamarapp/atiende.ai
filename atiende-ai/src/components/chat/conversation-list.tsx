@@ -5,10 +5,21 @@ import { Card } from '@/components/ui/card';
 import { User, Phone } from 'lucide-react';
 import Link from 'next/link';
 
+interface ConversationSummary {
+  id: string;
+  customer_name?: string;
+  customer_phone: string;
+  channel: string;
+  status: string;
+  last_message_at?: string;
+  tags?: string[];
+  messages?: { content?: string }[];
+}
+
 export function ConversationList({
   conversations,
 }: {
-  conversations: any[];
+  conversations: ConversationSummary[];
 }) {
   if (conversations.length === 0) {
     return (

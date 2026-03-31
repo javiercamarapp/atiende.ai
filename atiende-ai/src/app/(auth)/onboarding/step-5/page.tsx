@@ -13,8 +13,8 @@ export default function Step5() {
     setStatus('connecting');
 
     // Meta Embedded Signup via Facebook Login SDK
-    // @ts-ignore — FB SDK loaded via script tag
-    window.FB?.login((response: any) => {
+    // @ts-expect-error FB SDK loaded via script tag
+    window.FB?.login((response: { authResponse?: { code: string } }) => {
       if (response.authResponse) {
         // Enviar code al backend para completar setup
         fetch('/api/whatsapp/connect', {

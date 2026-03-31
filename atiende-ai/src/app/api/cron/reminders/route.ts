@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
     for (const appt of a24 || []) {
       try {
-        const tenant = appt.tenants as any;
+        const tenant = appt.tenants as { wa_phone_number_id: string; wa_token: string; name: string };
         await sendTemplate(
           tenant.wa_phone_number_id,
           appt.customer_phone,
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     for (const appt of a1 || []) {
       try {
-        const tenant = appt.tenants as any;
+        const tenant = appt.tenants as { wa_phone_number_id: string; wa_token: string; name: string };
         await sendTemplate(
           tenant.wa_phone_number_id,
           appt.customer_phone,
