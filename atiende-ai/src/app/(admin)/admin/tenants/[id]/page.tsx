@@ -175,7 +175,8 @@ export default async function TenantDetailPage({
           <h3 className="font-semibold text-zinc-900 mb-4">Active Marketplace Agents</h3>
           <div className="space-y-2">
             {marketplaceAgents.map((ma) => {
-              const agent = ma.marketplace_agents as { name: string } | null;
+              const agentData = ma.marketplace_agents as unknown;
+              const agent = Array.isArray(agentData) ? agentData[0] as { name: string } | undefined : agentData as { name: string } | null;
               return (
                 <div key={ma.id} className="flex items-center justify-between py-2 border-b border-zinc-100 last:border-0">
                   <span className="text-sm text-zinc-700">{agent?.name || ma.agent_id}</span>
@@ -203,7 +204,8 @@ export default async function TenantDetailPage({
           </thead>
           <tbody>
             {conversations.map((c) => {
-              const contact = c.contact as { name: string; phone: string } | null;
+              const contactData = c.contact as unknown;
+              const contact = Array.isArray(contactData) ? contactData[0] as { name: string; phone: string } | undefined : contactData as { name: string; phone: string } | null;
               return (
                 <tr key={c.id} className="border-b border-zinc-50">
                   <td className="py-2">
