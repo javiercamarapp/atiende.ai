@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Send, Hand, ArrowLeft } from 'lucide-react';
+import { Send, Hand, ArrowLeft, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import { ConversationTags } from '@/components/chat/conversation-tags';
 import { ConversationNotes, type ConversationNote } from '@/components/chat/conversation-notes';
@@ -42,30 +43,41 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }:{
 
   const takeOver = async () => {
     const action = status === 'human_handoff' ? 'release' : 'takeover';
-    await fetch('/api/conversations/takeover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversationId: conversation.id, action }),
-    });
-    setStatus(action === 'takeover' ? 'human_handoff' : 'active');
+    try {
+      const res = await fetch('/api/conversations/takeover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: conversation.id, action }),
+      });
+      if (!res.ok) throw new Error('Request failed');
+      setStatus(action === 'takeover' ? 'human_handoff' : 'active');
+    } catch {
+      toast.error('Error al enviar mensaje');
+    }
   };
 
   const sendReply = async () => {
     if (!reply.trim() || sending) return;
     setSending(true);
-    await fetch('/api/conversations/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversationId: conversation.id,
-        tenantId,
-        phoneNumberId,
-        to: conversation.customer_phone,
-        text: reply,
-      }),
-    });
-    setReply('');
-    setSending(false);
+    try {
+      const res = await fetch('/api/conversations/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          tenantId,
+          phoneNumberId,
+          to: conversation.customer_phone,
+          text: reply,
+        }),
+      });
+      if (!res.ok) throw new Error('Request failed');
+      setReply('');
+    } catch {
+      toast.error('Error al enviar mensaje');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -158,7 +170,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }:{
               className="flex-1"
             />
             <Button onClick={sendReply} disabled={sending}>
-              <Send className="w-4 h-4" />
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </div>
         )}

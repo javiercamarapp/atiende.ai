@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StickyNote, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 export interface ConversationNote {
   id: string;
@@ -55,15 +56,21 @@ export function ConversationNotes({
     };
     const updatedNotes = [newNote, ...notes];
 
-    const supabase = createClient();
-    await supabase
-      .from('conversations')
-      .update({ notes: updatedNotes })
-      .eq('id', conversationId);
-
-    setNotes(updatedNotes);
-    setDraft('');
-    setSaving(false);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('conversations')
+        .update({ notes: updatedNotes })
+        .eq('id', conversationId);
+      if (error) throw error;
+      setNotes(updatedNotes);
+      setDraft('');
+      toast.success('Nota guardada');
+    } catch {
+      toast.error('Error al guardar nota');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

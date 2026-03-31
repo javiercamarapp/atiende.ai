@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,13 @@ export default function Step3() {
     website: '',
   });
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ob_business_info');
+    if (saved) {
+      try { setForm(JSON.parse(saved)); } catch {}
+    }
+  }, []);
 
   const handleAutoFill = async () => {
     if (!form.name || !form.city) return;
@@ -118,13 +125,18 @@ export default function Step3() {
         </div>
       </div>
 
-      <Button
-        className="w-full mt-6" size="lg"
-        disabled={!form.name || !form.phone || !form.email}
-        onClick={handleNext}
-      >
-        Siguiente →
-      </Button>
+      <div className="flex gap-3 mt-6">
+        <Button variant="outline" size="lg" onClick={() => router.push('/onboarding/step-2')}>
+          ← Anterior
+        </Button>
+        <Button
+          className="flex-1" size="lg"
+          disabled={!form.name || !form.phone || !form.email}
+          onClick={handleNext}
+        >
+          Siguiente →
+        </Button>
+      </div>
     </div>
   );
 }

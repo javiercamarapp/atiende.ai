@@ -136,12 +136,17 @@ export default function Step6() {
         </div>
       </div>
 
-      <Button
-        className="w-full mt-6" size="lg"
-        onClick={createAgent}
-      >
-        <Rocket className="mr-2" /> Crear y Activar mi Agente
-      </Button>
+      <div className="flex gap-3 mt-6">
+        <Button variant="outline" size="lg" onClick={() => router.push('/onboarding/step-5')}>
+          ← Anterior
+        </Button>
+        <Button
+          className="flex-1" size="lg"
+          onClick={createAgent}
+        >
+          <Rocket className="mr-2" /> Crear y Activar mi Agente
+        </Button>
+      </div>
     </div>
   );
 }
