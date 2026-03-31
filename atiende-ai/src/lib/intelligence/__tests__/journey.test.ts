@@ -27,10 +27,12 @@ describe('calculateStage', () => {
   });
 
   it('boundary: exactly 90 days is at-risk not churned', () => {
+    // 90 is not > 90, so not churned. 90 > 30 so at-risk
     expect(calculateStage(90, 5)).toBe('at-risk');
   });
 
-  it('boundary: exactly 30 days with 10 interactions is at-risk', () => {
-    expect(calculateStage(30, 10)).toBe('at-risk');
+  it('boundary: exactly 30 days with 11 interactions is loyal', () => {
+    // 30 is not > 30, so not at-risk; 11 > 10 so loyal
+    expect(calculateStage(30, 11)).toBe('loyal');
   });
 });

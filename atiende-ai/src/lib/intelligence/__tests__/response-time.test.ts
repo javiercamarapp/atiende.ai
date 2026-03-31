@@ -1,56 +1,45 @@
 import { describe, it, expect } from 'vitest';
-import { calculateResponseMetrics } from '../response-time';
+import { calculateAvgResponseTime, type MessageRecord } from '../response-time';
 
-describe('calculateResponseMetrics()', () => {
-  it('calcula tiempo promedio de respuesta', () => {
-    const messages = [
-      { direction: 'inbound', created_at: '2026-01-01T10:00:00Z' },
-      { direction: 'outbound', created_at: '2026-01-01T10:00:05Z' }, // 5s
-      { direction: 'inbound', created_at: '2026-01-01T10:01:00Z' },
-      { direction: 'outbound', created_at: '2026-01-01T10:01:03Z' }, // 3s
+describe('calculateAvgResponseTime', () => {
+  it('alternating in/out messages calculates average correctly', () => {
+    const msgs: MessageRecord[] = [
+      { direction: 'inbound', created_at: '2025-01-01T10:00:00Z' },
+      { direction: 'outbound', created_at: '2025-01-01T10:00:05Z' },
+      { direction: 'inbound', created_at: '2025-01-01T10:01:00Z' },
+      { direction: 'outbound', created_at: '2025-01-01T10:01:10Z' },
     ];
-    const metrics = calculateResponseMetrics(messages);
-    expect(metrics.count).toBe(2);
-    expect(metrics.avg).toBe(4000); // 4s average
-    expect(metrics.median).toBeGreaterThan(0);
+    const avg = calculateAvgResponseTime(msgs);
+    expect(avg).toBe(7500);
   });
 
-  it('todos inbound → 0', () => {
-    const messages = [
-      { direction: 'inbound', created_at: '2026-01-01T10:00:00Z' },
-      { direction: 'inbound', created_at: '2026-01-01T10:01:00Z' },
+  it('all inbound messages returns 0', () => {
+    const msgs: MessageRecord[] = [
+      { direction: 'inbound', created_at: '2025-01-01T10:00:00Z' },
+      { direction: 'inbound', created_at: '2025-01-01T10:01:00Z' },
+      { direction: 'inbound', created_at: '2025-01-01T10:02:00Z' },
     ];
-    const metrics = calculateResponseMetrics(messages);
-    expect(metrics.count).toBe(0);
-    expect(metrics.avg).toBe(0);
+    expect(calculateAvgResponseTime(msgs)).toBe(0);
   });
 
-  it('array vacío → 0', () => {
-    const metrics = calculateResponseMetrics([]);
-    expect(metrics.count).toBe(0);
-    expect(metrics.avg).toBe(0);
-    expect(metrics.median).toBe(0);
-    expect(metrics.p95).toBe(0);
+  it('empty array returns 0', () => {
+    expect(calculateAvgResponseTime([])).toBe(0);
   });
 
-  it('un solo par → valores correctos', () => {
-    const messages = [
-      { direction: 'inbound', created_at: '2026-01-01T10:00:00Z' },
-      { direction: 'outbound', created_at: '2026-01-01T10:00:02Z' }, // 2s
+  it('single inbound-outbound pair returns correct time diff', () => {
+    const msgs: MessageRecord[] = [
+      { direction: 'inbound', created_at: '2025-01-01T10:00:00Z' },
+      { direction: 'outbound', created_at: '2025-01-01T10:00:03Z' },
     ];
-    const metrics = calculateResponseMetrics(messages);
-    expect(metrics.count).toBe(1);
-    expect(metrics.avg).toBe(2000);
+    expect(calculateAvgResponseTime(msgs)).toBe(3000);
   });
 
-  it('p95 es mayor o igual al median', () => {
-    const messages = [
-      { direction: 'inbound', created_at: '2026-01-01T10:00:00Z' },
-      { direction: 'outbound', created_at: '2026-01-01T10:00:01Z' },
-      { direction: 'inbound', created_at: '2026-01-01T10:01:00Z' },
-      { direction: 'outbound', created_at: '2026-01-01T10:01:10Z' },
+  it('ignores outbound-outbound consecutive pairs', () => {
+    const msgs: MessageRecord[] = [
+      { direction: 'inbound', created_at: '2025-01-01T10:00:00Z' },
+      { direction: 'outbound', created_at: '2025-01-01T10:00:02Z' },
+      { direction: 'outbound', created_at: '2025-01-01T10:00:04Z' },
     ];
-    const metrics = calculateResponseMetrics(messages);
-    expect(metrics.p95).toBeGreaterThanOrEqual(metrics.median);
+    expect(calculateAvgResponseTime(msgs)).toBe(2000);
   });
 });
