@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 export async function POST(req: NextRequest) {
+  const apiKey = req.headers.get('x-retell-api-key');
+  if (apiKey !== process.env.RETELL_API_KEY) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const event = body.event;
@@ -19,9 +24,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ received: true });
-  } catch (error) {
-    console.error('Error procesando webhook Retell:', error);
-    return NextResponse.json({ received: true });
+  } catch {
+    return NextResponse.json({ error: 'Bad request' }, { status: 400 });
   }
 }
 

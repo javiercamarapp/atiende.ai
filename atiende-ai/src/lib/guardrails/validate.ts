@@ -1,10 +1,17 @@
 // Valida que la respuesta del LLM no invente informacion
 // Se ejecuta DESPUES de cada generacion, ANTES de enviar al cliente
 
+const CRISIS_MESSAGE =
+  'Entiendo que estás pasando por un momento muy difícil. Tu vida importa. ' +
+  'Por favor contacta la Línea de la Vida: 800 911 2000 (24/7) o SAPTEL: 55 5259 8121. ' +
+  'Si es una emergencia, llama al 911. ' +
+  '¿Quieres que te comunique con alguien de nuestro equipo?';
+
 export function validateResponse(
   response: string,
   tenant: { business_type: string; name: string },
-  ragContext: string
+  ragContext: string,
+  customerMessage?: string
 ): { valid: boolean; text: string } {
   let text = response;
 
@@ -49,17 +56,19 @@ export function validateResponse(
     }
   }
 
-  // ═══ CAPA 3: Protocolo de crisis (psicologia) ═══
-  if (tenant.business_type === 'psychologist') {
+  // ═══ CAPA 3: Protocolo de crisis (psicologia/medico) ═══
+  const crisisTypes = ['psychologist', 'medical'];
+  if (crisisTypes.includes(tenant.business_type)) {
     const crisisWords = [
       'quiero morirme', 'no quiero vivir', 'suicidarme',
       'me quiero matar', 'no le veo sentido', 'me corto',
       'me lastimo', 'hacerme dano', 'estarian mejor sin mi'
     ];
-    const lower = text.toLowerCase();
-    // Si el CLIENTE menciona crisis Y el bot NO incluye la linea
-    // de ayuda, forzar respuesta de crisis
-    // (esto se maneja mejor en el system prompt, pero es un safety net)
+    const inputLower = (customerMessage || '').toLowerCase();
+    const hasCrisis = crisisWords.some(w => inputLower.includes(w));
+    if (hasCrisis) {
+      return { valid: true, text: CRISIS_MESSAGE };
+    }
   }
 
   // ═══ CAPA 4: Longitud maxima WhatsApp ═══
