@@ -20,7 +20,7 @@ export default function Step4() {
 
     const savedAnswers = localStorage.getItem('ob_answers');
     if (savedAnswers) {
-      try { setAnswers(JSON.parse(savedAnswers)); } catch {}
+      try { setAnswers(JSON.parse(savedAnswers)); } catch (err) { console.error('Parse error:', err); }
     }
   }, []);
 

@@ -9,6 +9,10 @@ export async function POST(req: NextRequest) {
     if (!user || authError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const { checkApiRateLimit } = await import('@/lib/api-rate-limit');
+    if (await checkApiRateLimit(`${user.id}:test_bot`, 10, 60)) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
 
     const body = await req.json();
     const { message, businessType, businessInfo, answers } = body;
