@@ -236,6 +236,19 @@ REGLAS PARA EL PROMPT:
     // 7. INSERTAR DASHBOARD CONFIG (si no existe)
     // Los dashboard configs se pre-insertan via SQL seed
 
+    // 8. ENVIAR EMAIL DE BIENVENIDA
+    try {
+      const { sendEmail } = await import('@/lib/email/send');
+      const { welcomeEmail } = await import('@/lib/email/templates');
+      if (businessInfo.email) {
+        const { subject, html } = welcomeEmail(businessInfo.name, businessInfo.ownerName || '');
+        await sendEmail({ to: businessInfo.email, subject, html });
+      }
+    } catch (emailErr) {
+      // Non-blocking — agent creation should succeed even if email fails
+      console.error('Welcome email failed:', emailErr);
+    }
+
     return NextResponse.json({ success: true, tenantId: tenant.id });
 
   } catch (error: unknown) {
