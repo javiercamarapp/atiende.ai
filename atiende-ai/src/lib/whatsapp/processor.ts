@@ -7,7 +7,53 @@ import { sendTextMessage, markAsRead } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
 import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
 
-export async function processIncomingMessage(body: any) {
+function sanitizeInput(input: string): string {
+  return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
+}
+
+interface WhatsAppWebhookBody {
+  entry?: Array<{
+    changes?: Array<{
+      value: {
+        messages?: WhatsAppMessage[];
+        metadata: { phone_number_id: string; display_phone_number: string };
+      };
+    }>;
+  }>;
+}
+
+interface WhatsAppMessage {
+  id: string;
+  from: string;
+  type: string;
+  text?: { body: string };
+  audio?: { id: string };
+  image?: { caption?: string };
+  document?: { filename?: string };
+  location?: { latitude: number; longitude: number };
+  interactive?: {
+    type: string;
+    button_reply?: { title: string };
+    list_reply?: { title: string };
+  };
+  contacts?: Array<{ profile?: { name?: string } }>;
+}
+
+interface TenantRecord {
+  id: string;
+  name: string;
+  status: string;
+  plan: string;
+  business_type?: string;
+  wa_phone_number_id: string;
+  welcome_message?: string;
+  chat_system_prompt?: string;
+  temperature?: number;
+  address?: string;
+  [key: string]: unknown;
+}
+
+export async function processIncomingMessage(body: WhatsAppWebhookBody) {
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value;
@@ -23,7 +69,7 @@ export async function processIncomingMessage(body: any) {
 }
 
 async function handleSingleMessage(
-  msg: any,
+  msg: WhatsAppMessage,
   metadata: { phone_number_id: string; display_phone_number: string }
 ) {
   const senderPhone = msg.from; // numero del cliente
@@ -68,28 +114,28 @@ async function handleSingleMessage(
 
   switch (msg.type) {
     case 'text':
-      content = msg.text.body;
+      content = msg.text?.body || '';
       break;
     case 'audio':
-      content = await transcribeAudio(msg.audio.id);
+      content = msg.audio?.id ? await transcribeAudio(msg.audio.id) : '[Audio no disponible]';
       messageType = 'audio';
       break;
     case 'image':
-      content = msg.image.caption
+      content = msg.image?.caption
         ? `[Imagen: ${msg.image.caption}]`
         : '[Imagen recibida]';
       break;
     case 'document':
-      content = `[Documento: ${msg.document.filename || 'archivo'}]`;
+      content = `[Documento: ${msg.document?.filename || 'archivo'}]`;
       break;
     case 'location':
-      content = `[Ubicacion: ${msg.location.latitude},${msg.location.longitude}]`;
+      content = `[Ubicacion: ${msg.location?.latitude},${msg.location?.longitude}]`;
       break;
     case 'interactive':
       if (msg.interactive?.type === 'button_reply') {
-        content = msg.interactive.button_reply.title;
+        content = msg.interactive.button_reply?.title || '';
       } else if (msg.interactive?.type === 'list_reply') {
-        content = msg.interactive.list_reply.title;
+        content = msg.interactive.list_reply?.title || '';
       }
       break;
     case 'sticker':
@@ -99,6 +145,7 @@ async function handleSingleMessage(
       content = `[${msg.type} recibido]`;
   }
 
+  content = sanitizeInput(content);
   if (!content || content.length < 1) return;
 
   // ═══ 4. OBTENER O CREAR CONTACTO ═══
@@ -269,7 +316,7 @@ async function handleSingleMessage(
 
 // ═══ CONSTRUIR SYSTEM PROMPT ═══
 function buildSystemPrompt(
-  tenant: any, ragContext: string, intent: string, customerName?: string | null
+  tenant: TenantRecord, ragContext: string, intent: string, customerName?: string | null
 ): string {
   return `${tenant.chat_system_prompt || getDefaultPrompt(tenant)}
 
@@ -286,7 +333,7 @@ ${customerName ? `NOMBRE DEL CLIENTE: ${customerName}` : ''}
 - Espanol mexicano, "usted" siempre`;
 }
 
-function getDefaultPrompt(tenant: any): string {
+function getDefaultPrompt(tenant: TenantRecord): string {
   return `Eres el asistente virtual de ${tenant.name}${tenant.address ? ` en ${tenant.address}` : ''}.
 Hablas espanol mexicano natural. Usas "usted" siempre.
 Eres calido, profesional y servicial.

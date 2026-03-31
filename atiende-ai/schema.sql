@@ -466,4 +466,15 @@ INSERT INTO marketplace_agents (slug, name, description, category, icon, price_m
 ('inventario', 'Inventario', 'Verifica stock al recibir pedido', 'ops', '📦', 299, 'event', '{"event":"order.new"}', 'pro'),
 ('calificador', 'Calificador de Leads', 'BANT scoring automático 0-100', 'ventas', '🎯', 399, 'event', '{"event":"conversation.new"}', 'pro'),
 ('upselling', 'Upselling', 'Recomienda servicios complementarios', 'ventas', '💎', 299, 'event', '{"event":"appointment.completed"}', 'basic'),
-('redes_sociales', 'Redes Sociales', 'Responde comentarios y redirige a WhatsApp', 'marketing', '📱', 399, 'event', '{"event":"social.comment"}', 'pro');
+('redes_sociales', 'Redes Sociales', 'Responde comentarios y redirige a WhatsApp', 'marketing', '📱', 399, 'event', '{"event":"social.comment"}', 'pro'),
+-- 10 NEW high-value agents
+('confirmacion_cita', 'Confirmación de Cita', 'Envía botones Confirmar/Cancelar/Reagendar 24h antes', 'ops', '✅', 199, 'cron', '{"schedule":"0 10 * * *"}', 'basic'),
+('lista_espera', 'Lista de Espera', 'Cuando se cancela cita, notifica al siguiente en lista', 'ops', '⏳', 299, 'event', '{"event":"appointment.cancelled"}', 'pro'),
+('menu_catalogo', 'Menú/Catálogo', 'Envía menú PDF o lista de servicios cuando cliente pregunta', 'ventas', '📄', 199, 'event', '{"event":"intent.menu_request"}', 'basic'),
+('link_pago', 'Link de Pago', 'Genera y envía link de pago OXXO/SPEI/tarjeta por WhatsApp', 'cobranza', '💳', 399, 'event', '{"event":"appointment.completed"}', 'pro'),
+('direcciones', 'Direcciones Google Maps', 'Envía ubicación del negocio cuando cliente pregunta cómo llegar', 'ops', '📍', 99, 'event', '{"event":"intent.location"}', 'basic'),
+('happy_hour', 'Promociones Programadas', 'Envía ofertas en horarios específicos (happy hour, martes 2x1)', 'marketing', '🎉', 299, 'cron', '{"schedule":"0 16 * * 1-5"}', 'pro'),
+('rendimiento_staff', 'Rendimiento de Staff', 'Reporte semanal de citas/pedidos por empleado', 'analytics', '👥', 349, 'cron', '{"schedule":"0 9 * * 1"}', 'pro'),
+('nurturing', 'Lead Nurturing', 'Secuencia automática día 1, 3, 7, 14 para leads no convertidos', 'ventas', '🌱', 499, 'event', '{"event":"lead.new"}', 'premium'),
+('respuesta_resenas', 'Respuesta a Reseñas', 'Auto-genera respuestas profesionales a reseñas Google', 'marketing', '💬', 349, 'event', '{"event":"review.new"}', 'pro'),
+('horario_fuera', 'Fuera de Horario', 'Mensaje personalizado fuera de horario con próxima apertura', 'ops', '🌙', 149, 'event', '{"event":"message.after_hours"}', 'basic');
