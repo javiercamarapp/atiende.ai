@@ -17,7 +17,7 @@ export default function Step3() {
   useEffect(() => {
     const saved = localStorage.getItem('ob_business_info');
     if (saved) {
-      try { setForm(JSON.parse(saved)); } catch {}
+      try { setForm(JSON.parse(saved)); } catch (err) { console.error('Parse error:', err); }
     }
   }, []);
 
