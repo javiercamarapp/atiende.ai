@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { generateResponse, selectModel, calculateCost, MODELS } from '@/lib/llm/openrouter';
+import { generateResponse, selectModel } from '@/lib/llm/openrouter';
 import { classifyIntent } from '@/lib/llm/classifier';
 import { searchKnowledge } from '@/lib/rag/search';
 import { validateResponse } from '@/lib/guardrails/validate';
@@ -55,7 +55,12 @@ async function handleSingleMessage(
   }
 
   // ═══ 2. MARCAR COMO LEIDO ═══
-  await markAsRead(phoneNumberId, messageId).catch(() => {});
+  await markAsRead(phoneNumberId, messageId).catch((err) => {
+    // Non-critical: log but do not disrupt message processing
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('markAsRead failed:', err);
+    }
+  });
 
   // ═══ 3. EXTRAER CONTENIDO DEL MENSAJE ═══
   let content = '';

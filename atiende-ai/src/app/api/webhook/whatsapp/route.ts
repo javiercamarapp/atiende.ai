@@ -10,7 +10,6 @@ export async function GET(req: NextRequest) {
   const challenge = params.get('hub.challenge');
 
   if (mode === 'subscribe' && token === process.env.WA_VERIFY_TOKEN) {
-    console.log('Webhook verificado por Meta');
     return new NextResponse(challenge, { status: 200 });
   }
   return new NextResponse('Forbidden', { status: 403 });
