@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { logWebhook } from '@/lib/webhook-logger';
 import crypto from 'crypto';
 
 function verifyConektaSignature(
@@ -19,6 +20,7 @@ function verifyConektaSignature(
 }
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('digest') ?? req.headers.get('http_digest');
@@ -26,22 +28,33 @@ export async function POST(req: NextRequest) {
 
     if (!webhookKey) {
       console.error('[conekta-webhook] CONEKTA_WEBHOOK_KEY not configured');
+      logWebhook({ provider: 'conekta', eventType: 'config_error', statusCode: 500, error: 'CONEKTA_WEBHOOK_KEY not configured', durationMs: Date.now() - startTime });
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
     }
 
     const isValid = verifyConektaSignature(rawBody, signature, webhookKey);
     if (!isValid) {
       console.warn('[conekta-webhook] Invalid signature');
+      logWebhook({ provider: 'conekta', eventType: 'auth_failed', statusCode: 401, error: 'Invalid signature', durationMs: Date.now() - startTime });
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     const body = JSON.parse(rawBody);
     const eventType: string = body.type ?? '';
     const data = body.data?.object;
+    const tenantId = data?.metadata?.tenant_id;
+
+    logWebhook({
+      tenantId,
+      provider: 'conekta',
+      eventType,
+      statusCode: 200,
+      payload: { order_id: data?.id, type: eventType },
+      durationMs: Date.now() - startTime,
+    });
 
     switch (eventType) {
       case 'order.paid': {
-        const tenantId = data?.metadata?.tenant_id;
         const plan = data?.metadata?.plan;
         if (!tenantId || !plan) {
           console.warn('[conekta-webhook] order.paid missing tenant_id or plan in metadata');
@@ -60,7 +73,6 @@ export async function POST(req: NextRequest) {
       }
 
       case 'order.expired': {
-        const tenantId = data?.metadata?.tenant_id;
         if (tenantId) {
           // Log the expiration event for follow-up notifications
           await supabaseAdmin.from('audit_log').insert({
@@ -86,6 +98,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[conekta-webhook] Unexpected error:', message);
+    logWebhook({ provider: 'conekta', eventType: 'error', statusCode: 500, error: message, durationMs: Date.now() - startTime });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

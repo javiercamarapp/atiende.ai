@@ -3,7 +3,7 @@ import { generateResponse, selectModel } from '@/lib/llm/openrouter';
 import { classifyIntent } from '@/lib/llm/classifier';
 import { searchKnowledge } from '@/lib/rag/search';
 import { validateResponse } from '@/lib/guardrails/validate';
-import { sendTextMessage, markAsRead } from '@/lib/whatsapp/send';
+import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
 import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
 
@@ -259,6 +259,10 @@ async function handleSingleMessage(
 
   // ═══ 11. SELECCIONAR MODELO LLM ═══
   const model = selectModel(intent, tenant.business_type, tenant.plan);
+
+  // ═══ 11.5 SEÑAL DE ESCRITURA ═══
+  // Send typing indicator (best-effort) so the user sees "typing..."
+  sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
 
   // ═══ 12. GENERAR RESPUESTA ═══
   const startTime = Date.now();

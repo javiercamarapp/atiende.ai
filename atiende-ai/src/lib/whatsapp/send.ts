@@ -119,3 +119,22 @@ export async function markAsRead(
     { headers: getHeaders() }
   );
 }
+
+// Enviar indicador de escritura (best-effort, usa markAsRead como señal)
+export async function sendTypingIndicator(phoneNumberId: string, to: string) {
+  try {
+    await axios.post(
+      `${WA_API}/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'reaction',
+        reaction: { message_id: '', emoji: '' }
+      },
+      { headers: getHeaders() }
+    );
+  } catch {
+    // Typing indicator is best-effort, don't fail the pipeline
+  }
+}

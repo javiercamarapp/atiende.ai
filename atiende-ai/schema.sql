@@ -170,6 +170,11 @@ created_at TIMESTAMPTZ DEFAULT now()
 CREATE INDEX idx_msg_conv ON messages(conversation_id);
 CREATE INDEX idx_msg_tenant ON messages(tenant_id);
 CREATE INDEX idx_msg_created ON messages(tenant_id, created_at DESC);
+
+-- Message delivery tracking
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS wa_status TEXT DEFAULT 'sent';
+-- sent, delivered, read
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;
 -- 10. CITAS
 CREATE TABLE appointments (
 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -478,3 +483,22 @@ INSERT INTO marketplace_agents (slug, name, description, category, icon, price_m
 ('nurturing', 'Lead Nurturing', 'Secuencia automática día 1, 3, 7, 14 para leads no convertidos', 'ventas', '🌱', 499, 'event', '{"event":"lead.new"}', 'premium'),
 ('respuesta_resenas', 'Respuesta a Reseñas', 'Auto-genera respuestas profesionales a reseñas Google', 'marketing', '💬', 349, 'event', '{"event":"review.new"}', 'pro'),
 ('horario_fuera', 'Fuera de Horario', 'Mensaje personalizado fuera de horario con próxima apertura', 'ops', '🌙', 149, 'event', '{"event":"message.after_hours"}', 'basic');
+
+-- 20. WEBHOOK EVENT LOGS (debugging + observability)
+CREATE TABLE webhook_logs (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id UUID REFERENCES tenants(id),
+  provider TEXT NOT NULL, -- 'whatsapp', 'stripe', 'conekta', 'retell'
+  event_type TEXT, -- 'message', 'status', 'checkout.completed', 'call_ended'
+  direction TEXT DEFAULT 'inbound', -- 'inbound', 'outbound'
+  status_code INT,
+  payload JSONB,
+  error TEXT,
+  duration_ms INT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_wh_logs_tenant ON webhook_logs(tenant_id, created_at DESC);
+CREATE INDEX idx_wh_logs_provider ON webhook_logs(provider, created_at DESC);
+ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_data" ON webhook_logs FOR ALL
+USING (tenant_id = get_user_tenant_id());

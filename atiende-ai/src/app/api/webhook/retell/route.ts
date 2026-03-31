@@ -1,15 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { logWebhook } from '@/lib/webhook-logger';
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
   const apiKey = req.headers.get('x-retell-api-key');
   if (apiKey !== process.env.RETELL_API_KEY) {
+    logWebhook({ provider: 'retell', eventType: 'auth_failed', statusCode: 401, error: 'Invalid API key', durationMs: Date.now() - startTime });
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const body = await req.json();
     const event = body.event;
+    const tenantId = body.metadata?.tenant_id;
+
+    logWebhook({
+      tenantId,
+      provider: 'retell',
+      eventType: event,
+      statusCode: 200,
+      payload: { call_id: body.call_id, event },
+      durationMs: Date.now() - startTime,
+    });
 
     switch (event) {
       case 'call_started':
@@ -24,30 +37,32 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ received: true });
-  } catch {
+  } catch (err) {
+    logWebhook({ provider: 'retell', eventType: 'error', statusCode: 400, error: err instanceof Error ? err.message : 'Bad request', durationMs: Date.now() - startTime });
     return NextResponse.json({ error: 'Bad request' }, { status: 400 });
   }
 }
 
-async function handleCallStarted(body: any) {
-  const tenantId = body.metadata?.tenant_id;
+async function handleCallStarted(body: Record<string, unknown>) {
+  const metadata = body.metadata as Record<string, unknown> | undefined;
+  const tenantId = metadata?.tenant_id as string | undefined;
   if (!tenantId) return;
 
   await supabaseAdmin.from('voice_calls').insert({
     tenant_id: tenantId,
     retell_call_id: body.call_id,
-    direction: body.direction || 'inbound',
+    direction: (body.direction as string) || 'inbound',
     from_number: body.from_number,
     to_number: body.to_number,
     started_at: new Date().toISOString(),
-    metadata: body.metadata || {},
+    metadata: metadata || {},
   });
 }
 
-async function handleCallEnded(body: any) {
+async function handleCallEnded(body: Record<string, unknown>) {
   const updateData: Record<string, unknown> = {
     duration_seconds: body.duration_ms
-      ? Math.round(body.duration_ms / 1000)
+      ? Math.round((body.duration_ms as number) / 1000)
       : body.duration_seconds,
     ended_at: new Date().toISOString(),
     cost_usd: body.cost,
@@ -114,15 +129,16 @@ async function handleCallEnded(body: any) {
   }
 }
 
-async function handleCallAnalyzed(body: any) {
-  const analysis = body.call_analysis || {};
+async function handleCallAnalyzed(body: Record<string, unknown>) {
+  const analysis = (body.call_analysis as Record<string, unknown>) || {};
+  const customAnalysis = analysis.custom_analysis as Record<string, unknown> | undefined;
 
   await supabaseAdmin
     .from('voice_calls')
     .update({
-      summary: analysis.call_summary || analysis.summary,
+      summary: (analysis.call_summary as string) || (analysis.summary as string),
       sentiment: analysis.user_sentiment,
-      outcome: analysis.call_outcome || analysis.custom_analysis?.outcome,
+      outcome: (analysis.call_outcome as string) || customAnalysis?.outcome,
       recording_url: body.recording_url,
     })
     .eq('retell_call_id', body.call_id);
