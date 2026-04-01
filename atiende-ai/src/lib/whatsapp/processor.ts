@@ -400,6 +400,32 @@ async function handleSingleMessage(
     }
   } catch { /* Actions are best-effort — never break the pipeline */ }
 
+  // ═══ 14.6b. INDUSTRY-SPECIFIC AGENTIC ACTIONS ═══
+  try {
+    const { executeIndustryAction } = await import('@/lib/actions/industry-actions');
+    const industryResult = await executeIndustryAction({
+      tenantId: tenant.id as string,
+      phoneNumberId,
+      customerPhone: senderPhone,
+      customerName: conv?.customer_name as string || contact?.name as string || '',
+      contactId: contact?.id as string || '',
+      conversationId: conv?.id as string || '',
+      businessType: tenant.business_type as string,
+      tenant,
+      intent,
+      content,
+    });
+    if (industryResult.acted && industryResult.message) {
+      await sendTextMessage(phoneNumberId, senderPhone, industryResult.message);
+      await supabaseAdmin.from('messages').insert({
+        conversation_id: conv!.id, tenant_id: tenant.id,
+        direction: 'outbound', sender_type: 'bot',
+        content: industryResult.message, message_type: 'text',
+        intent: `industry.${tenant.business_type}`,
+      });
+    }
+  } catch { /* best effort */ }
+
   // ═══ 14.7. UPDATE LEAD SCORE ═══
   try {
     const { updateLeadScore } = await import('@/lib/actions/lead-scoring');
