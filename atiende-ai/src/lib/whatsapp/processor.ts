@@ -340,6 +340,32 @@ async function handleSingleMessage(
     },
   });
 
+  // ═══ 14.5. EXECUTE AGENTIC ACTION ═══
+  try {
+    const { executeAction } = await import('@/lib/actions/engine');
+    const actionResult = await executeAction({
+      tenantId: tenant.id as string,
+      phoneNumberId,
+      customerPhone: senderPhone,
+      customerName: conv?.customer_name as string || contact?.name as string || '',
+      contactId: contact?.id as string || '',
+      conversationId: conv?.id as string || '',
+      intent,
+      content,
+      businessType: tenant.business_type as string,
+      tenant,
+    });
+    if (actionResult.actionTaken && actionResult.followUpMessage) {
+      await sendTextMessage(phoneNumberId, senderPhone, actionResult.followUpMessage);
+      await supabaseAdmin.from('messages').insert({
+        conversation_id: conv!.id, tenant_id: tenant.id,
+        direction: 'outbound', sender_type: 'bot',
+        content: actionResult.followUpMessage, message_type: 'text',
+        intent: `action.${actionResult.actionType}`,
+      });
+    }
+  } catch { /* Actions are best-effort — never break the pipeline */ }
+
   // ═══ 15. GUARDAR MENSAJE SALIENTE + METRICAS ═══
   await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
