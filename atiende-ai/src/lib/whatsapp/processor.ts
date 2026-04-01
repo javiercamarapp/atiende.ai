@@ -135,6 +135,21 @@ async function handleSingleMessage(
     return;
   }
 
+  // ═══ 1.7. CHECK BUSINESS HOURS — After-hours interception ═══
+  try {
+    const { isBusinessOpen, getNextOpenTime } = await import('@/lib/actions/business-hours');
+    const hours = tenant.business_hours as Record<string, string> | null;
+    if (!isBusinessOpen(hours)) {
+      const nextOpen = getNextOpenTime(hours);
+      await sendTextMessage(phoneNumberId, senderPhone,
+        `🌙 Gracias por escribirnos. En este momento estamos fuera de horario. Abrimos ${nextOpen}. Le responderemos a primera hora. ¡Que tenga buena noche!`
+      );
+      // Save message but don't process with LLM
+      // Note: conv not yet created at this point, skip message save
+      return;
+    }
+  } catch { /* Best effort — continue processing if hours check fails */ }
+
   // ═══ 2. MARCAR COMO LEIDO ═══
   await markAsRead(phoneNumberId, messageId).catch((err) => {
     // Non-critical: log but do not disrupt message processing
@@ -364,7 +379,32 @@ async function handleSingleMessage(
         intent: `action.${actionResult.actionType}`,
       });
     }
+
+    // ═══ 14.6. NOTIFY OWNER for critical actions ═══
+    if (actionResult.actionTaken && ['order.created', 'complaint.escalated', 'emergency.escalated', 'crisis.detected', 'appointment.created'].includes(actionResult.actionType || '')) {
+      try {
+        const { notifyOwner } = await import('@/lib/actions/notifications');
+        const eventMap: Record<string, 'new_order' | 'new_appointment' | 'complaint' | 'emergency' | 'crisis'> = {
+          'order.created': 'new_order',
+          'complaint.escalated': 'complaint',
+          'emergency.escalated': 'emergency',
+          'crisis.detected': 'crisis',
+          'appointment.created': 'new_appointment',
+        };
+        await notifyOwner({
+          tenantId: tenant.id as string,
+          event: eventMap[actionResult.actionType!] || 'new_order',
+          details: `Cliente: ${senderPhone}\n${actionResult.followUpMessage?.slice(0, 200) || ''}`,
+        });
+      } catch { /* best effort */ }
+    }
   } catch { /* Actions are best-effort — never break the pipeline */ }
+
+  // ═══ 14.7. UPDATE LEAD SCORE ═══
+  try {
+    const { updateLeadScore } = await import('@/lib/actions/lead-scoring');
+    await updateLeadScore(contact?.id as string || '', intent);
+  } catch { /* best effort */ }
 
   // ═══ 15. GUARDAR MENSAJE SALIENTE + METRICAS ═══
   await supabaseAdmin.from('messages').insert({
