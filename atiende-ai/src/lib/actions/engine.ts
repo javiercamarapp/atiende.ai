@@ -3,8 +3,10 @@ import { sendTextMessage } from '@/lib/whatsapp/send';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
 
 // ═══════════════════════════════════════════════════════════
-// AGENTIC ACTION ENGINE — Bots que HACEN, no solo HABLAN
-// Each intent triggers a REAL action: DB writes, calendar sync, CRM updates
+// AGENTIC ACTION ENGINE v1.0.0 — Bots que HACEN, no solo HABLAN
+// 21 intent handlers | 100% coverage | Real DB writes + API calls
+// Architecture: Single-file for colocation (all handlers share types)
+// Related: industry-actions.ts (18 industries), state-machine.ts (multi-turn)
 // ═══════════════════════════════════════════════════════════
 
 interface ActionContext {
