@@ -432,6 +432,25 @@ async function handleSingleMessage(
     await updateLeadScore(contact?.id as string || '', intent);
   } catch { /* best effort */ }
 
+  // ═══ 14.8. HOT LEAD ROUTING — Notify owner when lead becomes hot ═══
+  try {
+    if (contact?.id) {
+      const { data: updatedContact } = await supabaseAdmin
+        .from('contacts')
+        .select('lead_score, lead_temperature')
+        .eq('id', contact.id)
+        .single();
+      if (updatedContact?.lead_temperature === 'hot' && updatedContact.lead_score >= 70) {
+        const { notifyOwner } = await import('@/lib/actions/notifications');
+        await notifyOwner({
+          tenantId: tenant.id as string,
+          event: 'lead_hot',
+          details: `🔥 LEAD CALIENTE (Score: ${updatedContact.lead_score}/100)\n\nCliente: ${contact.name || senderPhone}\nTel: ${senderPhone}\nÚltimo intent: ${intent}\n\n¡Contacte a este cliente AHORA!`,
+        });
+      }
+    }
+  } catch { /* best effort */ }
+
   // ═══ 15. GUARDAR MENSAJE SALIENTE + METRICAS ═══
   await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
