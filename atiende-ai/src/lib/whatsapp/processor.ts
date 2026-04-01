@@ -323,8 +323,22 @@ async function handleSingleMessage(
   const validation = validateResponse(result.text, tenant, ragContext, content);
   const finalText = validation.valid ? validation.text : validation.text;
 
-  // ═══ 14. ENVIAR RESPUESTA POR WHATSAPP ═══
-  await sendTextMessage(phoneNumberId, senderPhone, finalText);
+  // ═══ 14. ENVIAR RESPUESTA POR WHATSAPP (SMART) ═══
+  const { sendSmartResponse } = await import('@/lib/whatsapp/smart-response');
+  await sendSmartResponse({
+    phoneNumberId,
+    to: senderPhone,
+    text: finalText,
+    intent,
+    tenant: {
+      name: tenant.name as string,
+      phone: tenant.phone as string | undefined,
+      lat: tenant.lat ? Number(tenant.lat) : undefined,
+      lng: tenant.lng ? Number(tenant.lng) : undefined,
+      address: tenant.address as string | undefined,
+      business_type: tenant.business_type as string | undefined,
+    },
+  });
 
   // ═══ 15. GUARDAR MENSAJE SALIENTE + METRICAS ═══
   await supabaseAdmin.from('messages').insert({
