@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { Redis } from '@upstash/redis'
 import { recordSuccess, recordFailure } from '@/lib/insurance/circuit-breaker'
 import type { QuoteResult, QuoteProgress } from '@/lib/insurance/types'
+import { QUOTE_EXPIRY_HOURS, REDIS_PROGRESS_TTL_SECONDS } from '@/lib/insurance/constants'
 
 function getRedis() {
   return new Redis({
@@ -111,7 +112,7 @@ async function handler(req: NextRequest) {
         : null,
     }
 
-    await getRedis().set(`ins:progress:${requestId}`, JSON.stringify(progress), { ex: 3600 })
+    await getRedis().set(`ins:progress:${requestId}`, JSON.stringify(progress), { ex: REDIS_PROGRESS_TTL_SECONDS })
 
     // If all done → finalize
     if (pending.length === 0) {
@@ -129,7 +130,7 @@ async function handler(req: NextRequest) {
         carriers_succeeded: succeeded.length,
         carriers_failed: failed.length,
         completed_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + QUOTE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString(),
       }).eq('id', requestId)
     } else {
       await supabaseAdmin.from('ins_quote_requests').update({

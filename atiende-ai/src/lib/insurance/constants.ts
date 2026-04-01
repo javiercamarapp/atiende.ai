@@ -60,6 +60,41 @@ export const INSURANCE_LINE_LABELS: Record<string, string> = {
   negocio: 'Seguro de Negocio',
 }
 
+export const INSURANCE_LINE_LABELS_SHORT: Record<string, string> = {
+  auto: 'Auto',
+  vida: 'Vida',
+  gastos_medicos: 'GMM',
+  hogar: 'Hogar',
+  negocio: 'Negocio',
+}
+
+export const QUOTE_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pendiente',
+  validating: 'Validando',
+  quoting: 'Cotizando...',
+  partial: 'Parcial',
+  complete: 'Completada',
+  expired: 'Expirada',
+  error: 'Error',
+}
+
+export const POLICY_STATUS_LABELS: Record<string, string> = {
+  active: 'Activa',
+  pending_payment: 'Pago pendiente',
+  cancelled: 'Cancelada',
+  expired: 'Vencida',
+  renewed: 'Renovada',
+}
+
+export const HEALTH_STATUS_LABELS: Record<string, string> = {
+  healthy: 'Operativo',
+  degraded: 'Degradado',
+  down: 'Caído',
+}
+
+export const SSE_MAX_LIFETIME_MS = 3 * 60 * 1000  // 3 minutes
+export const REDIS_PROGRESS_TTL_SECONDS = 3600     // 1 hour
+
 // Ranking weights
 export const RANKING_WEIGHTS = {
   price: 0.40,

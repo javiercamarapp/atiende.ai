@@ -1,5 +1,6 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Shield } from 'lucide-react'
+import { INSURANCE_LINE_LABELS_SHORT, POLICY_STATUS_LABELS } from '@/lib/insurance/constants'
 
 export default async function InsurancePoliciesPage() {
   const supabase = await createServerSupabase()
@@ -46,7 +47,7 @@ export default async function InsurancePoliciesPage() {
                       {(p.ins_carriers as Record<string, string>)?.name} — #{p.policy_number}
                     </p>
                     <p className="text-sm text-zinc-500">
-                      {p.insurance_line === 'auto' ? 'Auto' : p.insurance_line}
+                      {INSURANCE_LINE_LABELS_SHORT[p.insurance_line] ?? p.insurance_line}
                       {p.total_premium && ` — $${Number(p.total_premium).toLocaleString('es-MX')} MXN`}
                     </p>
                   </div>
@@ -56,9 +57,7 @@ export default async function InsurancePoliciesPage() {
                       p.status === 'expired' ? 'bg-red-50 text-red-700' :
                       'bg-zinc-100 text-zinc-600'
                     }`}>
-                      {p.status === 'active' ? 'Activa' :
-                       p.status === 'expired' ? 'Vencida' :
-                       p.status === 'pending_payment' ? 'Pago pendiente' : p.status}
+                      {POLICY_STATUS_LABELS[p.status] ?? p.status}
                     </span>
                     {daysToRenewal <= 30 && daysToRenewal >= 0 && (
                       <p className="text-xs text-amber-600 mt-1">

@@ -1,5 +1,6 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { FileText } from 'lucide-react'
+import { INSURANCE_LINE_LABELS, QUOTE_STATUS_LABELS } from '@/lib/insurance/constants'
 
 export default async function InsuranceQuotesPage() {
   const supabase = await createServerSupabase()
@@ -40,7 +41,7 @@ export default async function InsuranceQuotesPage() {
                 <div>
                   <p className="font-medium">{q.client_name}</p>
                   <p className="text-sm text-zinc-500">
-                    {q.insurance_line === 'auto' ? 'Seguro de Auto' : q.insurance_line}
+                    {INSURANCE_LINE_LABELS[q.insurance_line] ?? q.insurance_line}
                     {q.vehicle_brand && ` — ${q.vehicle_brand} ${q.vehicle_model} ${q.vehicle_year}`}
                   </p>
                 </div>
@@ -51,10 +52,7 @@ export default async function InsuranceQuotesPage() {
                     q.status === 'error' ? 'bg-red-50 text-red-700' :
                     'bg-zinc-100 text-zinc-600'
                   }`}>
-                    {q.status === 'complete' ? 'Completada' :
-                     q.status === 'quoting' ? 'Cotizando...' :
-                     q.status === 'partial' ? 'Parcial' :
-                     q.status === 'error' ? 'Error' : q.status}
+                    {QUOTE_STATUS_LABELS[q.status] ?? q.status}
                   </span>
                   <p className="text-xs text-zinc-400 mt-1">
                     {q.carriers_succeeded}/{q.carriers_targeted} aseguradoras

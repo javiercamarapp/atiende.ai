@@ -1,5 +1,6 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Building2, CheckCircle, XCircle } from 'lucide-react'
+import { INSURANCE_LINE_LABELS_SHORT, HEALTH_STATUS_LABELS } from '@/lib/insurance/constants'
 
 export default async function InsuranceCarriersPage() {
   const supabase = await createServerSupabase()
@@ -65,11 +66,7 @@ export default async function InsuranceCarriersPage() {
                 <p>
                   Líneas:{' '}
                   {(carrier.supported_lines as string[]).map(l =>
-                    l === 'auto' ? 'Auto' :
-                    l === 'vida' ? 'Vida' :
-                    l === 'gastos_medicos' ? 'GMM' :
-                    l === 'hogar' ? 'Hogar' :
-                    l === 'negocio' ? 'Negocio' : l
+                    INSURANCE_LINE_LABELS_SHORT[l] ?? l
                   ).join(', ')}
                 </p>
                 <p>
@@ -79,8 +76,7 @@ export default async function InsuranceCarriersPage() {
                     carrier.health_status === 'degraded' ? 'text-amber-600' :
                     'text-red-600'
                   }`}>
-                    {carrier.health_status === 'healthy' ? 'Operativo' :
-                     carrier.health_status === 'degraded' ? 'Degradado' : 'Caído'}
+                    {HEALTH_STATUS_LABELS[carrier.health_status] ?? carrier.health_status}
                   </span>
                 </p>
               </div>

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { Redis } from '@upstash/redis'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { SSE_POLL_INTERVAL_MS, SSE_HEARTBEAT_INTERVAL_MS } from '@/lib/insurance/constants'
+import { SSE_POLL_INTERVAL_MS, SSE_HEARTBEAT_INTERVAL_MS, SSE_MAX_LIFETIME_MS } from '@/lib/insurance/constants'
 
 function getRedis() {
   return new Redis({
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
           clearInterval(heartbeat)
           try { controller.close() } catch { /* already closed */ }
         }
-      }, 3 * 60 * 1000) // 3 minutes max
+      }, SSE_MAX_LIFETIME_MS)
 
       const poll = setInterval(async () => {
         if (closed) { clearInterval(poll); return }
