@@ -29,6 +29,7 @@ interface ActionResult {
 
 export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
   const handlers: Record<string, (c: ActionContext) => Promise<ActionResult>> = {
+    // Core actions (10 original)
     APPOINTMENT_NEW: handleNewAppointment,
     APPOINTMENT_MODIFY: handleModifyAppointment,
     APPOINTMENT_CANCEL: handleCancelAppointment,
@@ -39,6 +40,17 @@ export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
     EMERGENCY: handleEmergency,
     HUMAN: handleHumanRequest,
     CRISIS: handleCrisis,
+    // NEW: 10 agentic handlers for remaining intents
+    PRICE: handlePrice,
+    HOURS: handleHours,
+    LOCATION: handleLocation,
+    SERVICES_INFO: handleServicesInfo,
+    FAQ: handleFAQ,
+    REVIEW: handleReview,
+    MEDICAL_QUESTION: handleMedicalQuestion,
+    LEGAL_QUESTION: handleLegalQuestion,
+    SPAM: handleSpam,
+    THANKS: handleThanks,
   };
 
   const handler = handlers[ctx.intent];
@@ -265,4 +277,183 @@ async function handleCrisis(ctx: ActionContext): Promise<ActionResult> {
     actionTaken: true, actionType: 'crisis.detected',
     followUpMessage: 'Entiendo que estás pasando por un momento muy difícil. Tu vida importa.\n\n📞 Línea de la Vida: 800 911 2000 (24/7)\n📞 SAPTEL: 55 5259 8121\n🚨 Emergencias: 911\n\nHe notificado a nuestro equipo para contactarte. No estás solo/a.',
   };
+}
+
+// ═══════════════════════════════════════════════════════════
+// 10 NEW AGENTIC HANDLERS — 100% intent coverage
+// ═══════════════════════════════════════════════════════════
+
+// ═══ PRICE → Query REAL prices from DB ═══
+async function handlePrice(ctx: ActionContext): Promise<ActionResult> {
+  const { data: services } = await supabaseAdmin.from('services').select('name, price, description, category').eq('tenant_id', ctx.tenantId).eq('active', true).order('category');
+  if (!services?.length) return { actionTaken: false };
+
+  const grouped = new Map<string, typeof services>();
+  for (const s of services) {
+    const cat = s.category || 'General';
+    if (!grouped.has(cat)) grouped.set(cat, []);
+    grouped.get(cat)!.push(s);
+  }
+
+  let msg = '💰 Nuestros precios:\n';
+  for (const [cat, items] of grouped) {
+    msg += `\n*${cat}*\n`;
+    for (const s of items) {
+      msg += `• ${s.name}${s.price ? ` — $${s.price} MXN` : ''}\n`;
+    }
+  }
+  msg = msg.slice(0, 580) + '\n\n¿Le gustaría agendar algún servicio?';
+
+  await updateContact(ctx, ['price_inquiry']);
+  return { actionTaken: true, actionType: 'price.lookup', details: { count: services.length }, followUpMessage: msg };
+}
+
+// ═══ HOURS → Check REAL business hours + open/closed status ═══
+async function handleHours(ctx: ActionContext): Promise<ActionResult> {
+  const hours = ctx.tenant.business_hours as Record<string, string> | null;
+  if (!hours) return { actionTaken: false };
+
+  const days = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const now = new Date();
+  const today = days[now.getDay()];
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const todayHours = hours[today];
+
+  let isOpen = false;
+  if (todayHours && todayHours !== 'cerrado') {
+    const [open, close] = todayHours.split('-');
+    isOpen = currentTime >= open && currentTime <= close;
+  }
+
+  let msg = isOpen ? '🟢 Estamos ABIERTOS\n\n' : '🔴 Estamos CERRADOS\n\n';
+  msg += '📅 Horarios:\n';
+  for (let i = 1; i <= 6; i++) {
+    const d = days[i % 7 === 0 ? 0 : i];
+    msg += `• ${dayNames[i % 7 === 0 ? 0 : i]}: ${hours[d] || 'Cerrado'}\n`;
+  }
+  if (hours.dom) msg += `• Domingo: ${hours.dom}\n`;
+
+  if (!isOpen) {
+    const tomorrow = days[(now.getDay() + 1) % 7];
+    const tomorrowHours = hours[tomorrow];
+    if (tomorrowHours && tomorrowHours !== 'cerrado') {
+      msg += `\nAbrimos mañana a las ${tomorrowHours.split('-')[0]}`;
+    }
+  }
+
+  await updateContact(ctx, ['hours_inquiry']);
+  return { actionTaken: true, actionType: 'hours.lookup', followUpMessage: msg };
+}
+
+// ═══ LOCATION → Send pin + update CRM ═══
+async function handleLocation(ctx: ActionContext): Promise<ActionResult> {
+  await updateContact(ctx, ['location_inquiry']);
+  const addr = ctx.tenant.address as string | undefined;
+  if (!addr) return { actionTaken: false };
+  return {
+    actionTaken: true, actionType: 'location.sent',
+    followUpMessage: `📍 Nos encontramos en:\n${addr}\n${ctx.tenant.city || ''}, ${ctx.tenant.state || ''}\n\n¿Necesita indicaciones para llegar?`,
+  };
+}
+
+// ═══ SERVICES_INFO → Full catalog from DB ═══
+async function handleServicesInfo(ctx: ActionContext): Promise<ActionResult> {
+  const { data: services } = await supabaseAdmin.from('services').select('name, price, duration_minutes, description').eq('tenant_id', ctx.tenantId).eq('active', true);
+  if (!services?.length) return { actionTaken: false };
+
+  let msg = `📋 Servicios de ${ctx.tenant.name}:\n\n`;
+  for (const s of services.slice(0, 10)) {
+    msg += `• *${s.name}*${s.price ? ` — $${s.price} MXN` : ''}${s.duration_minutes ? ` (${s.duration_minutes} min)` : ''}\n`;
+    if (s.description) msg += `  ${s.description.slice(0, 60)}\n`;
+  }
+  if (services.length > 10) msg += `\n...y ${services.length - 10} servicios más.`;
+  msg += '\n\n¿Le gustaría agendar alguno?';
+
+  await updateContact(ctx, ['services_inquiry']);
+  return { actionTaken: true, actionType: 'services.catalog', details: { count: services.length }, followUpMessage: msg };
+}
+
+// ═══ FAQ → Structured KB search with attribution ═══
+async function handleFAQ(ctx: ActionContext): Promise<ActionResult> {
+  // FAQ is already handled by RAG in step 10 of processor
+  // Here we just update CRM for tracking
+  await updateContact(ctx, ['faq_inquiry']);
+  return { actionTaken: false }; // Let RAG handle the response
+}
+
+// ═══ REVIEW → Send Google review link ═══
+async function handleReview(ctx: ActionContext): Promise<ActionResult> {
+  const placeId = ctx.tenant.google_place_id as string | undefined;
+  const url = placeId ? `https://search.google.com/local/writereview?placeid=${placeId}` : null;
+
+  await updateContact(ctx, ['review_interest', 'positive_sentiment']);
+
+  return {
+    actionTaken: true, actionType: 'review.link_sent',
+    followUpMessage: url
+      ? `¡Nos encantaría conocer su opinión! 🙏\n\nDeje su reseña aquí:\n${url}\n\n¡Muchas gracias por su preferencia!`
+      : '¡Muchas gracias por su interés en dejarnos una reseña! Puede encontrarnos en Google Maps buscando "' + (ctx.tenant.name as string) + '". ¡Su opinión nos ayuda mucho!',
+  };
+}
+
+// ═══ MEDICAL_QUESTION → COMPLIANCE: Escalate immediately ═══
+async function handleMedicalQuestion(ctx: ActionContext): Promise<ActionResult> {
+  const isHealth = ['dental', 'medical', 'veterinary', 'psychologist', 'pediatrician', 'gynecologist', 'ophthalmologist', 'dermatologist', 'nutritionist'].includes(ctx.businessType);
+
+  if (isHealth) {
+    await supabaseAdmin.from('conversations').update({ status: 'human_handoff', tags: ['medical_question', 'needs_professional'] }).eq('id', ctx.conversationId);
+    await updateContact(ctx, ['medical_question']);
+    return {
+      actionTaken: true, actionType: 'medical.escalated',
+      followUpMessage: 'Esa es una consulta que nuestro profesional de salud debe atender personalmente. He notificado a nuestro equipo para que le contacten. Para consultas urgentes, no dude en llamarnos o acudir directamente.',
+    };
+  }
+  return { actionTaken: false };
+}
+
+// ═══ LEGAL_QUESTION → COMPLIANCE: Escalate ═══
+async function handleLegalQuestion(ctx: ActionContext): Promise<ActionResult> {
+  await supabaseAdmin.from('conversations').update({ status: 'human_handoff', tags: ['legal_question'] }).eq('id', ctx.conversationId);
+  await updateContact(ctx, ['legal_question']);
+  return {
+    actionTaken: true, actionType: 'legal.escalated',
+    followUpMessage: 'Las consultas legales requieren atención personalizada de nuestro equipo. He comunicado su caso para que le contacten directamente.',
+  };
+}
+
+// ═══ SPAM → Auto-archive + protect ═══
+async function handleSpam(ctx: ActionContext): Promise<ActionResult> {
+  await supabaseAdmin.from('conversations').update({ status: 'archived', tags: ['spam'] }).eq('id', ctx.conversationId);
+  await supabaseAdmin.from('contacts').update({ tags: ['spam'] }).eq('id', ctx.contactId);
+  return { actionTaken: true, actionType: 'spam.archived' };
+  // No follow-up message — don't engage with spam
+}
+
+// ═══ THANKS → Positive sentiment capture + upsell opportunity ═══
+async function handleThanks(ctx: ActionContext): Promise<ActionResult> {
+  await updateContact(ctx, ['positive_sentiment']);
+  await supabaseAdmin.from('contacts').update({ lead_temperature: 'hot' }).eq('id', ctx.contactId);
+
+  // Trigger review request and upselling marketplace agents
+  try {
+    const { executeEventAgents } = await import('@/lib/marketplace/engine');
+    await executeEventAgents('review.positive', { tenant_id: ctx.tenantId, customer_phone: ctx.customerPhone, customer_name: ctx.customerName });
+  } catch { /* best effort */ }
+
+  return { actionTaken: true, actionType: 'thanks.captured' };
+  // No follow-up — the LLM already said "de nada"
+}
+
+// ═══ UTILITY: Update contact CRM record ═══
+async function updateContact(ctx: ActionContext, newTags: string[]) {
+  try {
+    const { data: contact } = await supabaseAdmin.from('contacts').select('tags').eq('id', ctx.contactId).single();
+    const existingTags = (contact?.tags as string[]) || [];
+    const mergedTags = [...new Set([...existingTags, ...newTags])];
+    await supabaseAdmin.from('contacts').update({
+      last_contact_at: new Date().toISOString(),
+      tags: mergedTags,
+    }).eq('id', ctx.contactId);
+  } catch { /* best effort */ }
 }
