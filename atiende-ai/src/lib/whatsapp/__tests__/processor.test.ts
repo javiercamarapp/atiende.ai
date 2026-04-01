@@ -85,46 +85,46 @@ const mockGenerateResponse = vi.fn(() => ({
 const mockSelectModel = vi.fn(() => 'test-model');
 
 vi.mock('@/lib/llm/openrouter', () => ({
-  generateResponse: () => mockGenerateResponse(),
-  selectModel: () => mockSelectModel(),
+  generateResponse: mockGenerateResponse,
+  selectModel: mockSelectModel,
 }));
 
 const mockClassifyIntent = vi.fn(() => 'GREETING');
 vi.mock('@/lib/llm/classifier', () => ({
-  classifyIntent: () => mockClassifyIntent(),
+  classifyIntent: mockClassifyIntent,
 }));
 
 const mockSearchKnowledge = vi.fn(() => '');
 vi.mock('@/lib/rag/search', () => ({
-  searchKnowledge: () => mockSearchKnowledge(),
+  searchKnowledge: mockSearchKnowledge,
 }));
 
 const mockValidateResponse = vi.fn(
   (text: string) => ({ valid: true, text })
 );
 vi.mock('@/lib/guardrails/validate', () => ({
-  validateResponse: (t: string) => mockValidateResponse(t),
+  validateResponse: mockValidateResponse,
 }));
 
 const mockSendTextMessage = vi.fn();
 const mockMarkAsRead = vi.fn(() => Promise.resolve());
 const mockSendTypingIndicator = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/whatsapp/send', () => ({
-  sendTextMessage: () => mockSendTextMessage(),
-  markAsRead: () => mockMarkAsRead(),
-  sendTypingIndicator: () => mockSendTypingIndicator(),
+  sendTextMessage: mockSendTextMessage,
+  markAsRead: mockMarkAsRead,
+  sendTypingIndicator: mockSendTypingIndicator,
 }));
 
 const mockTranscribeAudio = vi.fn(() => 'transcribed text');
 vi.mock('@/lib/voice/deepgram', () => ({
-  transcribeAudio: () => mockTranscribeAudio(),
+  transcribeAudio: mockTranscribeAudio,
 }));
 
 const mockCheckRateLimit = vi.fn(() => ({ allowed: true }));
 const mockCheckTenantLimit = vi.fn(() => ({ allowed: true }));
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: () => mockCheckRateLimit(),
-  checkTenantLimit: () => mockCheckTenantLimit(),
+  checkRateLimit: mockCheckRateLimit,
+  checkTenantLimit: mockCheckTenantLimit,
 }));
 
 import { processIncomingMessage } from '../processor';
