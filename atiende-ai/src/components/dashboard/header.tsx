@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Bell, LogOut, ChevronRight } from 'lucide-react';
+import { LogOut, ChevronRight } from 'lucide-react';
+import { NotificationCenter } from '@/components/dashboard/notification-center';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { createClient } from '@/lib/supabase/client';
@@ -93,7 +94,7 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
           </div>
         )}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon"><Bell className="w-4 h-4" /></Button>
+          <NotificationCenter tenantId={tenant.id} />
           <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="w-4 h-4" /></Button>
         </div>
       </div>

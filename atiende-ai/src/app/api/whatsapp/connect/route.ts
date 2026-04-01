@@ -38,10 +38,11 @@ export async function POST(request: Request) {
     // For now, return the token and let the frontend store the phone_number_id
     // In production, you'd query the WABA for phone numbers
     void sharedData;
+    // SECURITY: Never expose access_token to client — store server-side only
+    const phoneNumberId = wabaData?.data?.granular_scopes?.[0]?.target_ids?.[0] || null;
     return NextResponse.json({
       success: true,
-      access_token: tokenData.access_token,
-      phone_number_id: wabaData?.data?.granular_scopes?.[0]?.target_ids?.[0] || null,
+      phone_number_id: phoneNumberId,
     });
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
