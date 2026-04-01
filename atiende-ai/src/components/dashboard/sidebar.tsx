@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, MessageSquare, Calendar, ShoppingBag, Users, Phone, Bot, BookOpen, BarChart3, Settings, TrendingUp, Menu } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Calendar, ShoppingBag, Users, Phone, Bot, BookOpen, BarChart3, Settings, TrendingUp, Menu, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,12 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 const ICONS: Record<string,any> = {
   dashboard:LayoutDashboard, conversations:MessageSquare, appointments:Calendar,
   orders:ShoppingBag, leads:Users, calls:Phone, agents:Bot,
-  knowledge:BookOpen, analytics:BarChart3, settings:Settings,
+  knowledge:BookOpen, analytics:BarChart3, insurance:Shield, settings:Settings,
 };
 const LABELS: Record<string,string> = {
   dashboard:'Dashboard', conversations:'Conversaciones', appointments:'Citas',
   orders:'Pedidos', leads:'Leads', calls:'Llamadas', agents:'Agents Marketplace',
-  knowledge:'Base Conocimiento', analytics:'Analytics', settings:'Configuracion',
+  knowledge:'Base Conocimiento', analytics:'Analytics', insurance:'Seguros', settings:'Configuracion',
 };
 
 function SidebarContent({ tenant, modules, path, onNavigate }: { tenant:any; modules:string[]; path:string; onNavigate?:()=>void }) {
