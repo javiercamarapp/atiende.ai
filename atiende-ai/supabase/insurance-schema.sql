@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS ins_quote_requests (
 CREATE INDEX IF NOT EXISTS idx_ins_qr_tenant ON ins_quote_requests(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ins_qr_status ON ins_quote_requests(status);
 CREATE INDEX IF NOT EXISTS idx_ins_qr_created ON ins_quote_requests(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ins_qr_phone ON ins_quote_requests(tenant_id, client_phone);
 
 ALTER TABLE ins_quote_requests ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "tenant_quotes_policy" ON ins_quote_requests

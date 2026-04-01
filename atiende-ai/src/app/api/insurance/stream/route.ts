@@ -67,6 +67,18 @@ export async function GET(req: NextRequest) {
       send('connected', { request_id: requestId })
 
       let lastCompleted = 0
+      let lastFailed = 0
+
+      // SECURITY: Max SSE lifetime to prevent infinite connections
+      const maxLifetime = setTimeout(() => {
+        if (!closed) {
+          send('timeout', { message: 'Stream max lifetime reached' })
+          closed = true
+          clearInterval(poll)
+          clearInterval(heartbeat)
+          try { controller.close() } catch { /* already closed */ }
+        }
+      }, 3 * 60 * 1000) // 3 minutes max
 
       const poll = setInterval(async () => {
         if (closed) { clearInterval(poll); return }
@@ -77,8 +89,9 @@ export async function GET(req: NextRequest) {
 
           const progress = typeof raw === 'string' ? JSON.parse(raw) : raw
 
-          if (progress.completed > lastCompleted || progress.failed > 0) {
+          if (progress.completed > lastCompleted || progress.failed > lastFailed) {
             lastCompleted = progress.completed
+            lastFailed = progress.failed
             send('progress', progress)
           }
 
@@ -109,6 +122,7 @@ export async function GET(req: NextRequest) {
         closed = true
         clearInterval(poll)
         clearInterval(heartbeat)
+        clearTimeout(maxLifetime)
         try { controller.close() } catch { /* already closed */ }
       })
     },

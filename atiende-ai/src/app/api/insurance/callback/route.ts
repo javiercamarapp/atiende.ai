@@ -69,8 +69,8 @@ async function handler(req: NextRequest) {
       .eq('quote_request_id', requestId)
       .eq('carrier_id', carrier.id)
 
-    // Update circuit breaker
-    if (result.status === 'success') {
+    // Update circuit breaker (declined is NOT a carrier failure)
+    if (result.status === 'success' || result.status === 'declined') {
       await recordSuccess(result.carrier_slug)
     } else {
       await recordFailure(result.carrier_slug)

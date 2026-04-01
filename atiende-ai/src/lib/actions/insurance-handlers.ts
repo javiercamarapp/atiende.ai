@@ -7,6 +7,8 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { sendTextMessage } from '@/lib/whatsapp/send'
 import { generateResponse, MODELS } from '@/lib/llm/openrouter'
 import { INSURANCE_LINE_LABELS, COVERAGE_LABELS } from '@/lib/insurance/constants'
+import { isCircuitOpen } from '@/lib/insurance/circuit-breaker'
+import { Client } from '@upstash/qstash'
 
 interface ActionContext {
   tenantId: string
@@ -154,6 +156,75 @@ Datos críticos para vida: nombre, fecha nacimiento, género.`,
     .select('id')
     .single()
 
+  // Step 5: Trigger fan-out to carriers via QStash
+  if (quoteReq?.id && process.env.INSURANCE_WORKER_URL && process.env.QSTASH_TOKEN) {
+    const qstash = new Client({ token: process.env.QSTASH_TOKEN })
+    const workerUrl = process.env.INSURANCE_WORKER_URL
+    const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+    // Get eligible carriers with credentials
+    const { data: creds } = await supabaseAdmin
+      .from('ins_carrier_credentials')
+      .select('*, ins_carriers(*)')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('is_active', true)
+
+    const eligible = (creds ?? []).filter((c: Record<string, unknown>) => {
+      const carrier = c.ins_carriers as Record<string, unknown>
+      return carrier?.is_active &&
+        (carrier.supported_lines as string[])?.includes(line) &&
+        carrier.health_status !== 'down'
+    })
+
+    // Create individual quote records
+    if (eligible.length > 0) {
+      await supabaseAdmin.from('ins_quotes').insert(
+        eligible.map((c: Record<string, unknown>) => ({
+          quote_request_id: quoteReq.id,
+          tenant_id: ctx.tenantId,
+          carrier_id: c.carrier_id,
+          status: 'pending',
+        }))
+      )
+
+      await supabaseAdmin.from('ins_quote_requests')
+        .update({ status: 'quoting', carriers_targeted: eligible.length })
+        .eq('id', quoteReq.id)
+
+      // Fan-out to workers
+      await Promise.allSettled(
+        eligible.map(async (cred: Record<string, unknown>) => {
+          const carrier = cred.ins_carriers as Record<string, unknown>
+          if (await isCircuitOpen(carrier.slug as string)) return
+
+          return qstash.publishJSON({
+            url: `${workerUrl}/quote`,
+            body: {
+              request_id: quoteReq.id,
+              tenant_id: ctx.tenantId,
+              carrier_slug: carrier.slug,
+              carrier_portal_url: carrier.portal_url,
+              carrier_portal_type: carrier.portal_type,
+              insurance_line: line,
+              client_data: clientData,
+              vehicle_data: vehicleData,
+              coverage_type: data.coverage_type || 'amplia',
+              credentials: {
+                username: cred.encrypted_username,
+                password: cred.encrypted_password,
+                agent_number: cred.agent_number ?? undefined,
+              },
+            },
+            retries: 2,
+            callback: `${appUrl}/api/insurance/callback`,
+            failureCallback: `${appUrl}/api/insurance/callback`,
+            headers: { 'x-worker-secret': process.env.INSURANCE_WORKER_SECRET! },
+          })
+        })
+      )
+    }
+  }
+
   const coverageLabel = COVERAGE_LABELS[(data.coverage_type as string) || 'amplia'] || 'Cobertura Amplia'
   const vehicleInfo = vehicleData.brand
     ? `${vehicleData.brand} ${vehicleData.model} ${vehicleData.year}`
@@ -244,12 +315,19 @@ export async function handleInsuranceStatus(ctx: ActionContext): Promise<ActionR
 
 // ═══ INSURANCE POLICY — Check policies ═══
 export async function handleInsurancePolicy(ctx: ActionContext): Promise<ActionResult> {
-  const { data: policies } = await supabaseAdmin
+  // Filter policies by contact_id if available, otherwise show tenant's policies
+  let query = supabaseAdmin
     .from('ins_policies')
     .select('*, ins_carriers(name)')
     .eq('tenant_id', ctx.tenantId)
     .order('end_date', { ascending: true })
     .limit(5)
+
+  if (ctx.contactId) {
+    query = query.eq('contact_id', ctx.contactId)
+  }
+
+  const { data: policies } = await query
 
   if (!policies || policies.length === 0) {
     await sendTextMessage(
