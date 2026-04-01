@@ -7,28 +7,9 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { sendTextMessage } from '@/lib/whatsapp/send'
 import { generateResponse, MODELS } from '@/lib/llm/openrouter'
 import { INSURANCE_LINE_LABELS, COVERAGE_LABELS } from '@/lib/insurance/constants'
-import { isCircuitOpen } from '@/lib/insurance/circuit-breaker'
-import { Client } from '@upstash/qstash'
-
-interface ActionContext {
-  tenantId: string
-  phoneNumberId: string
-  customerPhone: string
-  customerName: string
-  contactId: string
-  conversationId: string
-  intent: string
-  content: string
-  businessType: string
-  tenant: Record<string, unknown>
-}
-
-interface ActionResult {
-  actionTaken: boolean
-  actionType?: string
-  details?: Record<string, unknown>
-  followUpMessage?: string
-}
+import { fanOutQuoteToCarriers } from '@/lib/insurance/fan-out'
+import { setConversationState, clearConversationState } from '@/lib/actions/state-machine'
+import type { ActionContext, ActionResult } from '@/lib/actions/types'
 
 // ═══ INSURANCE QUOTE — Extract data & trigger multi-carrier quoting ═══
 export async function handleInsuranceQuote(ctx: ActionContext): Promise<ActionResult> {
@@ -94,6 +75,13 @@ Datos críticos para vida: nombre, fecha nacimiento, género.`,
 
     await sendTextMessage(ctx.phoneNumberId, ctx.customerPhone, askMsg)
 
+    // Save partial data so the next message can merge with it
+    await setConversationState(ctx.conversationId, 'awaiting_insurance_data', {
+      insurance_line: line,
+      missing,
+      extracted: data,
+    })
+
     return {
       actionTaken: true,
       actionType: 'insurance_quote_collecting',
@@ -156,73 +144,20 @@ Datos críticos para vida: nombre, fecha nacimiento, género.`,
     .select('id')
     .single()
 
-  // Step 5: Trigger fan-out to carriers via QStash
+  // Step 5: Trigger fan-out to carriers via shared helper
   if (quoteReq?.id && process.env.INSURANCE_WORKER_URL && process.env.QSTASH_TOKEN) {
-    const qstash = new Client({ token: process.env.QSTASH_TOKEN })
-    const workerUrl = process.env.INSURANCE_WORKER_URL
-    const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-
-    // Get eligible carriers with credentials
-    const { data: creds } = await supabaseAdmin
-      .from('ins_carrier_credentials')
-      .select('*, ins_carriers(*)')
-      .eq('tenant_id', ctx.tenantId)
-      .eq('is_active', true)
-
-    const eligible = (creds ?? []).filter((c: Record<string, unknown>) => {
-      const carrier = c.ins_carriers as Record<string, unknown>
-      return carrier?.is_active &&
-        (carrier.supported_lines as string[])?.includes(line) &&
-        carrier.health_status !== 'down'
+    await fanOutQuoteToCarriers({
+      requestId: quoteReq.id,
+      tenantId: ctx.tenantId,
+      insuranceLine: line,
+      clientData,
+      vehicleData,
+      coverageType: (data.coverage_type as string) || 'amplia',
     })
 
-    // Create individual quote records
-    if (eligible.length > 0) {
-      await supabaseAdmin.from('ins_quotes').insert(
-        eligible.map((c: Record<string, unknown>) => ({
-          quote_request_id: quoteReq.id,
-          tenant_id: ctx.tenantId,
-          carrier_id: c.carrier_id,
-          status: 'pending',
-        }))
-      )
-
-      await supabaseAdmin.from('ins_quote_requests')
-        .update({ status: 'quoting', carriers_targeted: eligible.length })
-        .eq('id', quoteReq.id)
-
-      // Fan-out to workers
-      await Promise.allSettled(
-        eligible.map(async (cred: Record<string, unknown>) => {
-          const carrier = cred.ins_carriers as Record<string, unknown>
-          if (await isCircuitOpen(carrier.slug as string)) return
-
-          return qstash.publishJSON({
-            url: `${workerUrl}/quote`,
-            body: {
-              request_id: quoteReq.id,
-              tenant_id: ctx.tenantId,
-              carrier_slug: carrier.slug,
-              carrier_portal_url: carrier.portal_url,
-              carrier_portal_type: carrier.portal_type,
-              insurance_line: line,
-              client_data: clientData,
-              vehicle_data: vehicleData,
-              coverage_type: data.coverage_type || 'amplia',
-              credentials: {
-                username: cred.encrypted_username,
-                password: cred.encrypted_password,
-                agent_number: cred.agent_number ?? undefined,
-              },
-            },
-            retries: 2,
-            callback: `${appUrl}/api/insurance/callback`,
-            failureCallback: `${appUrl}/api/insurance/callback`,
-            headers: { 'x-worker-secret': process.env.INSURANCE_WORKER_SECRET! },
-          })
-        })
-      )
-    }
+    await supabaseAdmin.from('ins_quote_requests')
+      .update({ status: 'quoting' })
+      .eq('id', quoteReq.id)
   }
 
   const coverageLabel = COVERAGE_LABELS[(data.coverage_type as string) || 'amplia'] || 'Cobertura Amplia'
@@ -290,6 +225,11 @@ export async function handleInsuranceStatus(ctx: ActionContext): Promise<ActionR
 
     msg += '_Responde con el número de la aseguradora para más detalles._'
     await sendTextMessage(ctx.phoneNumberId, ctx.customerPhone, msg)
+
+    // Set state so next message triggers carrier selection
+    await setConversationState(ctx.conversationId, 'awaiting_insurance_selection', {
+      quote_request_id: latest.id,
+    })
   } else if (latest.status === 'quoting' || latest.status === 'partial') {
     await sendTextMessage(
       ctx.phoneNumberId,
@@ -350,6 +290,198 @@ export async function handleInsurancePolicy(ctx: ActionContext): Promise<ActionR
 
   await sendTextMessage(ctx.phoneNumberId, ctx.customerPhone, msg)
   return { actionTaken: true, actionType: 'insurance_policy_list', details: { count: policies.length } }
+}
+
+// ═══ INSURANCE DATA CONTINUATION — Merge new data with previous partial extraction ═══
+export async function handleInsuranceDataContinuation(ctx: ActionContext): Promise<ActionResult> {
+  // Retrieve previously stored partial data from conversation state
+  const { getConversationState } = await import('@/lib/actions/state-machine')
+  const { context } = await getConversationState(ctx.conversationId)
+  const previousData = (context.extracted as Record<string, unknown>) || {}
+  const previousLine = (context.insurance_line as string) || 'auto'
+
+  // Clear the state now that we are consuming it
+  await clearConversationState(ctx.conversationId)
+
+  // Re-extract from the new message
+  const extraction = await generateResponse({
+    model: MODELS.CLASSIFIER,
+    system: `Extrae datos de cotización de seguro del mensaje. Devuelve SOLO JSON:
+{
+  "insurance_line": "${previousLine}",
+  "client": {"name": "nombre o null", "birthdate": "YYYY-MM-DD o null", "gender": "M/F o null", "zip_code": "CP o null", "rfc": "RFC o null"},
+  "vehicle": {"brand": "marca o null", "model": "modelo o null", "year": 2024, "version": "version o null", "use": "particular/comercial"},
+  "coverage_type": "amplia|limitada|rc_obligatoria|null"
+}
+Solo extrae los datos que el usuario proporciona. Deja null los campos no mencionados.`,
+    messages: [{ role: 'user', content: ctx.content }],
+    temperature: 0.1,
+  })
+
+  let newData: Record<string, unknown>
+  try {
+    const cleaned = extraction.text.replace(/```json\n?|\n?```/g, '').trim()
+    newData = JSON.parse(cleaned)
+  } catch {
+    // If extraction fails, retry the full quote flow with combined context
+    return handleInsuranceQuote({
+      ...ctx,
+      content: `${JSON.stringify(previousData)}\n${ctx.content}`,
+    })
+  }
+
+  // Deep-merge: previous data as base, new data overwrites non-null fields
+  const mergedClient = {
+    ...((previousData.client as Record<string, unknown>) || {}),
+    ...filterNulls((newData.client as Record<string, unknown>) || {}),
+  }
+  const mergedVehicle = {
+    ...((previousData.vehicle as Record<string, unknown>) || {}),
+    ...filterNulls((newData.vehicle as Record<string, unknown>) || {}),
+  }
+  const mergedCoverageType =
+    (newData.coverage_type as string) || (previousData.coverage_type as string) || null
+
+  const mergedData: Record<string, unknown> = {
+    ...previousData,
+    ...newData,
+    insurance_line: previousLine,
+    client: mergedClient,
+    vehicle: mergedVehicle,
+    coverage_type: mergedCoverageType,
+  }
+
+  // Check completeness of the merged data
+  const missingFields = checkMissingFields(previousLine, mergedClient, mergedVehicle)
+
+  if (missingFields.length > 0) {
+    mergedData.complete = false
+    mergedData.missing = missingFields
+  } else {
+    mergedData.complete = true
+    mergedData.missing = []
+  }
+
+  // Feed the merged data back through handleInsuranceQuote with a synthetic context
+  // We override content so the handler uses our merged data directly
+  return handleInsuranceQuote({
+    ...ctx,
+    // Provide the merged JSON so the LLM extraction step picks it up cleanly
+    content: JSON.stringify(mergedData),
+  })
+}
+
+/** Remove null/undefined values from an object so they don't overwrite good data */
+function filterNulls(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== null && value !== undefined) {
+      result[key] = value
+    }
+  }
+  return result
+}
+
+/** Check which critical fields are still missing for a given insurance line */
+function checkMissingFields(
+  line: string,
+  client: Record<string, unknown>,
+  vehicle: Record<string, unknown>
+): string[] {
+  const missing: string[] = []
+
+  if (!client.name) missing.push('name')
+  if (!client.zip_code) missing.push('zip_code')
+
+  if (line === 'auto') {
+    if (!vehicle.brand) missing.push('brand')
+    if (!vehicle.model) missing.push('model')
+    if (!vehicle.year) missing.push('year')
+  } else if (line === 'vida' || line === 'gastos_medicos') {
+    if (!client.birthdate) missing.push('birthdate')
+    if (!client.gender) missing.push('gender')
+  }
+
+  return missing
+}
+
+// ═══ INSURANCE SELECTION — User picks a carrier from results ═══
+export async function handleInsuranceSelection(ctx: ActionContext): Promise<ActionResult> {
+  // The user is responding with a number to select a carrier from previous results
+  const { getConversationState } = await import('@/lib/actions/state-machine')
+  const { context } = await getConversationState(ctx.conversationId)
+  const quoteRequestId = context.quote_request_id as string | undefined
+
+  await clearConversationState(ctx.conversationId)
+
+  if (!quoteRequestId) {
+    // No stored quote request — fall back to status check
+    return handleInsuranceStatus(ctx)
+  }
+
+  // Parse the selection number from the message
+  const selectionMatch = ctx.content.match(/(\d+)/)
+  const selectionIndex = selectionMatch ? parseInt(selectionMatch[1], 10) - 1 : -1
+
+  // Fetch the ranked quotes
+  const { data: quotes } = await supabaseAdmin
+    .from('ins_quotes')
+    .select('*, ins_carriers(name, slug)')
+    .eq('quote_request_id', quoteRequestId)
+    .eq('status', 'success')
+    .order('rank_position', { ascending: true })
+
+  if (!quotes || quotes.length === 0) {
+    await sendTextMessage(
+      ctx.phoneNumberId,
+      ctx.customerPhone,
+      'No encontré resultados para esa cotización. ¿Quieres que cotice de nuevo?'
+    )
+    return { actionTaken: true, actionType: 'insurance_selection_empty' }
+  }
+
+  const selected = quotes[selectionIndex]
+  if (!selected) {
+    await sendTextMessage(
+      ctx.phoneNumberId,
+      ctx.customerPhone,
+      `Por favor selecciona un número del 1 al ${quotes.length}.`
+    )
+    // Re-set state so they can try again
+    await setConversationState(ctx.conversationId, 'awaiting_insurance_selection', {
+      quote_request_id: quoteRequestId,
+    })
+    return { actionTaken: true, actionType: 'insurance_selection_invalid' }
+  }
+
+  const carrier = selected.ins_carriers as Record<string, string> | null
+  let msg = `📋 *Detalle — ${carrier?.name || 'Aseguradora'}*\n\n`
+  msg += `💰 Prima anual: $${Number(selected.annual_premium).toLocaleString('es-MX')} MXN\n`
+  if (selected.monthly_premium) {
+    msg += `💳 Prima mensual: $${Number(selected.monthly_premium).toLocaleString('es-MX')} MXN\n`
+  }
+  if (selected.deductible_amount) {
+    msg += `📋 Deducible: $${Number(selected.deductible_amount).toLocaleString('es-MX')} MXN\n`
+  }
+  if (selected.quote_number) {
+    msg += `🔢 Cotización #${selected.quote_number}\n`
+  }
+  if (selected.pdf_url) {
+    msg += `\n📄 Cotización PDF: ${selected.pdf_url}\n`
+  }
+  msg += '\n¿Te gustaría contratar este seguro o necesitas más información?'
+
+  await sendTextMessage(ctx.phoneNumberId, ctx.customerPhone, msg)
+
+  return {
+    actionTaken: true,
+    actionType: 'insurance_selection_detail',
+    details: {
+      quote_request_id: quoteRequestId,
+      carrier_name: carrier?.name,
+      annual_premium: selected.annual_premium,
+    },
+  }
 }
 
 // ═══ INSURANCE RENEWAL — Handle renewal inquiries ═══

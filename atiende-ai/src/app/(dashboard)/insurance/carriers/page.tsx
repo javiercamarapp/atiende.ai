@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Building2, CheckCircle, XCircle } from 'lucide-react'
 import { INSURANCE_LINE_LABELS_SHORT, HEALTH_STATUS_LABELS } from '@/lib/insurance/constants'
+import { CredentialForm } from '@/components/insurance/credential-form'
 
 export default async function InsuranceCarriersPage() {
   const supabase = await createServerSupabase()
@@ -29,7 +30,10 @@ export default async function InsuranceCarriersPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-2">Aseguradoras</h1>
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-xl font-bold">Aseguradoras</h1>
+        <CredentialForm carriers={carriers.map((c) => ({ id: c.id, name: c.name }))} />
+      </div>
       <p className="text-sm text-zinc-500 mb-6">
         Conecta tus credenciales de cada portal para habilitar la cotización automática
       </p>

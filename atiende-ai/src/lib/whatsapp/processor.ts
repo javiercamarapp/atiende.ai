@@ -306,9 +306,14 @@ async function handleSingleMessage(
         'awaiting_modify_date': 'APPOINTMENT_MODIFY_CONFIRM',
         'awaiting_order_confirmation': 'ORDER_CONFIRM',
         'awaiting_reservation_details': 'RESERVATION',
+        'awaiting_insurance_data': 'INSURANCE_DATA_CONTINUATION',
+        'awaiting_insurance_selection': 'INSURANCE_SELECTION',
       };
       overrideIntent = stateIntentMap[convState.state] || null;
-      await clearConversationState(conv!.id); // Clear state after consuming
+      // Insurance states are cleared inside their handlers (they may re-set state)
+      if (!convState.state?.startsWith('awaiting_insurance_')) {
+        await clearConversationState(conv!.id); // Clear state after consuming
+      }
     }
   } catch { /* best effort */ }
 

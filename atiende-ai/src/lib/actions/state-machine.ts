@@ -5,6 +5,8 @@ export type ConversationState =
   | 'awaiting_modify_date'
   | 'awaiting_order_confirmation'
   | 'awaiting_reservation_details'
+  | 'awaiting_insurance_data'
+  | 'awaiting_insurance_selection'
   | null;
 
 export async function getConversationState(conversationId: string): Promise<{ state: ConversationState; context: Record<string, unknown> }> {

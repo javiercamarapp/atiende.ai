@@ -4,20 +4,14 @@
 // States: closed → open → half_open → closed
 // ═══════════════════════════════════════════════════════════
 
-import { Redis } from '@upstash/redis'
+import { getInsuranceRedis } from './redis'
 import {
   CIRCUIT_BREAKER_THRESHOLD,
   CIRCUIT_BREAKER_TIMEOUT_MS,
   CIRCUIT_BREAKER_TTL_SECONDS,
 } from './constants'
 import type { CircuitState } from './types'
-
-function getRedis() {
-  return new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL!,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-  })
-}
+import { logInsuranceError } from './logger'
 
 const DEFAULT_STATE: CircuitState = {
   failures: 0,
@@ -38,12 +32,12 @@ function getKey(carrierSlug: string): string {
  */
 export async function isCircuitOpen(carrierSlug: string): Promise<boolean> {
   try {
-    const state = await getRedis().get<CircuitState>(getKey(carrierSlug))
+    const state = await getInsuranceRedis().get<CircuitState>(getKey(carrierSlug))
     if (!state) return false
 
     if (state.state === 'open') {
       if (Date.now() - state.opened_at > CIRCUIT_BREAKER_TIMEOUT_MS) {
-        await getRedis().set(
+        await getInsuranceRedis().set(
           getKey(carrierSlug),
           { ...state, state: 'half_open' },
           { ex: CIRCUIT_BREAKER_TTL_SECONDS }
@@ -54,7 +48,8 @@ export async function isCircuitOpen(carrierSlug: string): Promise<boolean> {
     }
 
     return false
-  } catch {
+  } catch (err) {
+    logInsuranceError(err, { context: 'circuit_breaker.isCircuitOpen', carrier_slug: carrierSlug })
     return false // On Redis error, allow the request
   }
 }
@@ -66,7 +61,7 @@ export async function isCircuitOpen(carrierSlug: string): Promise<boolean> {
 export async function recordSuccess(carrierSlug: string): Promise<void> {
   try {
     const key = getKey(carrierSlug)
-    const state = (await getRedis().get<CircuitState>(key)) ?? { ...DEFAULT_STATE }
+    const state = (await getInsuranceRedis().get<CircuitState>(key)) ?? { ...DEFAULT_STATE }
 
     state.successes++
     state.total++
@@ -76,9 +71,9 @@ export async function recordSuccess(carrierSlug: string): Promise<void> {
       state.failures = 0
     }
 
-    await getRedis().set(key, state, { ex: CIRCUIT_BREAKER_TTL_SECONDS })
-  } catch {
-    // Silently fail — circuit breaker is non-critical
+    await getInsuranceRedis().set(key, state, { ex: CIRCUIT_BREAKER_TTL_SECONDS })
+  } catch (err) {
+    logInsuranceError(err, { context: 'circuit_breaker.recordSuccess', carrier_slug: carrierSlug })
   }
 }
 
@@ -89,7 +84,7 @@ export async function recordSuccess(carrierSlug: string): Promise<void> {
 export async function recordFailure(carrierSlug: string): Promise<void> {
   try {
     const key = getKey(carrierSlug)
-    const state = (await getRedis().get<CircuitState>(key)) ?? { ...DEFAULT_STATE }
+    const state = (await getInsuranceRedis().get<CircuitState>(key)) ?? { ...DEFAULT_STATE }
 
     state.failures++
     state.total++
@@ -100,9 +95,9 @@ export async function recordFailure(carrierSlug: string): Promise<void> {
       state.opened_at = Date.now()
     }
 
-    await getRedis().set(key, state, { ex: CIRCUIT_BREAKER_TTL_SECONDS })
-  } catch {
-    // Silently fail
+    await getInsuranceRedis().set(key, state, { ex: CIRCUIT_BREAKER_TTL_SECONDS })
+  } catch (err) {
+    logInsuranceError(err, { context: 'circuit_breaker.recordFailure', carrier_slug: carrierSlug })
   }
 }
 
@@ -111,8 +106,9 @@ export async function recordFailure(carrierSlug: string): Promise<void> {
  */
 export async function getCircuitState(carrierSlug: string): Promise<CircuitState> {
   try {
-    return (await getRedis().get<CircuitState>(getKey(carrierSlug))) ?? { ...DEFAULT_STATE }
-  } catch {
+    return (await getInsuranceRedis().get<CircuitState>(getKey(carrierSlug))) ?? { ...DEFAULT_STATE }
+  } catch (err) {
+    logInsuranceError(err, { context: 'circuit_breaker.getCircuitState', carrier_slug: carrierSlug })
     return { ...DEFAULT_STATE }
   }
 }

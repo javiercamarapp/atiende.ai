@@ -1,22 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { Redis } from '@upstash/redis'
+import { getInsuranceRedis } from '@/lib/insurance/redis'
 import { recordSuccess, recordFailure } from '@/lib/insurance/circuit-breaker'
+import { sendTextMessage } from '@/lib/whatsapp/send'
 import type { QuoteResult, QuoteProgress } from '@/lib/insurance/types'
 import { QUOTE_EXPIRY_HOURS, REDIS_PROGRESS_TTL_SECONDS } from '@/lib/insurance/constants'
-
-function getRedis() {
-  return new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL!,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-  })
-}
+import { callbackResultSchema, formatZodErrors } from '@/lib/insurance/validation'
+import { logInsuranceEvent, logInsuranceError } from '@/lib/insurance/logger'
 
 async function handler(req: NextRequest) {
   try {
     const body = await req.json()
-    const result: QuoteResult = body.body ?? body
+    const raw = body.body ?? body
 
+    // Validate callback payload with Zod
+    const parsed = callbackResultSchema.safeParse(raw)
+    if (!parsed.success) {
+      logInsuranceEvent('callback_validation_failed', { errors: formatZodErrors(parsed.error) })
+      return NextResponse.json(
+        { error: 'Validation failed', details: formatZodErrors(parsed.error) },
+        { status: 400 }
+      )
+    }
+
+    const result: QuoteResult = parsed.data as unknown as QuoteResult
     const requestId = result.request_id ?? body.request_id
     if (!requestId) {
       return NextResponse.json({ error: 'Missing request_id' }, { status: 400 })
@@ -112,7 +119,7 @@ async function handler(req: NextRequest) {
         : null,
     }
 
-    await getRedis().set(`ins:progress:${requestId}`, JSON.stringify(progress), { ex: REDIS_PROGRESS_TTL_SECONDS })
+    await getInsuranceRedis().set(`ins:progress:${requestId}`, JSON.stringify(progress), { ex: REDIS_PROGRESS_TTL_SECONDS })
 
     // If all done → finalize
     if (pending.length === 0) {
@@ -132,6 +139,48 @@ async function handler(req: NextRequest) {
         completed_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + QUOTE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString(),
       }).eq('id', requestId)
+
+      // Send WhatsApp comparison message to the customer
+      try {
+        const { data: qr } = await supabaseAdmin
+          .from('ins_quote_requests')
+          .select('client_phone, tenant_id')
+          .eq('id', requestId)
+          .single()
+
+        if (qr?.client_phone && qr?.tenant_id) {
+          const { data: tenant } = await supabaseAdmin
+            .from('tenants')
+            .select('wa_phone_number_id')
+            .eq('id', qr.tenant_id)
+            .single()
+
+          if (tenant?.wa_phone_number_id) {
+            if (ranked.length > 0) {
+              let msg = `✅ *Tu comparativa de seguros está lista*\n\n📊 ${ranked.length} aseguradora${ranked.length > 1 ? 's' : ''} respondieron:\n\n`
+
+              ranked.slice(0, 5).forEach((q, i) => {
+                const carrierData = q.ins_carriers as unknown as { name: string; slug: string } | null
+                msg += `${i + 1}. *${carrierData?.name || 'Aseguradora'}*\n`
+                msg += `   💰 $${Number(q.annual_premium).toLocaleString('es-MX')} MXN/año\n\n`
+              })
+
+              msg += '_Responde con el número de la aseguradora para ver más detalles._'
+
+              await sendTextMessage(tenant.wa_phone_number_id, qr.client_phone, msg)
+            } else {
+              await sendTextMessage(
+                tenant.wa_phone_number_id,
+                qr.client_phone,
+                '⚠️ Lamentablemente ninguna aseguradora pudo generar una cotización en este momento. ¿Te gustaría intentar de nuevo o con datos diferentes?'
+              )
+            }
+          }
+        }
+      } catch (deliveryErr) {
+        // WhatsApp delivery is best-effort — do not fail the callback
+        logInsuranceError(deliveryErr, { route: 'callback.whatsapp_delivery', requestId })
+      }
     } else {
       await supabaseAdmin.from('ins_quote_requests').update({
         status: 'partial',
@@ -142,6 +191,7 @@ async function handler(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
+    logInsuranceError(err, { route: 'callback.handler' })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

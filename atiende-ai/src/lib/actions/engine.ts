@@ -1,7 +1,8 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage } from '@/lib/whatsapp/send';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
-import { handleInsuranceQuote, handleInsuranceStatus, handleInsurancePolicy, handleInsuranceRenewal } from '@/lib/actions/insurance-handlers';
+import { handleInsuranceQuote, handleInsuranceStatus, handleInsurancePolicy, handleInsuranceRenewal, handleInsuranceDataContinuation, handleInsuranceSelection } from '@/lib/actions/insurance-handlers';
+import type { ActionContext, ActionResult } from '@/lib/actions/types';
 
 // ═══════════════════════════════════════════════════════════
 // AGENTIC ACTION ENGINE v1.0.0 — Bots que HACEN, no solo HABLAN
@@ -9,26 +10,6 @@ import { handleInsuranceQuote, handleInsuranceStatus, handleInsurancePolicy, han
 // Architecture: Single-file for colocation (all handlers share types)
 // Related: industry-actions.ts (18 industries), state-machine.ts (multi-turn)
 // ═══════════════════════════════════════════════════════════
-
-interface ActionContext {
-  tenantId: string;
-  phoneNumberId: string;
-  customerPhone: string;
-  customerName: string;
-  contactId: string;
-  conversationId: string;
-  intent: string;
-  content: string;
-  businessType: string;
-  tenant: Record<string, unknown>;
-}
-
-interface ActionResult {
-  actionTaken: boolean;
-  actionType?: string;
-  details?: Record<string, unknown>;
-  followUpMessage?: string;
-}
 
 export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
   const handlers: Record<string, (c: ActionContext) => Promise<ActionResult>> = {
@@ -60,6 +41,8 @@ export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
     INSURANCE_STATUS: handleInsuranceStatus,
     INSURANCE_POLICY: handleInsurancePolicy,
     INSURANCE_RENEWAL: handleInsuranceRenewal,
+    INSURANCE_DATA_CONTINUATION: handleInsuranceDataContinuation,
+    INSURANCE_SELECTION: handleInsuranceSelection,
   };
 
   const handler = handlers[ctx.intent];

@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Shield, FileText, Building2, CreditCard } from 'lucide-react'
 import Link from 'next/link'
+import { QuoteForm } from '@/components/insurance/quote-form'
 
 export default async function InsurancePage() {
   const supabase = await createServerSupabase()
@@ -57,7 +58,10 @@ export default async function InsurancePage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6">Módulo de Seguros</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold">Módulo de Seguros</h1>
+        <QuoteForm />
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {stats.map((stat) => (

@@ -5,6 +5,10 @@
     { "path": "/api/cron/marketplace", "schedule": "0 * * * *" },
     { "path": "/api/cron/sync-menu", "schedule": "0 6 * * *" },
     { "path": "/api/cron/trial-warning", "schedule": "0 16 * * *" },
-    { "path": "/api/cron/daily-briefing", "schedule": "0 14 * * *" }
+    { "path": "/api/cron/daily-briefing", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/insurance/renewals", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/insurance/cache-cleanup", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/insurance/health-check", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/insurance/quote-timeout", "schedule": "*/2 * * * *" }
   ]
 }

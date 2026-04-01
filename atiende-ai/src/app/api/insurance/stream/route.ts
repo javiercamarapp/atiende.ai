@@ -1,23 +1,15 @@
 import { NextRequest } from 'next/server'
-import { Redis } from '@upstash/redis'
-import { createServerSupabase } from '@/lib/supabase/server'
+import { getInsuranceRedis } from '@/lib/insurance/redis'
+import { getAuthenticatedTenant } from '@/lib/insurance/auth'
 import { SSE_POLL_INTERVAL_MS, SSE_HEARTBEAT_INTERVAL_MS, SSE_MAX_LIFETIME_MS } from '@/lib/insurance/constants'
-
-function getRedis() {
-  return new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL!,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-  })
-}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
   // SECURITY: Authenticate user and verify ownership of request_id
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
+  const { supabase, user, tenantId } = await getAuthenticatedTenant()
+  if (!user || !tenantId) {
     return new Response('Unauthorized', { status: 401 })
   }
 
@@ -27,21 +19,11 @@ export async function GET(req: NextRequest) {
   }
 
   // Verify the authenticated user owns this quote request (tenant isolation)
-  const { data: userRow } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', user.id)
-    .single()
-
-  if (!userRow) {
-    return new Response('User not found', { status: 404 })
-  }
-
   const { data: quoteReq } = await supabase
     .from('ins_quote_requests')
     .select('id')
     .eq('id', requestId)
-    .eq('tenant_id', userRow.tenant_id)
+    .eq('tenant_id', tenantId)
     .single()
 
   if (!quoteReq) {
@@ -84,7 +66,7 @@ export async function GET(req: NextRequest) {
         if (closed) { clearInterval(poll); return }
 
         try {
-          const raw = await getRedis().get(`ins:progress:${requestId}`)
+          const raw = await getInsuranceRedis().get(`ins:progress:${requestId}`)
           if (!raw) return
 
           const progress = typeof raw === 'string' ? JSON.parse(raw) : raw

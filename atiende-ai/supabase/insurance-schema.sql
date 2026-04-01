@@ -5,6 +5,13 @@
 -- RLS habilitado en todas las tablas con datos de tenant
 -- ═══════════════════════════════════════════════════════════
 
+-- ═══════════════════════════════════════════════════════════
+-- TRIGGER FUNCTION: auto-update updated_at
+-- ═══════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION ins_set_updated_at() RETURNS TRIGGER AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$ LANGUAGE plpgsql;
+
 -- 1. CARRIERS (catálogo de aseguradoras)
 CREATE TABLE IF NOT EXISTS ins_carriers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -24,6 +31,10 @@ CREATE TABLE IF NOT EXISTS ins_carriers (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS trg_ins_carriers_updated_at ON ins_carriers;
+CREATE TRIGGER trg_ins_carriers_updated_at BEFORE UPDATE ON ins_carriers
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
 
 -- Seed: Top 15 aseguradoras México
 INSERT INTO ins_carriers (name, slug, portal_url, portal_type, supported_lines, market_share_auto) VALUES
@@ -61,7 +72,14 @@ CREATE TABLE IF NOT EXISTS ins_carrier_credentials (
   UNIQUE(tenant_id, carrier_id)
 );
 
+DROP TRIGGER IF EXISTS trg_ins_carrier_credentials_updated_at ON ins_carrier_credentials;
+CREATE TRIGGER trg_ins_carrier_credentials_updated_at BEFORE UPDATE ON ins_carrier_credentials
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_ins_creds_tenant_active ON ins_carrier_credentials(tenant_id, is_active);
+
 ALTER TABLE ins_carrier_credentials ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_creds_policy" ON ins_carrier_credentials;
 CREATE POLICY "tenant_creds_policy" ON ins_carrier_credentials
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -114,12 +132,17 @@ CREATE TABLE IF NOT EXISTS ins_quote_requests (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_ins_quote_requests_updated_at ON ins_quote_requests;
+CREATE TRIGGER trg_ins_quote_requests_updated_at BEFORE UPDATE ON ins_quote_requests
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
+
 CREATE INDEX IF NOT EXISTS idx_ins_qr_tenant ON ins_quote_requests(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ins_qr_status ON ins_quote_requests(status);
 CREATE INDEX IF NOT EXISTS idx_ins_qr_created ON ins_quote_requests(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ins_qr_phone ON ins_quote_requests(tenant_id, client_phone);
 
 ALTER TABLE ins_quote_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_quotes_policy" ON ins_quote_requests;
 CREATE POLICY "tenant_quotes_policy" ON ins_quote_requests
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -154,11 +177,17 @@ CREATE TABLE IF NOT EXISTS ins_quotes (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_ins_quotes_updated_at ON ins_quotes;
+CREATE TRIGGER trg_ins_quotes_updated_at BEFORE UPDATE ON ins_quotes
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
+
 CREATE INDEX IF NOT EXISTS idx_ins_q_request ON ins_quotes(quote_request_id);
 CREATE INDEX IF NOT EXISTS idx_ins_q_tenant ON ins_quotes(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ins_q_status ON ins_quotes(status);
+CREATE INDEX IF NOT EXISTS idx_ins_q_request_status ON ins_quotes(quote_request_id, status);
 
 ALTER TABLE ins_quotes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_indiv_quotes_policy" ON ins_quotes;
 CREATE POLICY "tenant_indiv_quotes_policy" ON ins_quotes
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -188,14 +217,21 @@ CREATE TABLE IF NOT EXISTS ins_policies (
   renewal_quote_id UUID,
   renewal_notified BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(tenant_id, carrier_id, policy_number)
 );
+
+DROP TRIGGER IF EXISTS trg_ins_policies_updated_at ON ins_policies;
+CREATE TRIGGER trg_ins_policies_updated_at BEFORE UPDATE ON ins_policies
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
 
 CREATE INDEX IF NOT EXISTS idx_ins_pol_tenant ON ins_policies(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ins_pol_end ON ins_policies(end_date);
 CREATE INDEX IF NOT EXISTS idx_ins_pol_status ON ins_policies(status);
+CREATE INDEX IF NOT EXISTS idx_ins_pol_tenant_status_end ON ins_policies(tenant_id, status, end_date);
 
 ALTER TABLE ins_policies ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_policies_policy" ON ins_policies;
 CREATE POLICY "tenant_policies_policy" ON ins_policies
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -220,8 +256,10 @@ CREATE TABLE IF NOT EXISTS ins_policy_payments (
 
 CREATE INDEX IF NOT EXISTS idx_ins_pay_policy ON ins_policy_payments(policy_id);
 CREATE INDEX IF NOT EXISTS idx_ins_pay_due ON ins_policy_payments(due_date);
+CREATE INDEX IF NOT EXISTS idx_ins_pay_tenant_status_due ON ins_policy_payments(tenant_id, status, due_date);
 
 ALTER TABLE ins_policy_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_payments_policy" ON ins_policy_payments;
 CREATE POLICY "tenant_payments_policy" ON ins_policy_payments
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -249,7 +287,14 @@ CREATE TABLE IF NOT EXISTS ins_claims (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_ins_claims_updated_at ON ins_claims;
+CREATE TRIGGER trg_ins_claims_updated_at BEFORE UPDATE ON ins_claims
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_ins_claims_tenant_status ON ins_claims(tenant_id, status);
+
 ALTER TABLE ins_claims ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_claims_policy" ON ins_claims;
 CREATE POLICY "tenant_claims_policy" ON ins_claims
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -282,13 +327,19 @@ CREATE TABLE IF NOT EXISTS ins_automation_runs (
   duration_ms INTEGER,
   error_message TEXT,
   retry_count INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_ins_runs_tenant ON ins_automation_runs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ins_runs_status ON ins_automation_runs(status);
 
+DROP TRIGGER IF EXISTS trg_ins_automation_runs_updated_at ON ins_automation_runs;
+CREATE TRIGGER trg_ins_automation_runs_updated_at BEFORE UPDATE ON ins_automation_runs
+  FOR EACH ROW EXECUTE FUNCTION ins_set_updated_at();
+
 ALTER TABLE ins_automation_runs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_runs_policy" ON ins_automation_runs;
 CREATE POLICY "tenant_runs_policy" ON ins_automation_runs
   FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
@@ -339,6 +390,24 @@ CREATE TABLE IF NOT EXISTS ins_quote_cache (
 CREATE INDEX IF NOT EXISTS idx_ins_cache_key ON ins_quote_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_ins_cache_exp ON ins_quote_cache(expires_at);
 
+-- 13. CREDENTIAL AUDIT LOG
+CREATE TABLE IF NOT EXISTS ins_credential_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  carrier_id UUID NOT NULL REFERENCES ins_carriers(id),
+  action TEXT NOT NULL, -- 'created' | 'updated' | 'deactivated'
+  performed_by UUID, -- user who made the change
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ins_cred_audit_tenant ON ins_credential_audit_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_ins_cred_audit_carrier ON ins_credential_audit_log(carrier_id);
+
+ALTER TABLE ins_credential_audit_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tenant_cred_audit_policy" ON ins_credential_audit_log;
+CREATE POLICY "tenant_cred_audit_policy" ON ins_credential_audit_log
+  FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
 -- ═══════════════════════════════════════════════════════════
 -- VIEWS
 -- ═══════════════════════════════════════════════════════════
@@ -384,5 +453,37 @@ BEGIN
   DELETE FROM ins_quote_cache WHERE expires_at < NOW();
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
   RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Data retention cleanup: remove expired quotes, old health logs, old automation runs
+CREATE OR REPLACE FUNCTION ins_cleanup_old_data(retention_days INTEGER DEFAULT 90)
+RETURNS TABLE(expired_quotes_deleted INTEGER, old_health_logs_deleted INTEGER, old_automation_runs_deleted INTEGER) AS $$
+DECLARE
+  v_expired_quotes INTEGER;
+  v_health_logs INTEGER;
+  v_automation_runs INTEGER;
+BEGIN
+  -- Delete expired quotes (past valid_until + retention window)
+  DELETE FROM ins_quotes
+    WHERE status IN ('expired', 'error', 'timeout', 'declined')
+      AND created_at < NOW() - (retention_days || ' days')::INTERVAL;
+  GET DIAGNOSTICS v_expired_quotes = ROW_COUNT;
+
+  -- Delete old carrier health logs
+  DELETE FROM ins_carrier_health_log
+    WHERE created_at < NOW() - (retention_days || ' days')::INTERVAL;
+  GET DIAGNOSTICS v_health_logs = ROW_COUNT;
+
+  -- Delete old completed/failed automation runs
+  DELETE FROM ins_automation_runs
+    WHERE status IN ('success', 'failure', 'timeout')
+      AND created_at < NOW() - (retention_days || ' days')::INTERVAL;
+  GET DIAGNOSTICS v_automation_runs = ROW_COUNT;
+
+  expired_quotes_deleted := v_expired_quotes;
+  old_health_logs_deleted := v_health_logs;
+  old_automation_runs_deleted := v_automation_runs;
+  RETURN NEXT;
 END;
 $$ LANGUAGE plpgsql;

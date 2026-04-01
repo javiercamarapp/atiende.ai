@@ -1,32 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase/server'
-import { Client } from '@upstash/qstash'
-import { isCircuitOpen } from '@/lib/insurance/circuit-breaker'
-// NOTE: Credentials are sent still-encrypted to the worker.
-// The worker decrypts using the shared CREDENTIAL_ENCRYPTION_KEY.
-import type { QuoteRequestInput, WorkerQuotePayload } from '@/lib/insurance/types'
-
-function getQStash() {
-  return new Client({ token: process.env.QSTASH_TOKEN! })
-}
+import { getAuthenticatedTenant } from '@/lib/insurance/auth'
+import { fanOutQuoteToCarriers } from '@/lib/insurance/fan-out'
+import { quoteRequestSchema, formatZodErrors } from '@/lib/insurance/validation'
+import { checkInsuranceRateLimit } from '@/lib/insurance/rate-limit'
+import { logInsuranceEvent, logInsuranceError } from '@/lib/insurance/logger'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { supabase, user, tenantId } = await getAuthenticatedTenant()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!tenantId) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const input: QuoteRequestInput = await req.json()
+    // Rate limit: 10 requests per minute per user
+    const allowed = await checkInsuranceRateLimit(`quote:${user.id}`, 10, 60_000)
+    if (!allowed) {
+      logInsuranceEvent('rate_limit_exceeded', { route: 'quote', user_id: user.id })
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+    }
 
-    const { data: userRow } = await supabase
-      .from('users')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .single()
+    const body = await req.json()
+    const parsed = quoteRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: formatZodErrors(parsed.error) },
+        { status: 400 }
+      )
+    }
 
-    if (!userRow) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-    const tenantId = userRow.tenant_id
+    const input = parsed.data
 
     // 1. Create quote request
     const { data: quoteReq, error: qrErr } = await supabase
@@ -57,100 +58,38 @@ export async function POST(req: NextRequest) {
       .select('id')
       .single()
 
-    if (qrErr) return NextResponse.json({ error: qrErr.message }, { status: 500 })
+    if (qrErr) {
+      logInsuranceError(qrErr, { route: 'quote.POST', step: 'create_request', user_id: user.id })
+      return NextResponse.json({ error: qrErr.message }, { status: 500 })
+    }
 
     const requestId = quoteReq.id
 
-    // 2. Get carriers with active credentials for this insurance line
-    const { data: creds } = await supabase
-      .from('ins_carrier_credentials')
-      .select('*, ins_carriers(*)')
-      .eq('tenant_id', tenantId)
-      .eq('is_active', true)
+    logInsuranceEvent('quote_request_created', {
+      request_id: requestId,
+      insurance_line: input.insurance_line,
+      user_id: user.id,
+    })
 
-    type CredRow = NonNullable<typeof creds>[number]
-    const eligibleCarriers = (creds ?? []).filter((c: CredRow) =>
-      (c as Record<string, unknown>).ins_carriers &&
-      ((c as Record<string, unknown>).ins_carriers as Record<string, unknown>).is_active &&
-      (((c as Record<string, unknown>).ins_carriers as Record<string, unknown>).supported_lines as string[]).includes(input.insurance_line) &&
-      ((c as Record<string, unknown>).ins_carriers as Record<string, unknown>).health_status !== 'down'
-    )
-
-    // 3. Create individual quote records
-    if (eligibleCarriers.length > 0) {
-      await supabase.from('ins_quotes').insert(
-        eligibleCarriers.map((c: CredRow) => ({
-          quote_request_id: requestId,
-          tenant_id: tenantId,
-          carrier_id: c.carrier_id,
-          status: 'pending' as const,
-        }))
-      )
-    }
-
-    await supabase
-      .from('ins_quote_requests')
-      .update({ carriers_targeted: eligibleCarriers.length })
-      .eq('id', requestId)
-
-    // 4. Fan-out via QStash
-    const workerUrl = process.env.INSURANCE_WORKER_URL
-    const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-
-    if (workerUrl) {
-      await Promise.allSettled(
-        eligibleCarriers.map(async (cred: CredRow) => {
-          const carrier = (cred as Record<string, unknown>).ins_carriers as Record<string, unknown>
-
-          if (await isCircuitOpen(carrier.slug as string)) {
-            await supabase.from('ins_quotes').update({
-              status: 'skipped',
-              error_message: 'Circuit breaker open',
-              error_type: 'circuit_open',
-              completed_at: new Date().toISOString(),
-            }).eq('quote_request_id', requestId).eq('carrier_id', cred.carrier_id)
-            return
-          }
-
-          const payload: WorkerQuotePayload = {
-            request_id: requestId,
-            tenant_id: tenantId,
-            carrier_slug: carrier.slug as string,
-            carrier_portal_url: carrier.portal_url as string,
-            carrier_portal_type: carrier.portal_type as WorkerQuotePayload['carrier_portal_type'],
-            insurance_line: input.insurance_line,
-            client_data: input.client,
-            vehicle_data: input.vehicle,
-            coverage_type: input.coverage_type,
-            credentials: {
-              // SECURITY: Re-encrypt for transit to worker (never plaintext in queue)
-              username: cred.encrypted_username,
-              password: cred.encrypted_password,
-              agent_number: cred.agent_number ?? undefined,
-            },
-          }
-
-          return getQStash().publishJSON({
-            url: `${workerUrl}/quote`,
-            body: payload,
-            retries: 2,
-            callback: `${appUrl}/api/insurance/callback`,
-            failureCallback: `${appUrl}/api/insurance/callback`,
-            headers: {
-              'x-worker-secret': process.env.INSURANCE_WORKER_SECRET!,
-            },
-          })
-        })
-      )
-    }
+    // 2. Fan-out to carriers via shared helper
+    const { carriersTargeted } = await fanOutQuoteToCarriers({
+      requestId,
+      tenantId,
+      insuranceLine: input.insurance_line,
+      clientData: input.client,
+      vehicleData: input.vehicle,
+      coverageType: input.coverage_type,
+      supabase,
+    })
 
     return NextResponse.json({
       request_id: requestId,
-      carriers_targeted: eligibleCarriers.length,
+      carriers_targeted: carriersTargeted,
       status: 'quoting',
       stream_url: `/api/insurance/stream?id=${requestId}`,
     })
   } catch (err) {
+    logInsuranceError(err, { route: 'quote.POST' })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
