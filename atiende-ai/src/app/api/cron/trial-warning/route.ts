@@ -7,10 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   // Verify cron secret (Vercel cron or manual trigger)
   const authHeader = request.headers.get('authorization');
-  if (
-    process.env.CRON_SECRET &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
-  ) {
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

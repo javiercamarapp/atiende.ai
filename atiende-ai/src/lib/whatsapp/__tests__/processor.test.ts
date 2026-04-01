@@ -1,6 +1,60 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock setup ──────────────────────────────────────────────
+
+// Use vi.hoisted so mock fns are available in hoisted vi.mock factories
+const {
+  mockGenerateResponse,
+  mockSelectModel,
+  mockClassifyIntent,
+  mockSearchKnowledge,
+  mockValidateResponse,
+  mockSendTextMessage,
+  mockMarkAsRead,
+  mockSendTypingIndicator,
+  mockTranscribeAudio,
+  mockCheckRateLimit,
+  mockCheckTenantLimit,
+  mockInsertMessages,
+  mockInsertContacts,
+  mockInsertConversations,
+  mockUpdateConversations,
+} = vi.hoisted(() => ({
+  mockGenerateResponse: vi.fn(() => ({
+    text: 'Con gusto le ayudo.',
+    model: 'test-model',
+    tokensIn: 10,
+    tokensOut: 20,
+    cost: 0.001,
+  })),
+  mockSelectModel: vi.fn(() => 'test-model'),
+  mockClassifyIntent: vi.fn(() => 'GREETING'),
+  mockSearchKnowledge: vi.fn(() => ''),
+  mockValidateResponse: vi.fn(
+    (text: string) => ({ valid: true, text })
+  ),
+  mockSendTextMessage: vi.fn(),
+  mockMarkAsRead: vi.fn(() => Promise.resolve()),
+  mockSendTypingIndicator: vi.fn(() => Promise.resolve()),
+  mockTranscribeAudio: vi.fn(() => 'transcribed text'),
+  mockCheckRateLimit: vi.fn(() => ({ allowed: true })),
+  mockCheckTenantLimit: vi.fn(() => ({ allowed: true })),
+  mockInsertMessages: vi.fn(() => ({
+    select: vi.fn(() => ({ single: vi.fn(() => ({ data: null })) })),
+  })),
+  mockInsertContacts: vi.fn(() => ({
+    select: vi.fn(() => ({
+      single: vi.fn(() => ({ data: { id: 'contact-1', name: null } })),
+    })),
+  })),
+  mockInsertConversations: vi.fn(() => ({
+    select: vi.fn(() => ({
+      single: vi.fn(() => ({ data: { id: 'conv-1', status: 'active', customer_name: null } })),
+    })),
+  })),
+  mockUpdateConversations: vi.fn(() => ({ eq: vi.fn() })),
+}));
 
 // Track per-table mock behavior
 let tenantResult: any = { data: null };
@@ -8,21 +62,6 @@ let contactResult: any = { data: null };
 let conversationResult: any = { data: null };
 let monthlyCountResult: any = { count: 0 };
 let messagesHistory: any = { data: [] };
-
-const mockInsertMessages = vi.fn(() => ({
-  select: vi.fn(() => ({ single: vi.fn(() => ({ data: null })) })),
-}));
-const mockInsertContacts = vi.fn(() => ({
-  select: vi.fn(() => ({
-    single: vi.fn(() => ({ data: { id: 'contact-1', name: null } })),
-  })),
-}));
-const mockInsertConversations = vi.fn(() => ({
-  select: vi.fn(() => ({
-    single: vi.fn(() => ({ data: { id: 'conv-1', status: 'active', customer_name: null } })),
-  })),
-}));
-const mockUpdateConversations = vi.fn(() => ({ eq: vi.fn() }));
 
 function makeChainable(terminalValue: () => any) {
   const chain: any = {};
@@ -38,11 +77,6 @@ function makeChainable(terminalValue: () => any) {
   chain.update = vi.fn().mockReturnValue({ eq: vi.fn() });
   return chain;
 }
-
-// Call counters to track which single() call we're on per table
-let tenantSingleCount = 0;
-let contactSingleCount = 0;
-let conversationSingleCount = 0;
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
@@ -75,56 +109,36 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }));
 
-const mockGenerateResponse = vi.fn(() => ({
-  text: 'Con gusto le ayudo.',
-  model: 'test-model',
-  tokensIn: 10,
-  tokensOut: 20,
-  cost: 0.001,
-}));
-const mockSelectModel = vi.fn(() => 'test-model');
-
 vi.mock('@/lib/llm/openrouter', () => ({
-  generateResponse: (...args: unknown[]) => mockGenerateResponse(...args),
-  selectModel: (...args: unknown[]) => mockSelectModel(...args),
+  generateResponse: mockGenerateResponse,
+  selectModel: mockSelectModel,
 }));
 
-const mockClassifyIntent = vi.fn(() => 'GREETING');
 vi.mock('@/lib/llm/classifier', () => ({
-  classifyIntent: (...args: unknown[]) => mockClassifyIntent(...args),
+  classifyIntent: mockClassifyIntent,
 }));
 
-const mockSearchKnowledge = vi.fn(() => '');
 vi.mock('@/lib/rag/search', () => ({
-  searchKnowledge: (...args: unknown[]) => mockSearchKnowledge(...args),
+  searchKnowledge: mockSearchKnowledge,
 }));
 
-const mockValidateResponse = vi.fn(
-  (text: string) => ({ valid: true, text })
-);
 vi.mock('@/lib/guardrails/validate', () => ({
-  validateResponse: (...args: unknown[]) => mockValidateResponse(...args),
+  validateResponse: mockValidateResponse,
 }));
 
-const mockSendTextMessage = vi.fn();
-const mockMarkAsRead = vi.fn(() => Promise.resolve());
-const mockSendTypingIndicator = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/whatsapp/send', () => ({
-  sendTextMessage: (...args: unknown[]) => mockSendTextMessage(...args),
-  markAsRead: (...args: unknown[]) => mockMarkAsRead(...args),
-  sendTypingIndicator: (...args: unknown[]) => mockSendTypingIndicator(...args),
+  sendTextMessage: mockSendTextMessage,
+  markAsRead: mockMarkAsRead,
+  sendTypingIndicator: mockSendTypingIndicator,
 }));
 
-const mockTranscribeAudio = vi.fn(() => 'transcribed text');
 vi.mock('@/lib/voice/deepgram', () => ({
-  transcribeAudio: (...args: unknown[]) => mockTranscribeAudio(...args),
+  transcribeAudio: mockTranscribeAudio,
 }));
 
-const mockCheckRateLimit = vi.fn(() => ({ allowed: true }));
-const mockCheckTenantLimit = vi.fn(() => ({ allowed: true }));
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
-  checkTenantLimit: (...args: unknown[]) => mockCheckTenantLimit(...args),
+  checkRateLimit: mockCheckRateLimit,
+  checkTenantLimit: mockCheckTenantLimit,
 }));
 
 import { processIncomingMessage } from '../processor';
@@ -281,7 +295,7 @@ describe('processIncomingMessage', () => {
       ...TENANT,
       plan: 'free_trial',
       trial_ends_at: '2020-01-01T00:00:00Z',
-    });
+    } as any);
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'phone-123',

@@ -24,15 +24,33 @@ export async function GET(req: NextRequest) {
       const { count: mO } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('direction', 'outbound').gte('created_at', yS).lte('created_at', yE);
       const { count: hf } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('sender_type', 'human').gte('created_at', yS).lte('created_at', yE);
       const { count: ab } = await supabaseAdmin.from('appointments').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
+      const { count: noShow } = await supabaseAdmin.from('appointments').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('status', 'no_show').gte('datetime', yS).lte('datetime', yE);
+      const { count: cancelled } = await supabaseAdmin.from('appointments').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('status', 'cancelled').gte('datetime', yS).lte('datetime', yE);
+      const { data: orders } = await supabaseAdmin.from('orders').select('total').eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
+      const ordersRevenue = (orders || []).reduce((sum, o) => sum + Number(o.total || 0), 0);
+      const { count: ordersTotal } = await supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
+      const { count: newConvs } = await supabaseAdmin.from('conversations').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
+      const { data: costs } = await supabaseAdmin.from('messages').select('cost_usd').eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE).not('cost_usd', 'is', null);
+      const llmCost = (costs || []).reduce((sum, m) => sum + Number(m.cost_usd || 0), 0);
+      const msgsSaved = (mI || 0);
+      const minSaved = msgsSaved * 2.5;
 
       await supabaseAdmin.from('daily_analytics').upsert(
         {
           tenant_id: t.id,
           date: yesterday,
+          conversations_new: newConvs || 0,
           messages_inbound: mI || 0,
           messages_outbound: mO || 0,
           handoffs_human: hf || 0,
           appointments_booked: ab || 0,
+          appointments_no_show: noShow || 0,
+          appointments_cancelled: cancelled || 0,
+          orders_total: ordersTotal || 0,
+          orders_revenue: ordersRevenue,
+          llm_cost_usd: llmCost,
+          messages_saved: msgsSaved,
+          minutes_saved: minSaved,
         },
         { onConflict: 'tenant_id,date' },
       );

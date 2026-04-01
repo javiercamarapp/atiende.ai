@@ -35,8 +35,8 @@ function SidebarContent({ tenant, modules, path, onNavigate }: { tenant:any; mod
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {modules.map(mod => {
           const Icon = ICONS[mod] || LayoutDashboard;
-          const href = mod === 'dashboard' ? '/' : '/' + mod;
-          const active = mod === 'dashboard' ? path === '/' : path.startsWith('/' + mod);
+          const href = mod === 'dashboard' ? '/home' : mod === 'settings' ? '/settings/agent' : '/' + mod;
+          const active = mod === 'dashboard' ? path === '/home' : path.startsWith('/' + mod);
           return (
             <Link key={mod} href={href} onClick={onNavigate}
               className={cn('flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition',
