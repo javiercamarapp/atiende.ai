@@ -13,8 +13,13 @@ Categorias posibles:
   GREETING, FAREWELL, FAQ, PRICE, HOURS, LOCATION,
   APPOINTMENT_NEW, APPOINTMENT_MODIFY, APPOINTMENT_CANCEL,
   ORDER_NEW, ORDER_STATUS, RESERVATION,
+  INSURANCE_QUOTE, INSURANCE_STATUS, INSURANCE_POLICY, INSURANCE_RENEWAL,
   COMPLAINT, EMERGENCY, MEDICAL_QUESTION, LEGAL_QUESTION,
   HUMAN, CRISIS, REVIEW, THANKS, SPAM, OTHER.
+INSURANCE_QUOTE: El cliente quiere cotizar un seguro (auto, vida, gastos medicos, hogar, negocio).
+INSURANCE_STATUS: El cliente pregunta por el estado de una cotizacion de seguro.
+INSURANCE_POLICY: El cliente pregunta por su poliza, pagos, o documentos de seguro.
+INSURANCE_RENEWAL: El cliente pregunta por renovacion de seguro.
 Responde SOLO la categoria, nada mas.`
     }, {
       role: 'user', content: message

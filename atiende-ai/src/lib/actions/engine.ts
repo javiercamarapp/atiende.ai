@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage } from '@/lib/whatsapp/send';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
+import { handleInsuranceQuote, handleInsuranceStatus, handleInsurancePolicy, handleInsuranceRenewal } from '@/lib/actions/insurance-handlers';
 
 // ═══════════════════════════════════════════════════════════
 // AGENTIC ACTION ENGINE v1.0.0 — Bots que HACEN, no solo HABLAN
@@ -54,6 +55,11 @@ export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
     LEGAL_QUESTION: handleLegalQuestion,
     SPAM: handleSpam,
     THANKS: handleThanks,
+    // Insurance module — agentic multi-carrier quoting
+    INSURANCE_QUOTE: handleInsuranceQuote,
+    INSURANCE_STATUS: handleInsuranceStatus,
+    INSURANCE_POLICY: handleInsurancePolicy,
+    INSURANCE_RENEWAL: handleInsuranceRenewal,
   };
 
   const handler = handlers[ctx.intent];

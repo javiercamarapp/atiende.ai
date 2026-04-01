@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Client } from '@upstash/qstash'
-import { decryptCredential } from '@/lib/insurance/credential-vault'
 import { isCircuitOpen } from '@/lib/insurance/circuit-breaker'
+// NOTE: Credentials are sent still-encrypted to the worker.
+// The worker decrypts using the shared CREDENTIAL_ENCRYPTION_KEY.
 import type { QuoteRequestInput, WorkerQuotePayload } from '@/lib/insurance/types'
 
 function getQStash() {
@@ -122,8 +123,9 @@ export async function POST(req: NextRequest) {
             vehicle_data: input.vehicle,
             coverage_type: input.coverage_type,
             credentials: {
-              username: decryptCredential(cred.encrypted_username),
-              password: decryptCredential(cred.encrypted_password),
+              // SECURITY: Re-encrypt for transit to worker (never plaintext in queue)
+              username: cred.encrypted_username,
+              password: cred.encrypted_password,
               agent_number: cred.agent_number ?? undefined,
             },
           }

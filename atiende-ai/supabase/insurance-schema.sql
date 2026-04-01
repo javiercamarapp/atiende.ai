@@ -287,6 +287,10 @@ CREATE TABLE IF NOT EXISTS ins_automation_runs (
 CREATE INDEX IF NOT EXISTS idx_ins_runs_tenant ON ins_automation_runs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ins_runs_status ON ins_automation_runs(status);
 
+ALTER TABLE ins_automation_runs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_runs_policy" ON ins_automation_runs
+  FOR ALL USING (tenant_id IN (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
 -- 10. VEHICLE CATALOG (catálogo AMIS)
 CREATE TABLE IF NOT EXISTS ins_vehicle_catalog (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

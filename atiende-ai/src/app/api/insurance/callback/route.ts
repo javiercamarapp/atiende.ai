@@ -21,6 +21,17 @@ async function handler(req: NextRequest) {
       return NextResponse.json({ error: 'Missing request_id' }, { status: 400 })
     }
 
+    // SECURITY: Validate that the quote_request exists before any updates
+    const { data: quoteRequest } = await supabaseAdmin
+      .from('ins_quote_requests')
+      .select('id, tenant_id')
+      .eq('id', requestId)
+      .single()
+
+    if (!quoteRequest) {
+      return NextResponse.json({ error: 'Quote request not found' }, { status: 404 })
+    }
+
     const { data: carrier } = await supabaseAdmin
       .from('ins_carriers')
       .select('id')
@@ -135,12 +146,24 @@ async function handler(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  // Verify QStash signature in production
+  // SECURITY: Verify worker secret header (defense-in-depth)
+  const workerSecret = req.headers.get('x-worker-secret')
+  const expectedSecret = process.env.INSURANCE_WORKER_SECRET
+  if (!expectedSecret) {
+    return NextResponse.json({ error: 'Server misconfigured: missing worker secret' }, { status: 500 })
+  }
+
+  // SECURITY: In production, verify QStash signature (cryptographic proof of origin)
   if (process.env.QSTASH_CURRENT_SIGNING_KEY) {
     const { verifySignatureAppRouter } = await import('@upstash/qstash/nextjs')
     const verified = verifySignatureAppRouter(handler)
     return verified(req)
   }
-  // In dev without QStash keys, skip verification
+
+  // In dev: verify worker secret as minimum auth
+  if (workerSecret !== expectedSecret) {
+    return NextResponse.json({ error: 'Invalid worker secret' }, { status: 403 })
+  }
+
   return handler(req)
 }
