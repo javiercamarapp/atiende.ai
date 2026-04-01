@@ -85,46 +85,46 @@ const mockGenerateResponse = vi.fn(() => ({
 const mockSelectModel = vi.fn(() => 'test-model');
 
 vi.mock('@/lib/llm/openrouter', () => ({
-  generateResponse: (...args: unknown[]) => mockGenerateResponse(...args),
-  selectModel: (...args: unknown[]) => mockSelectModel(...args),
+  generateResponse: () => mockGenerateResponse(),
+  selectModel: () => mockSelectModel(),
 }));
 
 const mockClassifyIntent = vi.fn(() => 'GREETING');
 vi.mock('@/lib/llm/classifier', () => ({
-  classifyIntent: (...args: unknown[]) => mockClassifyIntent(...args),
+  classifyIntent: () => mockClassifyIntent(),
 }));
 
 const mockSearchKnowledge = vi.fn(() => '');
 vi.mock('@/lib/rag/search', () => ({
-  searchKnowledge: (...args: unknown[]) => mockSearchKnowledge(...args),
+  searchKnowledge: () => mockSearchKnowledge(),
 }));
 
 const mockValidateResponse = vi.fn(
   (text: string) => ({ valid: true, text })
 );
 vi.mock('@/lib/guardrails/validate', () => ({
-  validateResponse: (...args: unknown[]) => mockValidateResponse(...args),
+  validateResponse: (t: string) => mockValidateResponse(t),
 }));
 
 const mockSendTextMessage = vi.fn();
 const mockMarkAsRead = vi.fn(() => Promise.resolve());
 const mockSendTypingIndicator = vi.fn(() => Promise.resolve());
 vi.mock('@/lib/whatsapp/send', () => ({
-  sendTextMessage: (...args: unknown[]) => mockSendTextMessage(...args),
-  markAsRead: (...args: unknown[]) => mockMarkAsRead(...args),
-  sendTypingIndicator: (...args: unknown[]) => mockSendTypingIndicator(...args),
+  sendTextMessage: () => mockSendTextMessage(),
+  markAsRead: () => mockMarkAsRead(),
+  sendTypingIndicator: () => mockSendTypingIndicator(),
 }));
 
 const mockTranscribeAudio = vi.fn(() => 'transcribed text');
 vi.mock('@/lib/voice/deepgram', () => ({
-  transcribeAudio: (...args: unknown[]) => mockTranscribeAudio(...args),
+  transcribeAudio: () => mockTranscribeAudio(),
 }));
 
 const mockCheckRateLimit = vi.fn(() => ({ allowed: true }));
 const mockCheckTenantLimit = vi.fn(() => ({ allowed: true }));
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
-  checkTenantLimit: (...args: unknown[]) => mockCheckTenantLimit(...args),
+  checkRateLimit: () => mockCheckRateLimit(),
+  checkTenantLimit: () => mockCheckTenantLimit(),
 }));
 
 import { processIncomingMessage } from '../processor';
@@ -281,7 +281,7 @@ describe('processIncomingMessage', () => {
       ...TENANT,
       plan: 'free_trial',
       trial_ends_at: '2020-01-01T00:00:00Z',
-    });
+    } as any);
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'phone-123',
