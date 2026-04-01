@@ -293,8 +293,27 @@ async function handleSingleMessage(
     }
   }
 
+  // ═══ 7.5. CHECK CONVERSATION STATE (multi-turn flows) ═══
+  let overrideIntent: string | null = null;
+  try {
+    const { getConversationState, clearConversationState } = await import('@/lib/actions/state-machine');
+    const convState = await getConversationState(conv!.id);
+
+    if (convState.state) {
+      // Override the intent classifier — we know what the customer is responding to
+      const stateIntentMap: Record<string, string> = {
+        'awaiting_appointment_date': 'APPOINTMENT_NEW',
+        'awaiting_modify_date': 'APPOINTMENT_MODIFY_CONFIRM',
+        'awaiting_order_confirmation': 'ORDER_CONFIRM',
+        'awaiting_reservation_details': 'RESERVATION',
+      };
+      overrideIntent = stateIntentMap[convState.state] || null;
+      await clearConversationState(conv!.id); // Clear state after consuming
+    }
+  } catch { /* best effort */ }
+
   // ═══ 8. CLASIFICAR INTENT ═══
-  const intent = await classifyIntent(content);
+  const intent = overrideIntent || await classifyIntent(content);
 
   // ═══ 9. BUSCAR CONTEXTO RAG ═══
   const ragContext = await searchKnowledge(tenant.id, content);

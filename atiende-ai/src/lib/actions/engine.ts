@@ -32,6 +32,7 @@ export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
     // Core actions (10 original)
     APPOINTMENT_NEW: handleNewAppointment,
     APPOINTMENT_MODIFY: handleModifyAppointment,
+    APPOINTMENT_MODIFY_CONFIRM: handleModifyConfirm,
     APPOINTMENT_CANCEL: handleCancelAppointment,
     ORDER_NEW: handleNewOrder,
     ORDER_STATUS: handleOrderStatus,
@@ -93,6 +94,9 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
     if (missing.includes('date')) qs.push('¿Qué día le gustaría?');
     if (missing.includes('time')) qs.push('¿A qué hora?');
     if (missing.includes('service')) qs.push('¿Qué servicio necesita?');
+    // Set state so next message completes the booking
+    const { setConversationState } = await import('@/lib/actions/state-machine');
+    await setConversationState(ctx.conversationId, 'awaiting_appointment_date');
     return { actionTaken: true, actionType: 'appointment.clarify', followUpMessage: qs.join(' ') };
   }
 
@@ -157,7 +161,68 @@ async function handleModifyAppointment(ctx: ActionContext): Promise<ActionResult
   const { data: apt } = await supabaseAdmin.from('appointments').select('id, datetime').eq('tenant_id', ctx.tenantId).eq('customer_phone', ctx.customerPhone).in('status', ['scheduled', 'confirmed']).order('datetime', { ascending: true }).limit(1).single();
   if (!apt) return { actionTaken: true, actionType: 'appointment.not_found', followUpMessage: 'No encontré una cita próxima. ¿Desea agendar una nueva?' };
   const d = new Date(apt.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  // Set state for multi-turn modify flow
+  const { setConversationState } = await import('@/lib/actions/state-machine');
+  await setConversationState(ctx.conversationId, 'awaiting_modify_date');
   return { actionTaken: true, actionType: 'appointment.modify_prompt', followUpMessage: `Su cita actual es el ${d}.\n\n¿Para qué fecha y hora le gustaría cambiarla?` };
+}
+
+// ═══ APPOINTMENT: MODIFY CONFIRM (receives new date/time) ═══
+async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
+  // Extract new date/time from message
+  const extraction = await generateResponse({
+    model: MODELS.CLASSIFIER,
+    system: `Extract date and time from this message. Return ONLY JSON: {"date":"YYYY-MM-DD","time":"HH:MM"}. Today is ${new Date().toISOString().split('T')[0]}. Interpret "mañana" as tomorrow, "martes" as next Tuesday, etc.`,
+    messages: [{ role: 'user', content: ctx.content }],
+    temperature: 0.1,
+  });
+
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(extraction.text); } catch { return { actionTaken: false }; }
+  if (!parsed.date || !parsed.time) return { actionTaken: false };
+
+  // Find the customer's upcoming appointment
+  const { data: apt } = await supabaseAdmin
+    .from('appointments')
+    .select('id, google_event_id, duration_minutes')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('customer_phone', ctx.customerPhone)
+    .in('status', ['scheduled', 'confirmed'])
+    .order('datetime', { ascending: true })
+    .limit(1)
+    .single();
+
+  if (!apt) return { actionTaken: true, actionType: 'appointment.not_found', followUpMessage: 'No encontré una cita para modificar.' };
+
+  const newDatetime = `${parsed.date}T${parsed.time}:00`;
+  const duration = apt.duration_minutes || 30;
+  const newEnd = new Date(new Date(newDatetime).getTime() + duration * 60000).toISOString();
+
+  // Update appointment
+  await supabaseAdmin.from('appointments').update({
+    datetime: newDatetime,
+    end_datetime: newEnd,
+    status: 'scheduled',
+  }).eq('id', apt.id);
+
+  // Update Google Calendar if synced
+  if (apt.google_event_id) {
+    try {
+      const { cancelCalendarEvent } = await import('@/lib/calendar/google');
+      await cancelCalendarEvent('primary', apt.google_event_id);
+      // Old event cancelled; a new sync can be triggered separately
+    } catch { /* best effort */ }
+  }
+
+  const dateFmt = new Date(newDatetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+  const timeFmt = new Date(newDatetime).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+
+  return {
+    actionTaken: true,
+    actionType: 'appointment.modified',
+    details: { appointmentId: apt.id, newDatetime },
+    followUpMessage: `✅ ¡Cita reagendada!\n\n📅 ${dateFmt}\n🕐 ${timeFmt}\n\nLe enviaremos un recordatorio. ¿Necesita algo más?`,
+  };
 }
 
 // ═══ APPOINTMENT: CANCEL ═══
@@ -230,7 +295,11 @@ async function handleReservation(ctx: ActionContext): Promise<ActionResult> {
   });
   let p: Record<string, unknown>;
   try { p = JSON.parse(extraction.text); } catch { return { actionTaken: false }; }
-  if (p.unclear) return { actionTaken: true, actionType: 'reservation.clarify', followUpMessage: '¿Para cuántas personas, qué día y a qué hora?' };
+  if (p.unclear) {
+    const { setConversationState } = await import('@/lib/actions/state-machine');
+    await setConversationState(ctx.conversationId, 'awaiting_reservation_details');
+    return { actionTaken: true, actionType: 'reservation.clarify', followUpMessage: '¿Para cuántas personas, qué día y a qué hora?' };
+  }
 
   await supabaseAdmin.from('appointments').insert({
     tenant_id: ctx.tenantId, contact_id: ctx.contactId, conversation_id: ctx.conversationId,

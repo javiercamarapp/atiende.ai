@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { KnowledgeDelete } from '@/components/dashboard/knowledge-delete';
 
 export default async function KnowledgePage() {
   const supabase = await createServerSupabase();
@@ -20,9 +21,12 @@ export default async function KnowledgePage() {
       </div>
       <div className="space-y-2">
         {(chunks || []).map(c => (
-          <Card key={c.id} className="p-3">
-            <Badge variant="secondary" className="text-xs mb-1">{c.category}</Badge>
-            <p className="text-sm">{c.content.substring(0, 200)}{c.content.length > 200 ? '...' : ''}</p>
+          <Card key={c.id} className="p-3 flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <Badge variant="secondary" className="text-xs mb-1">{c.category}</Badge>
+              <p className="text-sm">{c.content.substring(0, 200)}{c.content.length > 200 ? '...' : ''}</p>
+            </div>
+            <KnowledgeDelete chunkId={c.id} />
           </Card>
         ))}
       </div>
