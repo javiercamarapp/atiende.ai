@@ -5,6 +5,7 @@ import { runResenas, runReactivacion, runCumpleanos, runReferidos, runRedesSocia
 import { runCobrador, runSeguimiento, runOptimizador, runBilingue, runInventario, runConfirmacionCita, runListaEspera, runMenuCatalogo, runDirecciones, runHorarioFuera } from './agents/operations';
 import { runNPS, runReportes, runFAQBuilder, runRendimientoStaff } from './agents/analytics';
 import { runCalificador, runUpselling, runNurturing, runLinkPago } from './agents/sales';
+import { runSmartFollowup } from './agents/smart-followup';
 
 // ═══════════════════════════════════════════════════════════
 // MARKETPLACE AGENT EXECUTION ENGINE
@@ -199,6 +200,10 @@ async function runAgent(slug: string, ctx: AgentContext) {
     upselling: runUpselling,
     nurturing: runNurturing,
     link_pago: runLinkPago,
+    // Smart follow-up
+    smart_followup: async (ctx: AgentContext) => {
+      await runSmartFollowup(ctx.tenantId, ctx.config);
+    },
   };
   const handler = handlers[slug];
   if (handler) await handler(ctx);
