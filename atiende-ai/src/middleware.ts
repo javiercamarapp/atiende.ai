@@ -28,7 +28,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Rutas publicas que no necesitan auth
-  const publicPaths = ['/login', '/register', '/api/webhook'];
+  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/api/webhook'];
   const isPublic = path === '/' || publicPaths.some(p => path === p || path.startsWith(p + '/'));
 
   if (!user && !isPublic) {
