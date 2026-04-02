@@ -37,10 +37,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Si esta autenticado y va a login, redirigir a dashboard
-  if (user && (path === '/login' || path === '/register')) {
+  // Si esta autenticado y va a login/register/landing, redirigir a dashboard
+  if (user && (path === '/' || path === '/login' || path === '/register')) {
     const url = request.nextUrl.clone();
-    url.pathname = '/';
+    url.pathname = '/home';
     return NextResponse.redirect(url);
   }
 
