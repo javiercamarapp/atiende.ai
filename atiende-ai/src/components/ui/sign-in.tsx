@@ -21,7 +21,7 @@ interface SignInPageProps {
 }
 
 const GlassInputWrapper = ({ children }: { children: React.ReactNode }) => (
-  <div className="rounded-2xl border border-border bg-foreground/5 backdrop-blur-sm transition-colors focus-within:border-emerald-400/70 focus-within:bg-emerald-500/10">
+  <div className="rounded-2xl border border-border bg-foreground/5 backdrop-blur-sm transition-colors focus-within:border-zinc-400/70 focus-within:bg-zinc-500/10">
     {children}
   </div>
 );
@@ -83,10 +83,10 @@ export const SignInPage: React.FC<SignInPageProps> = ({
                   <input type="checkbox" name="rememberMe" className="custom-checkbox" />
                   <span className="text-foreground/90">Mantener sesión</span>
                 </label>
-                <a href="#" onClick={(e) => { e.preventDefault(); onResetPassword?.(); }} className="hover:underline text-emerald-500 transition-colors">¿Olvidaste tu contraseña?</a>
+                <a href="#" onClick={(e) => { e.preventDefault(); onResetPassword?.(); }} className="hover:underline text-zinc-900 transition-colors">¿Olvidaste tu contraseña?</a>
               </div>
 
-              <button type="submit" className="animate-element animate-delay-600 w-full rounded-2xl bg-emerald-600 py-4 font-medium text-white hover:bg-emerald-700 transition-colors">
+              <button type="submit" className="animate-element animate-delay-600 w-full rounded-2xl bg-zinc-900 py-4 font-medium text-white hover:bg-zinc-800 transition-colors">
                 Iniciar sesión
               </button>
             </form>
@@ -108,7 +108,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
 
             <p className="animate-element animate-delay-900 text-center text-sm text-muted-foreground">
               ¿No tienes cuenta?{' '}
-              <a href="#" onClick={(e) => { e.preventDefault(); onCreateAccount?.(); }} className="text-emerald-500 hover:underline transition-colors">Crear cuenta gratis</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); onCreateAccount?.(); }} className="text-zinc-900 hover:underline transition-colors">Crear cuenta gratis</a>
             </p>
           </div>
         </div>
