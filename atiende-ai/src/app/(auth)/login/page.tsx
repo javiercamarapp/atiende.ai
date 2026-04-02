@@ -78,7 +78,7 @@ export default function LoginPage() {
       testimonials={testimonials}
       onSignIn={handleSignIn}
       onGoogleSignIn={handleGoogleSignIn}
-      onResetPassword={() => toast.info('Funcionalidad próximamente disponible')}
+      onResetPassword={() => router.push('/forgot-password')}
       onCreateAccount={() => router.push('/register')}
     />
   );
