@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage } from '@/lib/whatsapp/send';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
-import { handleInsuranceQuote, handleInsuranceStatus, handleInsurancePolicy, handleInsuranceRenewal, handleInsuranceDataContinuation, handleInsuranceSelection } from '@/lib/actions/insurance-handlers';
+import { handleInsuranceQuote, handleInsuranceStatus, handleInsurancePolicy, handleInsuranceRenewal, handleInsuranceDataContinuation, handleInsuranceSelection, handleInsuranceClaim, handleInsuranceBind, handleInsurancePayment } from '@/lib/actions/insurance-handlers';
 import type { ActionContext, ActionResult } from '@/lib/actions/types';
 
 // ═══════════════════════════════════════════════════════════
@@ -43,6 +43,9 @@ export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
     INSURANCE_RENEWAL: handleInsuranceRenewal,
     INSURANCE_DATA_CONTINUATION: handleInsuranceDataContinuation,
     INSURANCE_SELECTION: handleInsuranceSelection,
+    INSURANCE_CLAIM: handleInsuranceClaim,
+    INSURANCE_BIND: handleInsuranceBind,
+    INSURANCE_PAYMENT: handleInsurancePayment,
   };
 
   const handler = handlers[ctx.intent];

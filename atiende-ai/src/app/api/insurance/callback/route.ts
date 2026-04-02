@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getInsuranceRedis } from '@/lib/insurance/redis'
 import { recordSuccess, recordFailure } from '@/lib/insurance/circuit-breaker'
@@ -7,6 +8,11 @@ import type { QuoteResult, QuoteProgress } from '@/lib/insurance/types'
 import { QUOTE_EXPIRY_HOURS, REDIS_PROGRESS_TTL_SECONDS } from '@/lib/insurance/constants'
 import { callbackResultSchema, formatZodErrors } from '@/lib/insurance/validation'
 import { logInsuranceEvent, logInsuranceError } from '@/lib/insurance/logger'
+
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b))
+}
 
 async function handler(req: NextRequest) {
   try {
@@ -126,11 +132,12 @@ async function handler(req: NextRequest) {
       const ranked = succeeded
         .sort((a, b) => (a.annual_premium ?? Infinity) - (b.annual_premium ?? Infinity))
 
-      for (let i = 0; i < ranked.length; i++) {
-        await supabaseAdmin.from('ins_quotes').update({
-          rank_position: i + 1,
-        }).eq('quote_request_id', requestId).eq('carrier_id', ranked[i].carrier_id)
-      }
+      await Promise.all(
+        ranked.map((q, i) =>
+          supabaseAdmin.from('ins_quotes').update({ rank_position: i + 1 })
+            .eq('quote_request_id', requestId).eq('carrier_id', q.carrier_id)
+        )
+      )
 
       await supabaseAdmin.from('ins_quote_requests').update({
         status: 'complete',
@@ -211,8 +218,8 @@ export async function POST(req: NextRequest) {
     return verified(req)
   }
 
-  // In dev: verify worker secret as minimum auth
-  if (workerSecret !== expectedSecret) {
+  // In dev: verify worker secret as minimum auth (timing-safe comparison)
+  if (!safeCompare(workerSecret ?? '', expectedSecret)) {
     return NextResponse.json({ error: 'Invalid worker secret' }, { status: 403 })
   }
 

@@ -45,7 +45,8 @@ export async function checkInsuranceRateLimit(
     return count <= limit
   } catch (err) {
     logInsuranceError(err, { context: 'checkInsuranceRateLimit', identifier })
-    // On Redis error, allow the request (fail open)
-    return true
+    console.warn('[rate-limit] Redis error — failing closed (denying request)', { identifier })
+    // On Redis error, deny the request (fail closed)
+    return false
   }
 }

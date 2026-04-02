@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
 
   // Rutas publicas que no necesitan auth
   const publicPaths = ['/', '/login', '/register', '/api/webhook'];
-  const isPublic = publicPaths.some(p => path === p || path.startsWith(p));
+  const isPublic = publicPaths.some(p => path === p || path.startsWith(p + '/'));
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
@@ -47,9 +47,10 @@ export async function middleware(request: NextRequest) {
   // OWASP Security Headers
   supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff');
   supabaseResponse.headers.set('X-Frame-Options', 'DENY');
-  supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  supabaseResponse.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data:; frame-ancestors 'none'");
+  supabaseResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
   return supabaseResponse;
 }

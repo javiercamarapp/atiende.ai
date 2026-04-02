@@ -8,9 +8,12 @@ import { Client } from '@upstash/qstash'
 import { isCircuitOpen } from '@/lib/insurance/circuit-breaker'
 import { logInsuranceEvent } from '@/lib/insurance/logger'
 import type { WorkerQuotePayload } from '@/lib/insurance/types'
+import type { CredentialWithCarrier } from './database.types'
 
 function getQStash() {
-  return new Client({ token: process.env.QSTASH_TOKEN! })
+  const token = process.env.QSTASH_TOKEN
+  if (!token) throw new Error('Missing QSTASH_TOKEN')
+  return new Client({ token })
 }
 
 export interface FanOutParams {
@@ -42,12 +45,11 @@ export async function fanOutQuoteToCarriers(params: FanOutParams): Promise<{ car
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
 
-  type CredRow = NonNullable<typeof creds>[number]
-  const eligibleCarriers = (creds ?? []).filter((c: CredRow) => {
-    const carrier = (c as Record<string, unknown>).ins_carriers as Record<string, unknown>
+  const eligibleCarriers = ((creds ?? []) as CredentialWithCarrier[]).filter(c => {
+    const carrier = c.ins_carriers
     return (
       carrier?.is_active &&
-      (carrier.supported_lines as string[])?.includes(insuranceLine) &&
+      carrier.supported_lines?.includes(insuranceLine) &&
       carrier.health_status !== 'down'
     )
   })
@@ -55,7 +57,7 @@ export async function fanOutQuoteToCarriers(params: FanOutParams): Promise<{ car
   // 2. Create individual quote records
   if (eligibleCarriers.length > 0) {
     await db.from('ins_quotes').insert(
-      eligibleCarriers.map((c: CredRow) => ({
+      eligibleCarriers.map(c => ({
         quote_request_id: requestId,
         tenant_id: tenantId,
         carrier_id: c.carrier_id,
@@ -75,10 +77,10 @@ export async function fanOutQuoteToCarriers(params: FanOutParams): Promise<{ car
 
   if (workerUrl && eligibleCarriers.length > 0) {
     await Promise.allSettled(
-      eligibleCarriers.map(async (cred: CredRow) => {
-        const carrier = (cred as Record<string, unknown>).ins_carriers as Record<string, unknown>
+      eligibleCarriers.map(async (cred) => {
+        const carrier = cred.ins_carriers
 
-        if (await isCircuitOpen(carrier.slug as string)) {
+        if (await isCircuitOpen(carrier.slug)) {
           await db.from('ins_quotes').update({
             status: 'skipped',
             error_message: 'Circuit breaker open',
@@ -96,8 +98,8 @@ export async function fanOutQuoteToCarriers(params: FanOutParams): Promise<{ car
         const payload: WorkerQuotePayload = {
           request_id: requestId,
           tenant_id: tenantId,
-          carrier_slug: carrier.slug as string,
-          carrier_portal_url: carrier.portal_url as string,
+          carrier_slug: carrier.slug,
+          carrier_portal_url: carrier.portal_url,
           carrier_portal_type: carrier.portal_type as WorkerQuotePayload['carrier_portal_type'],
           insurance_line: insuranceLine as WorkerQuotePayload['insurance_line'],
           client_data: clientData as WorkerQuotePayload['client_data'],
@@ -117,7 +119,7 @@ export async function fanOutQuoteToCarriers(params: FanOutParams): Promise<{ car
           callback: `${appUrl}/api/insurance/callback`,
           failureCallback: `${appUrl}/api/insurance/callback`,
           headers: {
-            'x-worker-secret': process.env.INSURANCE_WORKER_SECRET!,
+            'x-worker-secret': process.env.INSURANCE_WORKER_SECRET ?? '',
           },
         })
       })

@@ -29,6 +29,33 @@ export async function POST(req: NextRequest) {
 
     const input = parsed.data
 
+    // Idempotency: check for duplicate request within last 60 seconds
+    const sixtySecondsAgo = new Date(Date.now() - 60_000).toISOString()
+    const { data: existingReq } = await supabase
+      .from('ins_quote_requests')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('insurance_line', input.insurance_line)
+      .eq('client_name', input.client.name)
+      .eq('client_zip_code', input.client.zip_code)
+      .gte('started_at', sixtySecondsAgo)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existingReq) {
+      logInsuranceEvent('quote_request_deduplicated', {
+        existing_request_id: existingReq.id,
+        user_id: user.id,
+      })
+      return NextResponse.json({
+        request_id: existingReq.id,
+        deduplicated: true,
+        status: 'quoting',
+        stream_url: `/api/insurance/stream?id=${existingReq.id}`,
+      })
+    }
+
     // 1. Create quote request
     const { data: quoteReq, error: qrErr } = await supabase
       .from('ins_quote_requests')

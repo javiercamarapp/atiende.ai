@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
             send('complete', progress)
             clearInterval(poll)
             clearInterval(heartbeat)
+            clearTimeout(maxLifetime)
             setTimeout(() => {
               closed = true
               try { controller.close() } catch { /* already closed */ }
