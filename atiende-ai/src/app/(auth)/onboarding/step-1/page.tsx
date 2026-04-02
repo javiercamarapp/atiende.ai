@@ -141,7 +141,7 @@ export default function Step1() {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: '14px 24px 12px', gap: '10px', background: '#F0F2F8', fontFamily: "'Plus Jakarta Sans', sans-serif", animation: 'fadeIn .5s ease .1s forwards', opacity: 0 }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: '14px 24px 12px', gap: '10px', background: '#FFFFFF', fontFamily: "'Plus Jakarta Sans', sans-serif", animation: 'fadeIn .5s ease .1s forwards', opacity: 0 }}>
       <style>{`
         @keyframes fadeIn { to { opacity: 1 } }
         @keyframes sIn { to { opacity: 1; transform: translateY(0) } }
