@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 
 @keyframes fadeSlideIn {
   to { opacity: 1; filter: blur(0px); transform: translateY(0px); }
