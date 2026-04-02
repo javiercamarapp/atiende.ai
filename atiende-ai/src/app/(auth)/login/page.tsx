@@ -1,64 +1,87 @@
 'use client';
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import Link from 'next/link';
+import { SignInPage } from '@/components/ui/sign-in';
+import { toast } from 'sonner';
+
+const testimonials = [
+  {
+    avatarSrc: 'https://randomuser.me/api/portraits/women/57.jpg',
+    name: 'Dra. María González',
+    handle: 'Dentista, Mérida',
+    text: 'Redujimos no-shows en 70%. El bot agenda citas a las 11pm.',
+  },
+  {
+    avatarSrc: 'https://randomuser.me/api/portraits/men/64.jpg',
+    name: 'Roberto Sánchez',
+    handle: 'Taquería, Cancún',
+    text: '10 pedidos extra por noche. Se pagó solo en la primera semana.',
+  },
+  {
+    avatarSrc: 'https://randomuser.me/api/portraits/men/32.jpg',
+    name: 'Ana Martínez',
+    handle: 'Inmobiliaria, Playa del Carmen',
+    text: 'Cerramos 3 ventas que habríamos perdido. El bot califica leads 24/7.',
+  },
+];
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const router = useRouter();
+  const [, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
-    setError('');
-    const s = createClient();
-    const { error } = await s.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
+
+    const formData = new FormData(event.currentTarget);
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        toast.error(error.message === 'Invalid login credentials'
+          ? 'Correo o contraseña incorrectos'
+          : error.message);
+      } else {
+        router.push('/home');
+        router.refresh();
+      }
+    } catch {
+      toast.error('Error al iniciar sesión');
+    } finally {
       setLoading(false);
-      return;
     }
-    router.push('/');
-    router.refresh();
+  };
+
+  const handleGoogleSignIn = async () => {
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/home` },
+    });
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-blue-600">atiende.ai</CardTitle>
-          <p className="text-gray-500 text-sm">Inicia sesion</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@negocio.com" required />
-            </div>
-            <div>
-              <Label>Contrasena</Label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" required />
-            </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Entrando...' : 'Iniciar Sesion'}
-            </Button>
-          </form>
-          <p className="text-center text-sm text-gray-500 mt-4">
-            No tienes cuenta?{' '}
-            <Link href="/register" className="text-blue-600 font-medium hover:underline">Registrate</Link>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+    <SignInPage
+      title={
+        <span className="font-light tracking-tighter">
+          Bienvenido a{' '}
+          <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent font-semibold">
+            atiende.ai
+          </span>
+        </span>
+      }
+      description="Inicia sesión y automatiza tu negocio con inteligencia artificial"
+      heroImageSrc="https://images.unsplash.com/photo-1556761175-b413da4baf72?w=1200&q=80"
+      testimonials={testimonials}
+      onSignIn={handleSignIn}
+      onGoogleSignIn={handleGoogleSignIn}
+      onResetPassword={() => toast.info('Funcionalidad próximamente disponible')}
+      onCreateAccount={() => router.push('/register')}
+    />
   );
 }

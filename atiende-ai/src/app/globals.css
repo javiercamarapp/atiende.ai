@@ -1,4 +1,50 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@keyframes fadeSlideIn {
+  to { opacity: 1; filter: blur(0px); transform: translateY(0px); }
+}
+@keyframes slideRightIn {
+  to { opacity: 1; filter: blur(0px); transform: translateX(0px); }
+}
+@keyframes testimonialIn {
+  to { opacity: 1; filter: blur(0px); transform: translateY(0px) scale(1); }
+}
+
+.animate-element {
+  opacity: 0; filter: blur(4px); transform: translateY(12px);
+  animation: fadeSlideIn 0.6s ease forwards;
+}
+.animate-slide-right {
+  opacity: 0; filter: blur(6px); transform: translateX(40px);
+  animation: slideRightIn 0.8s ease forwards;
+}
+.animate-testimonial {
+  opacity: 0; filter: blur(4px); transform: translateY(20px) scale(0.95);
+  animation: testimonialIn 0.6s ease forwards;
+}
+.animate-delay-100 { animation-delay: 100ms; }
+.animate-delay-200 { animation-delay: 200ms; }
+.animate-delay-300 { animation-delay: 300ms; }
+.animate-delay-400 { animation-delay: 400ms; }
+.animate-delay-500 { animation-delay: 500ms; }
+.animate-delay-600 { animation-delay: 600ms; }
+.animate-delay-700 { animation-delay: 700ms; }
+.animate-delay-800 { animation-delay: 800ms; }
+.animate-delay-900 { animation-delay: 900ms; }
+.animate-delay-1000 { animation-delay: 1000ms; }
+.animate-delay-1200 { animation-delay: 1200ms; }
+.animate-delay-1400 { animation-delay: 1400ms; }
+
+.custom-checkbox {
+  appearance: none; width: 18px; height: 18px; border-radius: 6px;
+  border: 1.5px solid hsl(var(--border)); background: transparent; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.custom-checkbox:checked {
+  background: hsl(var(--primary)); border-color: hsl(var(--primary));
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+}
 
 @layer base {
   :root {
