@@ -502,3 +502,73 @@ CREATE INDEX idx_wh_logs_provider ON webhook_logs(provider, created_at DESC);
 ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "tenant_data" ON webhook_logs FOR ALL
 USING (tenant_id = get_user_tenant_id());
+
+-- ═══════════════════════════════════════════════════════════
+-- 21. AGENT VERSIONING (replaces webhook_logs abuse)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS agent_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+  agent_slug TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  prompt_template TEXT NOT NULL,
+  config JSONB DEFAULT '{}',
+  changelog TEXT,
+  traffic_percent INTEGER DEFAULT 100,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_agent_versions_slug ON agent_versions(agent_slug, version DESC);
+ALTER TABLE agent_versions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_agent_versions" ON agent_versions FOR ALL USING (tenant_id = get_user_tenant_id());
+
+-- ═══════════════════════════════════════════════════════════
+-- 22. INTENT CLASSIFICATION FEEDBACK (replaces webhook_logs abuse)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS classification_feedback (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+  message_id UUID,
+  original_intent TEXT NOT NULL,
+  corrected_intent TEXT,
+  confidence REAL NOT NULL DEFAULT 0,
+  model_variant TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_classification_feedback_tenant ON classification_feedback(tenant_id, created_at DESC);
+CREATE INDEX idx_classification_feedback_accuracy ON classification_feedback(original_intent, corrected_intent);
+ALTER TABLE classification_feedback ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_classification_feedback" ON classification_feedback FOR ALL USING (tenant_id = get_user_tenant_id());
+
+-- ═══════════════════════════════════════════════════════════
+-- 23. AGENT EXECUTION LOGS (dedicated, not webhook_logs)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS agent_executions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+  agent_slug TEXT NOT NULL,
+  version INTEGER,
+  success BOOLEAN NOT NULL,
+  duration_ms INTEGER,
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_agent_executions_slug ON agent_executions(agent_slug, created_at DESC);
+ALTER TABLE agent_executions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_agent_executions" ON agent_executions FOR ALL USING (tenant_id = get_user_tenant_id());
+
+-- ═══════════════════════════════════════════════════════════
+-- 24. METRICS SNAPSHOTS (for long-term analytics beyond Redis 7-day TTL)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS metrics_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+  metric_type TEXT NOT NULL,
+  metric_data JSONB NOT NULL,
+  period_start TIMESTAMPTZ NOT NULL,
+  period_end TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_metrics_snapshots_type ON metrics_snapshots(metric_type, period_start DESC);
+ALTER TABLE metrics_snapshots ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_metrics_snapshots" ON metrics_snapshots FOR ALL USING (tenant_id = get_user_tenant_id());

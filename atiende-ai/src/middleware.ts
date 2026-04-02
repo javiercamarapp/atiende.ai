@@ -52,7 +52,7 @@ export async function middleware(request: NextRequest) {
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   supabaseResponse.headers.set(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co https://openrouter.ai https://api.anthropic.com;"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://openrouter.ai https://api.anthropic.com https://api.stripe.com; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';"
   );
   supabaseResponse.headers.set(
     'Strict-Transport-Security',
