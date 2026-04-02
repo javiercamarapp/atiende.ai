@@ -40,7 +40,7 @@ export async function generateAndValidateResponse(opts: {
 }): Promise<GeneratedResponse> {
   const { tenant, intent, ragContext, history, customerName, content } = opts;
 
-  const model = selectModel(intent, tenant.business_type, tenant.plan);
+  const model = selectModel(intent, tenant.business_type || 'other', tenant.plan || 'free_trial');
   const systemPrompt = buildSystemPrompt(tenant, ragContext, intent, customerName);
 
   const startTime = Date.now();
@@ -60,7 +60,7 @@ export async function generateAndValidateResponse(opts: {
 
   const responseTimeMs = Date.now() - startTime;
 
-  const validation = validateResponse(result.text, tenant, ragContext, content);
+  const validation = validateResponse(result.text, { business_type: String(tenant.business_type || 'other'), name: String(tenant.name || '') }, ragContext, content);
 
   return {
     text: validation.text,
