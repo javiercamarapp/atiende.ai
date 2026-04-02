@@ -73,7 +73,7 @@ export async function generateAndValidateResponse(opts: {
   };
 }
 
-// ── System prompt construction ──────────────────────────────
+// -- System prompt construction --
 
 function buildSystemPrompt(
   tenant: TenantRecord,

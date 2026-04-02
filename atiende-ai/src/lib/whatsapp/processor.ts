@@ -64,7 +64,7 @@ export async function processIncomingMessage(body: WhatsAppWebhookBody) {
   }
 }
 
-// ── Gate checks (rate limits, plan, business hours) ──────────
+// -- Gate checks (rate limits, plan, business hours) --
 
 async function checkGates(
   tenant: TenantRecord,
@@ -134,7 +134,7 @@ async function checkGates(
   return true;
 }
 
-// ── Extract text content from any WhatsApp message type ─────
+// -- Extract text content from any WhatsApp message type --
 
 async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; messageType: string }> {
   let content = '';
@@ -174,7 +174,7 @@ async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; 
   return { content: sanitizeInput(content), messageType };
 }
 
-// ── Post-response side effects (actions, scoring, notifications) ──
+// -- Post-response side effects (actions, scoring, notifications) --
 
 async function runPostResponseEffects(
   tenant: TenantRecord,
@@ -303,7 +303,7 @@ async function runPostResponseEffects(
   }
 }
 
-// ── Main message handler ────────────────────────────────────
+// -- Main message handler --
 
 async function handleSingleMessage(
   msg: WhatsAppMessage,
