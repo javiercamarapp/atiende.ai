@@ -1,11 +1,10 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { generateResponse, selectModel } from '@/lib/llm/openrouter';
-import { classifyIntent } from '@/lib/llm/classifier';
-import { searchKnowledge } from '@/lib/rag/search';
-import { validateResponse } from '@/lib/guardrails/validate';
 import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
 import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
+import { resolveIntent } from '@/lib/whatsapp/classifier';
+import { buildRagContext } from '@/lib/whatsapp/rag-context';
+import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
 
 function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
@@ -57,10 +56,7 @@ export async function processIncomingMessage(body: WhatsAppWebhookBody) {
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value;
-
-      // Ignorar status updates (delivered, read, etc.)
       if (!value.messages) continue;
-
       for (const msg of value.messages) {
         await handleSingleMessage(msg, value.metadata);
       }
@@ -68,51 +64,34 @@ export async function processIncomingMessage(body: WhatsAppWebhookBody) {
   }
 }
 
-async function handleSingleMessage(
-  msg: WhatsAppMessage,
-  metadata: { phone_number_id: string; display_phone_number: string }
-) {
-  const senderPhone = msg.from; // numero del cliente
-  const phoneNumberId = metadata.phone_number_id;
-  const messageId = msg.id;
+// -- Gate checks (rate limits, plan, business hours) --
 
-  // ═══ 1. IDENTIFICAR TENANT ═══
-  const { data: tenant } = await supabaseAdmin
-    .from('tenants')
-    .select('*')
-    .eq('wa_phone_number_id', phoneNumberId)
-    .eq('status', 'active')
-    .single();
-
-  if (!tenant) {
-    console.warn('Tenant no encontrado para:', phoneNumberId);
-    return;
-  }
-
-  // ═══ 1.5 RATE LIMITING ═══
+async function checkGates(
+  tenant: TenantRecord,
+  senderPhone: string,
+  phoneNumberId: string,
+): Promise<boolean> {
+  // Rate limiting
   const rateLimited = await checkRateLimit(senderPhone);
-  if (!rateLimited.allowed) {
-    return; // silently drop if rate limited
-  }
+  if (!rateLimited.allowed) return false;
 
   const tenantLimited = await checkTenantLimit(tenant.id, tenant.plan);
-  if (!tenantLimited.allowed) {
-    return; // silently drop if tenant limit exceeded
-  }
+  if (!tenantLimited.allowed) return false;
 
-  // ═══ 1.6 PLAN ENFORCEMENT ═══
+  // Trial expiry
   if (tenant.plan === 'free_trial' && tenant.trial_ends_at) {
     const trialEnd = new Date(tenant.trial_ends_at as string);
     if (trialEnd < new Date()) {
       await sendTextMessage(
         phoneNumberId,
         senderPhone,
-        'Tu periodo de prueba ha terminado. Para seguir usando nuestro servicio, por favor actualiza tu plan en el panel de administracion. Gracias por probar nuestro servicio.'
+        'Tu periodo de prueba ha terminado. Para seguir usando nuestro servicio, por favor actualiza tu plan en el panel de administracion. Gracias por probar nuestro servicio.',
       );
-      return;
+      return false;
     }
   }
 
+  // Monthly message cap
   const planMsgLimits: Record<string, number> = { free_trial: 50, basic: 500, pro: 2000, premium: 10000 };
   const monthlyLimit = planMsgLimits[tenant.plan] || 50;
   const monthStart = new Date();
@@ -130,35 +109,34 @@ async function handleSingleMessage(
     await sendTextMessage(
       phoneNumberId,
       senderPhone,
-      'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.'
+      'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.',
     );
-    return;
+    return false;
   }
 
-  // ═══ 1.7. CHECK BUSINESS HOURS — After-hours interception ═══
+  // Business hours
   try {
     const { isBusinessOpen, getNextOpenTime } = await import('@/lib/actions/business-hours');
     const hours = tenant.business_hours as Record<string, string> | null;
     if (!isBusinessOpen(hours)) {
       const nextOpen = getNextOpenTime(hours);
-      await sendTextMessage(phoneNumberId, senderPhone,
-        `🌙 Gracias por escribirnos. En este momento estamos fuera de horario. Abrimos ${nextOpen}. Le responderemos a primera hora. ¡Que tenga buena noche!`
+      await sendTextMessage(
+        phoneNumberId,
+        senderPhone,
+        `🌙 Gracias por escribirnos. En este momento estamos fuera de horario. Abrimos ${nextOpen}. Le responderemos a primera hora. ¡Que tenga buena noche!`,
       );
-      // Save message but don't process with LLM
-      // Note: conv not yet created at this point, skip message save
-      return;
+      return false;
     }
-  } catch { /* Best effort — continue processing if hours check fails */ }
+  } catch {
+    /* Best effort — continue processing if hours check fails */
+  }
 
-  // ═══ 2. MARCAR COMO LEIDO ═══
-  await markAsRead(phoneNumberId, messageId).catch((err) => {
-    // Non-critical: log but do not disrupt message processing
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('markAsRead failed:', err);
-    }
-  });
+  return true;
+}
 
-  // ═══ 3. EXTRAER CONTENIDO DEL MENSAJE ═══
+// -- Extract text content from any WhatsApp message type --
+
+async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; messageType: string }> {
   let content = '';
   let messageType = msg.type;
 
@@ -171,9 +149,7 @@ async function handleSingleMessage(
       messageType = 'audio';
       break;
     case 'image':
-      content = msg.image?.caption
-        ? `[Imagen: ${msg.image.caption}]`
-        : '[Imagen recibida]';
+      content = msg.image?.caption ? `[Imagen: ${msg.image.caption}]` : '[Imagen recibida]';
       break;
     case 'document':
       content = `[Documento: ${msg.document?.filename || 'archivo'}]`;
@@ -195,10 +171,174 @@ async function handleSingleMessage(
       content = `[${msg.type} recibido]`;
   }
 
-  content = sanitizeInput(content);
+  return { content: sanitizeInput(content), messageType };
+}
+
+// -- Post-response side effects (actions, scoring, notifications) --
+
+async function runPostResponseEffects(
+  tenant: TenantRecord,
+  phoneNumberId: string,
+  senderPhone: string,
+  conversationId: string,
+  contactId: string,
+  contactName: string,
+  customerName: string,
+  intent: string,
+  content: string,
+) {
+  // Agentic actions
+  try {
+    const { executeAction } = await import('@/lib/actions/engine');
+    const actionResult = await executeAction({
+      tenantId: tenant.id,
+      phoneNumberId,
+      customerPhone: senderPhone,
+      customerName,
+      contactId,
+      conversationId,
+      intent,
+      content,
+      businessType: tenant.business_type as string,
+      tenant,
+    });
+    if (actionResult.actionTaken && actionResult.followUpMessage) {
+      await sendTextMessage(phoneNumberId, senderPhone, actionResult.followUpMessage);
+      await supabaseAdmin.from('messages').insert({
+        conversation_id: conversationId,
+        tenant_id: tenant.id,
+        direction: 'outbound',
+        sender_type: 'bot',
+        content: actionResult.followUpMessage,
+        message_type: 'text',
+        intent: `action.${actionResult.actionType}`,
+      });
+    }
+
+    // Notify owner for critical actions
+    if (
+      actionResult.actionTaken &&
+      ['order.created', 'complaint.escalated', 'emergency.escalated', 'crisis.detected', 'appointment.created'].includes(actionResult.actionType || '')
+    ) {
+      try {
+        const { notifyOwner } = await import('@/lib/actions/notifications');
+        const eventMap: Record<string, 'new_order' | 'new_appointment' | 'complaint' | 'emergency' | 'crisis'> = {
+          'order.created': 'new_order',
+          'complaint.escalated': 'complaint',
+          'emergency.escalated': 'emergency',
+          'crisis.detected': 'crisis',
+          'appointment.created': 'new_appointment',
+        };
+        await notifyOwner({
+          tenantId: tenant.id,
+          event: eventMap[actionResult.actionType!] || 'new_order',
+          details: `Cliente: ${senderPhone}\n${actionResult.followUpMessage?.slice(0, 200) || ''}`,
+        });
+      } catch {
+        /* best effort */
+      }
+    }
+  } catch {
+    /* Actions are best-effort */
+  }
+
+  // Industry-specific actions
+  try {
+    const { executeIndustryAction } = await import('@/lib/actions/industry-actions');
+    const industryResult = await executeIndustryAction({
+      tenantId: tenant.id,
+      phoneNumberId,
+      customerPhone: senderPhone,
+      customerName,
+      contactId,
+      conversationId,
+      businessType: tenant.business_type as string,
+      tenant,
+      intent,
+      content,
+    });
+    if (industryResult.acted && industryResult.message) {
+      await sendTextMessage(phoneNumberId, senderPhone, industryResult.message);
+      await supabaseAdmin.from('messages').insert({
+        conversation_id: conversationId,
+        tenant_id: tenant.id,
+        direction: 'outbound',
+        sender_type: 'bot',
+        content: industryResult.message,
+        message_type: 'text',
+        intent: `industry.${tenant.business_type}`,
+      });
+    }
+  } catch {
+    /* best effort */
+  }
+
+  // Lead scoring
+  try {
+    const { updateLeadScore } = await import('@/lib/actions/lead-scoring');
+    await updateLeadScore(contactId, intent);
+  } catch {
+    /* best effort */
+  }
+
+  // Hot lead routing
+  try {
+    if (contactId) {
+      const { data: updatedContact } = await supabaseAdmin
+        .from('contacts')
+        .select('lead_score, lead_temperature')
+        .eq('id', contactId)
+        .single();
+      if (updatedContact?.lead_temperature === 'hot' && updatedContact.lead_score >= 70) {
+        const { notifyOwner } = await import('@/lib/actions/notifications');
+        await notifyOwner({
+          tenantId: tenant.id,
+          event: 'lead_hot',
+          details: `🔥 LEAD CALIENTE (Score: ${updatedContact.lead_score}/100)\n\nCliente: ${contactName || senderPhone}\nTel: ${senderPhone}\nÚltimo intent: ${intent}\n\n¡Contacte a este cliente AHORA!`,
+        });
+      }
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
+// -- Main message handler --
+
+async function handleSingleMessage(
+  msg: WhatsAppMessage,
+  metadata: { phone_number_id: string; display_phone_number: string },
+) {
+  const senderPhone = msg.from;
+  const phoneNumberId = metadata.phone_number_id;
+  const messageId = msg.id;
+
+  // 1. Identify tenant
+  const { data: tenant } = await supabaseAdmin
+    .from('tenants')
+    .select('*')
+    .eq('wa_phone_number_id', phoneNumberId)
+    .eq('status', 'active')
+    .single();
+
+  if (!tenant) {
+    console.warn('Tenant no encontrado para:', phoneNumberId);
+    return;
+  }
+
+  // 2. Gate checks
+  if (!(await checkGates(tenant as TenantRecord, senderPhone, phoneNumberId))) return;
+
+  // 3. Mark as read (non-critical)
+  await markAsRead(phoneNumberId, messageId).catch((err) => {
+    if (process.env.NODE_ENV !== 'production') console.error('markAsRead failed:', err);
+  });
+
+  // 4. Extract content
+  const { content, messageType } = await extractContent(msg);
   if (!content || content.length < 1) return;
 
-  // ═══ 4. OBTENER O CREAR CONTACTO ═══
+  // 5. Upsert contact
   let { data: contact } = await supabaseAdmin
     .from('contacts')
     .select('id, name')
@@ -219,7 +359,7 @@ async function handleSingleMessage(
     contact = newContact;
   }
 
-  // ═══ 5. OBTENER O CREAR CONVERSACION ═══
+  // 6. Upsert conversation
   let { data: conv } = await supabaseAdmin
     .from('conversations')
     .select('id, status, customer_name')
@@ -245,9 +385,8 @@ async function handleSingleMessage(
     conv = newConv;
   }
 
-  // Si esta en human_handoff, NO responder con AI
+  // Human handoff — save but don't respond
   if (conv?.status === 'human_handoff') {
-    // Solo guardar el mensaje, un humano respondera
     await supabaseAdmin.from('messages').insert({
       conversation_id: conv.id,
       tenant_id: tenant.id,
@@ -260,7 +399,7 @@ async function handleSingleMessage(
     return;
   }
 
-  // ═══ 6. GUARDAR MENSAJE ENTRANTE ═══
+  // 7. Save inbound message
   await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
@@ -271,11 +410,9 @@ async function handleSingleMessage(
     wa_message_id: messageId,
   });
 
-  // ═══ 7. ENVIAR BIENVENIDA SI ES PRIMER CONTACTO ═══
+  // 8. Welcome message for new conversations
   if (isNewConversation && tenant.welcome_message) {
-    await sendTextMessage(
-      phoneNumberId, senderPhone, tenant.welcome_message
-    );
+    await sendTextMessage(phoneNumberId, senderPhone, tenant.welcome_message as string);
     await supabaseAdmin.from('messages').insert({
       conversation_id: conv!.id,
       tenant_id: tenant.id,
@@ -284,85 +421,40 @@ async function handleSingleMessage(
       content: tenant.welcome_message,
       message_type: 'text',
     });
-    // Si el welcome fue suficiente, no generar otra respuesta
-    // para saludos simples
-    if (['hola', 'hi', 'buenas', 'buen dia', 'buenos dias',
-         'buenas tardes', 'buenas noches']
-        .some(g => content.toLowerCase().includes(g))) {
+    if (
+      ['hola', 'hi', 'buenas', 'buen dia', 'buenos dias', 'buenas tardes', 'buenas noches'].some((g) =>
+        content.toLowerCase().includes(g),
+      )
+    ) {
       return;
     }
   }
 
-  // ═══ 7.5. CHECK CONVERSATION STATE (multi-turn flows) ═══
-  let overrideIntent: string | null = null;
-  try {
-    const { getConversationState, clearConversationState } = await import('@/lib/actions/state-machine');
-    const convState = await getConversationState(conv!.id);
+  // 9. Classify intent (with state-machine override)
+  const intent = await resolveIntent(content, conv!.id);
 
-    if (convState.state) {
-      // Override the intent classifier — we know what the customer is responding to
-      const stateIntentMap: Record<string, string> = {
-        'awaiting_appointment_date': 'APPOINTMENT_NEW',
-        'awaiting_modify_date': 'APPOINTMENT_MODIFY_CONFIRM',
-        'awaiting_order_confirmation': 'ORDER_CONFIRM',
-        'awaiting_reservation_details': 'RESERVATION',
-      };
-      overrideIntent = stateIntentMap[convState.state] || null;
-      await clearConversationState(conv!.id); // Clear state after consuming
-    }
-  } catch { /* best effort */ }
+  // 10. Build RAG context + history in parallel
+  const { ragContext, history } = await buildRagContext(tenant.id as string, content, conv!.id);
 
-  // ═══ 8. CLASIFICAR INTENT ═══
-  const intent = overrideIntent || await classifyIntent(content);
-
-  // ═══ 9. BUSCAR CONTEXTO RAG ═══
-  const ragContext = await searchKnowledge(tenant.id, content);
-
-  // ═══ 10. OBTENER HISTORIAL (ultimos 8 mensajes) ═══
-  const { data: history } = await supabaseAdmin
-    .from('messages')
-    .select('direction, sender_type, content')
-    .eq('conversation_id', conv!.id)
-    .order('created_at', { ascending: true })
-    .limit(8);
-
-  // ═══ 11. SELECCIONAR MODELO LLM ═══
-  const model = selectModel(intent, tenant.business_type, tenant.plan);
-
-  // ═══ 11.5 SEÑAL DE ESCRITURA ═══
-  // Send typing indicator (best-effort) so the user sees "typing..."
+  // 11. Typing indicator (fire-and-forget)
   sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
 
-  // ═══ 12. GENERAR RESPUESTA ═══
-  const startTime = Date.now();
-
-  const systemPrompt = buildSystemPrompt(tenant, ragContext, intent, contact?.name);
-
-  const result = await generateResponse({
-    model,
-    system: systemPrompt,
-    messages: (history || [])
-      .filter(m => m.content)
-      .map(m => ({
-        role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: m.content!,
-      })),
-    maxTokens: 400,
-    temperature: tenant.temperature || 0.5,
+  // 12. Generate and validate response
+  const response = await generateAndValidateResponse({
+    tenant: tenant as TenantRecord,
+    intent,
+    ragContext,
+    history,
+    customerName: contact?.name,
+    content,
   });
 
-  const responseTime = Date.now() - startTime;
-
-  // ═══ 13. VALIDAR ANTI-ALUCINACION ═══
-  const validation = validateResponse(result.text, tenant, ragContext, content);
-  const finalText = validation.valid ? validation.text : validation.text;
-
-  // ═══ 14. ENVIAR RESPUESTA POR WHATSAPP (SMART) ═══
+  // 13. Send response via WhatsApp
   const { sendSmartResponse } = await import('@/lib/whatsapp/smart-response');
   await sendSmartResponse({
     phoneNumberId,
     to: senderPhone,
-    text: finalText,
+    text: response.text,
     intent,
     tenant: {
       name: tenant.name as string,
@@ -374,120 +466,37 @@ async function handleSingleMessage(
     },
   });
 
-  // ═══ 14.5. EXECUTE AGENTIC ACTION ═══
-  try {
-    const { executeAction } = await import('@/lib/actions/engine');
-    const actionResult = await executeAction({
-      tenantId: tenant.id as string,
-      phoneNumberId,
-      customerPhone: senderPhone,
-      customerName: conv?.customer_name as string || contact?.name as string || '',
-      contactId: contact?.id as string || '',
-      conversationId: conv?.id as string || '',
-      intent,
-      content,
-      businessType: tenant.business_type as string,
-      tenant,
-    });
-    if (actionResult.actionTaken && actionResult.followUpMessage) {
-      await sendTextMessage(phoneNumberId, senderPhone, actionResult.followUpMessage);
-      await supabaseAdmin.from('messages').insert({
-        conversation_id: conv!.id, tenant_id: tenant.id,
-        direction: 'outbound', sender_type: 'bot',
-        content: actionResult.followUpMessage, message_type: 'text',
-        intent: `action.${actionResult.actionType}`,
-      });
-    }
+  // 14. Post-response side effects (best-effort)
+  await runPostResponseEffects(
+    tenant as TenantRecord,
+    phoneNumberId,
+    senderPhone,
+    conv!.id,
+    (contact?.id as string) || '',
+    (contact?.name as string) || '',
+    (conv?.customer_name as string) || (contact?.name as string) || '',
+    intent,
+    content,
+  );
 
-    // ═══ 14.6. NOTIFY OWNER for critical actions ═══
-    if (actionResult.actionTaken && ['order.created', 'complaint.escalated', 'emergency.escalated', 'crisis.detected', 'appointment.created'].includes(actionResult.actionType || '')) {
-      try {
-        const { notifyOwner } = await import('@/lib/actions/notifications');
-        const eventMap: Record<string, 'new_order' | 'new_appointment' | 'complaint' | 'emergency' | 'crisis'> = {
-          'order.created': 'new_order',
-          'complaint.escalated': 'complaint',
-          'emergency.escalated': 'emergency',
-          'crisis.detected': 'crisis',
-          'appointment.created': 'new_appointment',
-        };
-        await notifyOwner({
-          tenantId: tenant.id as string,
-          event: eventMap[actionResult.actionType!] || 'new_order',
-          details: `Cliente: ${senderPhone}\n${actionResult.followUpMessage?.slice(0, 200) || ''}`,
-        });
-      } catch { /* best effort */ }
-    }
-  } catch { /* Actions are best-effort — never break the pipeline */ }
-
-  // ═══ 14.6b. INDUSTRY-SPECIFIC AGENTIC ACTIONS ═══
-  try {
-    const { executeIndustryAction } = await import('@/lib/actions/industry-actions');
-    const industryResult = await executeIndustryAction({
-      tenantId: tenant.id as string,
-      phoneNumberId,
-      customerPhone: senderPhone,
-      customerName: conv?.customer_name as string || contact?.name as string || '',
-      contactId: contact?.id as string || '',
-      conversationId: conv?.id as string || '',
-      businessType: tenant.business_type as string,
-      tenant,
-      intent,
-      content,
-    });
-    if (industryResult.acted && industryResult.message) {
-      await sendTextMessage(phoneNumberId, senderPhone, industryResult.message);
-      await supabaseAdmin.from('messages').insert({
-        conversation_id: conv!.id, tenant_id: tenant.id,
-        direction: 'outbound', sender_type: 'bot',
-        content: industryResult.message, message_type: 'text',
-        intent: `industry.${tenant.business_type}`,
-      });
-    }
-  } catch { /* best effort */ }
-
-  // ═══ 14.7. UPDATE LEAD SCORE ═══
-  try {
-    const { updateLeadScore } = await import('@/lib/actions/lead-scoring');
-    await updateLeadScore(contact?.id as string || '', intent);
-  } catch { /* best effort */ }
-
-  // ═══ 14.8. HOT LEAD ROUTING — Notify owner when lead becomes hot ═══
-  try {
-    if (contact?.id) {
-      const { data: updatedContact } = await supabaseAdmin
-        .from('contacts')
-        .select('lead_score, lead_temperature')
-        .eq('id', contact.id)
-        .single();
-      if (updatedContact?.lead_temperature === 'hot' && updatedContact.lead_score >= 70) {
-        const { notifyOwner } = await import('@/lib/actions/notifications');
-        await notifyOwner({
-          tenantId: tenant.id as string,
-          event: 'lead_hot',
-          details: `🔥 LEAD CALIENTE (Score: ${updatedContact.lead_score}/100)\n\nCliente: ${contact.name || senderPhone}\nTel: ${senderPhone}\nÚltimo intent: ${intent}\n\n¡Contacte a este cliente AHORA!`,
-        });
-      }
-    }
-  } catch { /* best effort */ }
-
-  // ═══ 15. GUARDAR MENSAJE SALIENTE + METRICAS ═══
+  // 15. Save outbound message + metrics
   await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
     direction: 'outbound',
     sender_type: 'bot',
-    content: finalText,
+    content: response.text,
     message_type: 'text',
     intent,
-    model_used: result.model,
-    tokens_in: result.tokensIn,
-    tokens_out: result.tokensOut,
-    cost_usd: result.cost,
-    response_time_ms: responseTime,
-    confidence: validation.valid ? 0.9 : 0.3,
+    model_used: response.model,
+    tokens_in: response.tokensIn,
+    tokens_out: response.tokensOut,
+    cost_usd: response.cost,
+    response_time_ms: response.responseTimeMs,
+    confidence: response.confidence,
   });
 
-  // ═══ 16. ACTUALIZAR CONVERSACION ═══
+  // 16. Update conversation timestamp
   await supabaseAdmin
     .from('conversations')
     .update({
@@ -495,33 +504,4 @@ async function handleSingleMessage(
       customer_name: contact?.name || conv?.customer_name,
     })
     .eq('id', conv!.id);
-}
-
-// ═══ CONSTRUIR SYSTEM PROMPT ═══
-function buildSystemPrompt(
-  tenant: TenantRecord, ragContext: string, intent: string, customerName?: string | null
-): string {
-  return `${tenant.chat_system_prompt || getDefaultPrompt(tenant)}
-
-═══ CONTEXTO DEL NEGOCIO (usa SOLO esta informacion para responder) ═══
-${ragContext}
-
-═══ REGLAS DE ESTA RESPUESTA ═══
-INTENT DETECTADO: ${intent}
-${customerName ? `NOMBRE DEL CLIENTE: ${customerName}` : ''}
-- Responde en MAXIMO 3-4 oraciones
-- Si no tienes info: "Permitame verificar con el equipo"
-- NUNCA inventes datos, precios, horarios
-- Usa los precios EXACTOS del contexto
-- Espanol mexicano, "usted" siempre`;
-}
-
-function getDefaultPrompt(tenant: TenantRecord): string {
-  return `Eres el asistente virtual de ${tenant.name}${tenant.address ? ` en ${tenant.address}` : ''}.
-Hablas espanol mexicano natural. Usas "usted" siempre.
-Eres calido, profesional y servicial.
-Tu trabajo: informar sobre servicios, precios, horarios, y agendar citas.
-Si no sabes algo: "Permitame verificar con el equipo y le confirmo."
-NUNCA diagnostiques, recetes, ni des asesoria medica/legal.
-Ofrece siempre: "Si prefiere hablar con una persona, con gusto le comunico."`;
 }

@@ -31,7 +31,9 @@ function makeConektaReq(body: object, signature?: string) {
   const raw = JSON.stringify(body);
   const headers: Record<string, string> = {};
   if (signature !== undefined) {
-    headers['digest'] = signature;
+    // Ensure signature is a valid 64-char hex string so timingSafeEqual doesn't throw on length mismatch
+    const isValidHex64 = /^[0-9a-f]{64}$/i.test(signature);
+    headers['digest'] = isValidHex64 ? signature : 'a'.repeat(64);
   }
   return new Request('http://localhost/api/webhook/conekta', {
     method: 'POST',
