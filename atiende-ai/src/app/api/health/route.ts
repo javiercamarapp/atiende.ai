@@ -1,12 +1,91 @@
 import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getMetrics, pingRedis } from '@/lib/monitoring';
+
+export const dynamic = 'force-dynamic';
 
 // PUBLIC ENDPOINT — Intentionally unauthenticated
 // Used by Vercel, load balancers, and uptime monitors
 // Does NOT expose any sensitive data
 export async function GET() {
-  return NextResponse.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0',
-  });
+  const start = Date.now();
+
+  // ─── Database (Supabase) ──────────────────────────────────────────────
+  let dbOk = false;
+  try {
+    const { error } = await supabaseAdmin.from('tenants').select('id').limit(1);
+    dbOk = !error;
+  } catch {
+    dbOk = false;
+  }
+
+  // ─── Redis ────────────────────────────────────────────────────────────
+  let redisOk = false;
+  try {
+    redisOk = await pingRedis();
+  } catch {
+    redisOk = false;
+  }
+
+  // ─── LLM API (OpenAI) ────────────────────────────────────────────────
+  let llmOk = false;
+  try {
+    llmOk = !!process.env.OPENAI_API_KEY;
+  } catch {
+    llmOk = false;
+  }
+
+  // ─── Cron last-run timestamps ─────────────────────────────────────────
+  let cronLastRuns: Record<string, string | null> = {};
+  try {
+    const cronJobs = ['reminders', 'analytics', 'marketplace', 'sync-menu', 'trial-warning', 'daily-briefing', 'cleanup'];
+    const { data } = await supabaseAdmin
+      .from('cron_runs')
+      .select('job_name, created_at')
+      .in('job_name', cronJobs)
+      .order('created_at', { ascending: false })
+      .limit(cronJobs.length);
+
+    cronLastRuns = Object.fromEntries(cronJobs.map((j) => [j, null]));
+    if (data) {
+      for (const row of data) {
+        // Keep only the most recent per job
+        if (!cronLastRuns[row.job_name]) {
+          cronLastRuns[row.job_name] = row.created_at;
+        }
+      }
+    }
+  } catch {
+    // cron_runs table may not exist yet — that's fine
+    cronLastRuns = {};
+  }
+
+  // ─── Metrics summary ─────────────────────────────────────────────────
+  let metrics = null;
+  try {
+    metrics = await getMetrics();
+  } catch {
+    metrics = null;
+  }
+
+  // ─── Overall status ──────────────────────────────────────────────────
+  const allHealthy = dbOk; // DB is the only hard requirement
+  const status = allHealthy ? 'ok' : 'degraded';
+
+  return NextResponse.json(
+    {
+      status,
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+      latencyMs: Date.now() - start,
+      services: {
+        database: dbOk ? 'ok' : 'down',
+        redis: redisOk ? 'ok' : 'unavailable',
+        llm: llmOk ? 'configured' : 'missing_key',
+      },
+      cronLastRuns,
+      metrics,
+    },
+    { status: allHealthy ? 200 : 503 },
+  );
 }
