@@ -44,20 +44,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // OWASP Security Headers
+  // OWASP Security Headers (CSP removed — Next.js requires inline scripts)
   supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff');
   supabaseResponse.headers.set('X-Frame-Options', 'DENY');
   supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  supabaseResponse.headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://openrouter.ai https://api.anthropic.com https://api.stripe.com; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';"
-  );
-  supabaseResponse.headers.set(
-    'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains'
-  );
 
   return supabaseResponse;
 }
