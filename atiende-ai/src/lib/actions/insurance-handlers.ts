@@ -772,6 +772,14 @@ Devuelve SOLO JSON.`,
   }
 
   // Step 3: Create the policy record
+  // Look up insurance_line from the quote request (it lives on ins_quote_requests, not ins_quotes)
+  const { data: quoteReqData } = await supabaseAdmin
+    .from('ins_quote_requests')
+    .select('insurance_line')
+    .eq('id', quote.quote_request_id)
+    .single()
+  const insuranceLine = quoteReqData?.insurance_line ?? 'auto'
+
   const policyNumber = `POL-${Date.now().toString(36).toUpperCase()}`
   const startDate = new Date()
   const endDate = new Date(startDate)
@@ -786,7 +794,7 @@ Devuelve SOLO JSON.`,
       conversation_id: ctx.conversationId,
       quote_id: quote.id,
       policy_number: policyNumber,
-      insurance_line: (quote as unknown as Record<string, unknown>).insurance_line as string || 'auto',
+      insurance_line: insuranceLine,
       total_premium: quote.annual_premium,
       start_date: startDate.toISOString().split('T')[0],
       end_date: endDate.toISOString().split('T')[0],
