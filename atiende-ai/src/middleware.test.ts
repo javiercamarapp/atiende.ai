@@ -77,9 +77,6 @@ describe('middleware', () => {
   });
 
   // ── Public path bypass ───────────────────────────────
-  // NOTE: The publicPaths array includes '/' which matches all paths via
-  // startsWith, so effectively all routes are treated as public for
-  // unauthenticated users. Tests below document this actual behavior.
 
   describe('public path bypass', () => {
     it('allows unauthenticated access to /', async () => {
@@ -122,15 +119,22 @@ describe('middleware', () => {
       expect((response as any)._redirected).toBeUndefined();
     });
 
-    it('treats all paths as public due to "/" in publicPaths with startsWith', async () => {
-      // This documents that /dashboard, /settings, etc. are currently
-      // treated as public because path.startsWith('/') is always true.
+    it('redirects unauthenticated users from protected routes like /dashboard', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
       const response = await middleware(makeRequest('/dashboard'));
 
-      // No redirect happens — the path is treated as public
-      expect((response as any)._redirected).toBeUndefined();
+      expect((response as any)._redirected).toBe(true);
+      expect((response as any)._redirectUrl).toBe('/login');
+    });
+
+    it('redirects unauthenticated users from /settings', async () => {
+      mockGetUser.mockResolvedValue({ data: { user: null } });
+
+      const response = await middleware(makeRequest('/settings'));
+
+      expect((response as any)._redirected).toBe(true);
+      expect((response as any)._redirectUrl).toBe('/login');
     });
   });
 
