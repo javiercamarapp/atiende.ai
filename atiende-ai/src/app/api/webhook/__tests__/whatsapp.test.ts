@@ -24,7 +24,13 @@ import { processIncomingMessage } from '@/lib/whatsapp/processor';
 import { logWebhook } from '@/lib/webhook-logger';
 
 function makeRequest(url: string, init?: RequestInit) {
-  return new Request(url, init) as any;
+  const req = new Request(url, init) as any;
+  const parsedUrl = new URL(url);
+  req.nextUrl = {
+    pathname: parsedUrl.pathname,
+    searchParams: parsedUrl.searchParams,
+  };
+  return req;
 }
 
 function signPayload(body: string, secret: string): string {

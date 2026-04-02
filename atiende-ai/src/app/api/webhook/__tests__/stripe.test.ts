@@ -22,18 +22,15 @@ vi.mock('@/lib/webhook-logger', () => ({
   logWebhook: vi.fn(),
 }));
 
-let mockConstructEvent: ReturnType<typeof vi.fn>;
+const mockConstructEvent = vi.fn();
 
-vi.mock('@/lib/billing/stripe', () => {
-  mockConstructEvent = vi.fn();
-  return {
-    stripe: {
-      webhooks: {
-        constructEvent: mockConstructEvent,
-      },
+vi.mock('@/lib/billing/stripe', () => ({
+  stripe: {
+    webhooks: {
+      constructEvent: (...args: unknown[]) => mockConstructEvent(...args),
     },
-  };
-});
+  },
+}));
 
 import { POST } from '../../webhook/stripe/route';
 import { logWebhook } from '@/lib/webhook-logger';

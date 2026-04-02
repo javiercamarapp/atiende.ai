@@ -55,6 +55,36 @@ export async function checkTenantRateLimit(
   return { allowed: false, retryAfter: ttl > 0 ? ttl : HOUR_SECONDS };
 }
 
+// ---------------------------------------------------------------------------
+// Per-tenant LLM call rate limiting (DDoS amplification prevention)
+// ---------------------------------------------------------------------------
+
+const LLM_WINDOW_SECONDS = 60;
+const LLM_MAX_CALLS = 100;
+
+/**
+ * Per-tenant LLM rate limit: max 100 LLM calls per 60-second window.
+ * Call this before every LLM invocation to prevent DDoS amplification.
+ *
+ * @returns `allowed` – whether the LLM call should proceed.
+ *          `retryAfter` – seconds until the current window resets (only present when blocked).
+ */
+export async function checkLLMRateLimit(
+  tenantId: string,
+): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const key = `rl:llm:${tenantId}`;
+
+  const current = await redis.incr(key);
+  if (current === 1) await redis.expire(key, LLM_WINDOW_SECONDS);
+
+  if (current <= LLM_MAX_CALLS) {
+    return { allowed: true };
+  }
+
+  const ttl = await redis.ttl(key);
+  return { allowed: false, retryAfter: ttl > 0 ? ttl : LLM_WINDOW_SECONDS };
+}
+
 /**
  * @deprecated Use `checkTenantRateLimit` instead (hourly window with retryAfter).
  */
