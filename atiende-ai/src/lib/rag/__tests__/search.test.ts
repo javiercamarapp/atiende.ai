@@ -11,9 +11,10 @@ const { mockEmbeddingsCreate, mockRpc, mockInsert } = vi.hoisted(() => ({
 
 vi.mock('openai', () => {
   return {
-    default: vi.fn().mockImplementation(() => ({
-      embeddings: { create: mockEmbeddingsCreate },
-    })),
+    default: class MockOpenAI {
+      embeddings = { create: mockEmbeddingsCreate };
+      constructor() {}
+    },
   };
 });
 
