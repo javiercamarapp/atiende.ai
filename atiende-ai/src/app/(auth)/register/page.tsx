@@ -28,7 +28,7 @@ export default function RegisterPage() {
         email: emailVal,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/onboarding/step-1`,
+          emailRedirectTo: `${window.location.origin}/onboarding`,
           data: { full_name: name },
         },
       });

@@ -11,7 +11,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
   if (!user) redirect('/login');
   const { data:tenant } = await supabase.from('tenants').select('*')
     .eq('user_id',user.id).single();
-  if (!tenant) redirect('/onboarding/step-1');
+  if (!tenant) redirect('/onboarding');
   const modules = getModules(tenant.business_type, tenant.has_voice_agent);
   return (
     <div className="flex h-screen bg-gray-50">
