@@ -2,11 +2,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock Supabase ───────────────────────────────────────────
+//
+// state-machine.ts uses the chained query:
+//   supabaseAdmin.from('conversations').select('metadata').eq('id', id).single()
+//   supabaseAdmin.from('conversations').update({ metadata }).eq('id', id)
+//
+// We provide a fresh chain object per from() call so that each call records
+// its own select/eq/single/update invocations against shared spies.
 
 const mockSingle = vi.fn();
-const mockEq = vi.fn(() => ({ single: mockSingle }));
-const mockSelect = vi.fn(() => ({ eq: mockEq }));
-const mockUpdate = vi.fn(() => ({ eq: vi.fn() }));
+const mockSelectEq = vi.fn(() => ({ single: mockSingle }));
+const mockSelect = vi.fn(() => ({ eq: mockSelectEq }));
+const mockUpdateEq = vi.fn(() => Promise.resolve({ data: null, error: null }));
+const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
@@ -36,27 +44,37 @@ describe('getConversationState', () => {
     vi.clearAllMocks();
   });
 
-  it('returns null state when no state tag exists', async () => {
-    mockSingle.mockResolvedValue({ data: { tags: ['vip', 'new'] } });
+  it('returns null state when metadata has no conversation_state', async () => {
+    mockSingle.mockResolvedValue({ data: { metadata: { other_key: 'x' } } });
 
     const result = await getConversationState('conv-1');
     expect(result.state).toBeNull();
     expect(result.context).toEqual({});
   });
 
-  it('returns the current state from tags', async () => {
+  it('returns the current state from metadata', async () => {
     mockSingle.mockResolvedValue({
-      data: { tags: ['state:awaiting_appointment_date', 'other'] },
+      data: {
+        metadata: {
+          conversation_state: { state: 'awaiting_appointment_date', context: {} },
+        },
+      },
     });
 
     const result = await getConversationState('conv-1');
     expect(result.state).toBe('awaiting_appointment_date');
   });
 
-  it('returns context when ctx: tag exists', async () => {
-    const ctx = JSON.stringify({ service: 'corte', date: '2026-04-03' });
+  it('returns context when conversation_state has context', async () => {
     mockSingle.mockResolvedValue({
-      data: { tags: [`state:awaiting_order_confirmation`, `ctx:${ctx}`] },
+      data: {
+        metadata: {
+          conversation_state: {
+            state: 'awaiting_order_confirmation',
+            context: { service: 'corte', date: '2026-04-03' },
+          },
+        },
+      },
     });
 
     const result = await getConversationState('conv-1');
@@ -64,8 +82,8 @@ describe('getConversationState', () => {
     expect(result.context).toEqual({ service: 'corte', date: '2026-04-03' });
   });
 
-  it('returns null state and empty context when tags are empty', async () => {
-    mockSingle.mockResolvedValue({ data: { tags: [] } });
+  it('returns null state and empty context when metadata is empty', async () => {
+    mockSingle.mockResolvedValue({ data: { metadata: {} } });
 
     const result = await getConversationState('conv-1');
     expect(result.state).toBeNull();
@@ -81,64 +99,102 @@ describe('getConversationState', () => {
   });
 
   it('queries the correct conversation by id', async () => {
-    mockSingle.mockResolvedValue({ data: { tags: [] } });
+    mockSingle.mockResolvedValue({ data: { metadata: {} } });
 
     await getConversationState('conv-xyz');
-    expect(mockSelect).toHaveBeenCalledWith('tags');
-    expect(mockEq).toHaveBeenCalledWith('id', 'conv-xyz');
+    expect(mockSelect).toHaveBeenCalledWith('metadata');
+    expect(mockSelectEq).toHaveBeenCalledWith('id', 'conv-xyz');
   });
 });
 
 describe('setConversationState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // For the internal select call that reads existing tags
-    mockSingle.mockResolvedValue({ data: { tags: ['vip', 'state:old_state'] } });
-  });
-
-  it('sets a new state tag, removing old state tags', async () => {
-    await setConversationState('conv-1', 'awaiting_appointment_date');
-
-    expect(mockUpdate).toHaveBeenCalledWith({
-      tags: ['vip', 'state:awaiting_appointment_date'],
+    // Default: pre-existing metadata to merge with
+    mockSingle.mockResolvedValue({
+      data: { metadata: { unrelated_key: 'preserved' } },
     });
   });
 
-  it('includes context tag when context is provided', async () => {
-    mockSingle.mockResolvedValue({ data: { tags: [] } });
+  it('writes a new conversation_state into metadata', async () => {
+    await setConversationState('conv-1', 'awaiting_appointment_date');
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      metadata: {
+        unrelated_key: 'preserved',
+        conversation_state: {
+          state: 'awaiting_appointment_date',
+          context: {},
+        },
+      },
+    });
+  });
+
+  it('includes context when provided', async () => {
+    mockSingle.mockResolvedValue({ data: { metadata: {} } });
 
     await setConversationState('conv-1', 'awaiting_modify_date', {
       appointmentId: 'apt-1',
     });
 
     expect(mockUpdate).toHaveBeenCalledWith({
-      tags: [
-        'state:awaiting_modify_date',
-        `ctx:${JSON.stringify({ appointmentId: 'apt-1' })}`,
-      ],
+      metadata: {
+        conversation_state: {
+          state: 'awaiting_modify_date',
+          context: { appointmentId: 'apt-1' },
+        },
+      },
     });
   });
 
-  it('clears state and context tags when state is null', async () => {
+  it('removes conversation_state from metadata when state is null', async () => {
     mockSingle.mockResolvedValue({
-      data: { tags: ['vip', 'state:awaiting_appointment_date', 'ctx:{"a":1}'] },
+      data: {
+        metadata: {
+          unrelated_key: 'preserved',
+          conversation_state: {
+            state: 'awaiting_appointment_date',
+            context: {},
+          },
+        },
+      },
     });
 
     await setConversationState('conv-1', null);
 
-    expect(mockUpdate).toHaveBeenCalledWith({ tags: ['vip'] });
+    expect(mockUpdate).toHaveBeenCalledWith({
+      metadata: { unrelated_key: 'preserved' },
+    });
   });
 
-  it('preserves non-state/ctx tags', async () => {
+  it('preserves other metadata keys when updating state', async () => {
     mockSingle.mockResolvedValue({
-      data: { tags: ['complaint', 'urgent', 'state:old', 'ctx:{}'] },
+      data: {
+        metadata: {
+          tags: ['vip'],
+          journey_stage: 'consideration',
+          conversation_state: { state: 'old', context: {} },
+        },
+      },
     });
 
     await setConversationState('conv-1', 'awaiting_reservation_details');
 
     expect(mockUpdate).toHaveBeenCalledWith({
-      tags: ['complaint', 'urgent', 'state:awaiting_reservation_details'],
+      metadata: {
+        tags: ['vip'],
+        journey_stage: 'consideration',
+        conversation_state: {
+          state: 'awaiting_reservation_details',
+          context: {},
+        },
+      },
     });
+  });
+
+  it('targets the correct conversation when updating', async () => {
+    await setConversationState('conv-xyz', 'awaiting_appointment_date');
+    expect(mockUpdateEq).toHaveBeenCalledWith('id', 'conv-xyz');
   });
 });
 
@@ -146,14 +202,24 @@ describe('clearConversationState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSingle.mockResolvedValue({
-      data: { tags: ['vip', 'state:awaiting_appointment_date', 'ctx:{"x":1}'] },
+      data: {
+        metadata: {
+          unrelated: 'kept',
+          conversation_state: {
+            state: 'awaiting_appointment_date',
+            context: { x: 1 },
+          },
+        },
+      },
     });
   });
 
-  it('removes all state and context tags', async () => {
+  it('removes conversation_state but keeps other metadata keys', async () => {
     await clearConversationState('conv-1');
 
-    expect(mockUpdate).toHaveBeenCalledWith({ tags: ['vip'] });
+    expect(mockUpdate).toHaveBeenCalledWith({
+      metadata: { unrelated: 'kept' },
+    });
   });
 });
 

@@ -145,6 +145,14 @@ vi.mock('@/lib/rate-limit', () => ({
   checkTenantLimit: mockCheckTenantLimit,
 }));
 
+// Mock smart-response (dynamically imported by processor) so that it
+// delegates to sendTextMessage — keeps existing test expectations valid.
+vi.mock('@/lib/whatsapp/smart-response', () => ({
+  sendSmartResponse: vi.fn(async ({ phoneNumberId, to, text }: any) => {
+    await mockSendTextMessage(phoneNumberId, to, text);
+  }),
+}));
+
 import { processIncomingMessage } from '../processor';
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -355,7 +363,7 @@ describe('processIncomingMessage', () => {
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
     expect(mockValidateResponse).toHaveBeenCalledWith(
       'Con gusto le ayudo.',
-      expect.objectContaining({ id: 'tenant-1' }),
+      expect.objectContaining({ business_type: 'dental' }),
       expect.any(String),
       expect.any(String)
     );
