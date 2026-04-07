@@ -183,7 +183,7 @@ export default async function TenantsPage({
 function PlanBadge({ plan }: { plan: string }) {
   const colors: Record<string, string> = {
     trial: 'bg-amber-100 text-amber-700',
-    starter: 'bg-blue-100 text-blue-700',
+    starter: 'bg-emerald-100 text-emerald-700',
     professional: 'bg-purple-100 text-purple-700',
     business: 'bg-emerald-100 text-emerald-700',
     enterprise: 'bg-zinc-800 text-white',

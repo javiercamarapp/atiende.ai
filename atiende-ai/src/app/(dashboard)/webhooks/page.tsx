@@ -11,7 +11,7 @@ const PROVIDER_ICONS: Record<string, string> = {
 const PROVIDER_COLORS: Record<string, string> = {
   whatsapp: 'bg-green-100 text-green-700',
   stripe: 'bg-purple-100 text-purple-700',
-  conekta: 'bg-blue-100 text-blue-700',
+  conekta: 'bg-emerald-100 text-emerald-700',
   retell: 'bg-orange-100 text-orange-700',
 };
 

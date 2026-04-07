@@ -109,7 +109,7 @@ function getTagColor(tag: string): string {
   const lower = tag.toLowerCase();
   if (lower === 'vip') return 'bg-emerald-100 text-emerald-700';
   if (lower === 'queja') return 'bg-red-100 text-red-700';
-  if (lower === 'oportunidad') return 'bg-blue-100 text-blue-700';
+  if (lower === 'oportunidad') return 'bg-emerald-100 text-emerald-700';
   if (lower === 'urgente') return 'bg-amber-100 text-amber-700';
   if (lower === 'seguimiento') return 'bg-purple-100 text-purple-700';
   return 'bg-gray-100 text-gray-600';

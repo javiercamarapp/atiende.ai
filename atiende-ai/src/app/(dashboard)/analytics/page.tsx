@@ -8,14 +8,13 @@ export default async function AnalyticsPage() {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: tenant } = await supabase.from('tenants').select('*').eq('user_id', user!.id).single();
-  const ago90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const ago90 = new Date(new Date().getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   const { data: analytics } = await supabase.from('daily_analytics').select('*').eq('tenant_id', tenant!.id).gte('date', ago90).order('date');
   const roi = calculateROI(tenant!, analytics || []);
   const totalMsgs = (analytics || []).reduce((s, d) => s + (d.messages_inbound || 0), 0);
   const totalCost = (analytics || []).reduce((s, d) => s + (d.llm_cost_usd || 0), 0);
 
   // LLM Cost data: cost distribution by model
-  const ago30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
@@ -46,7 +45,7 @@ export default async function AnalyticsPage() {
   const totalMonthCost = modelCosts.reduce((s, m) => s + m.total_cost, 0);
 
   // Daily cost trend (last 30 days) from daily_analytics
-  const ago30Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const ago30Date = new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   const dailyCosts = (analytics || [])
     .filter((d) => d.date >= ago30Date)
     .map((d) => ({

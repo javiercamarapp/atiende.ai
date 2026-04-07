@@ -12,7 +12,7 @@ const TAG_SUGGESTIONS = ['VIP', 'Queja', 'Oportunidad', 'Urgente', 'Seguimiento'
 const TAG_COLORS: Record<string, string> = {
   vip: 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200',
   queja: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200',
-  oportunidad: 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200',
+  oportunidad: 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200',
   urgente: 'bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200',
   seguimiento: 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200',
 };
