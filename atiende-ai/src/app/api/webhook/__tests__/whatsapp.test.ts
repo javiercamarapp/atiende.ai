@@ -10,10 +10,22 @@ vi.mock('@/lib/webhook-logger', () => ({
   logWebhook: vi.fn(),
 }));
 
-const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => ({ then: vi.fn((cb: Function) => cb()) })) }));
+// Chain for messages table: select().eq().maybeSingle() + update().eq().eq()
+const mockMaybeSingle = vi.fn(() =>
+  Promise.resolve({ data: { tenant_id: 'tenant-1' }, error: null }),
+);
+const mockSelectEq = vi.fn(() => ({ maybeSingle: mockMaybeSingle }));
+const mockSelect = vi.fn(() => ({ eq: mockSelectEq }));
+
+// update().eq().eq() — tenant-scoped update. Resolve to awaitable result.
+const mockUpdateInnerEq = vi.fn(() => Promise.resolve({ data: null, error: null }));
+const mockUpdateOuterEq = vi.fn(() => ({ eq: mockUpdateInnerEq }));
+const mockUpdate = vi.fn(() => ({ eq: mockUpdateOuterEq }));
+
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
     from: vi.fn(() => ({
+      select: mockSelect,
       update: mockUpdate,
     })),
   },
@@ -189,14 +201,16 @@ describe('/api/webhook/whatsapp', () => {
       );
     });
 
-    it('skips signature check when WA_APP_SECRET is not set', async () => {
+    it('returns 500 when WA_APP_SECRET is not set (fail closed)', async () => {
       delete process.env.WA_APP_SECRET;
       const req = new Request('http://localhost/api/webhook/whatsapp', {
         method: 'POST',
         body: JSON.stringify(messagePayload),
       }) as any;
       const res = await POST(req);
-      expect(res.status).toBe(200);
+      // Source intentionally refuses to process when the secret is missing
+      // to avoid accepting unsigned webhooks in prod.
+      expect(res.status).toBe(500);
     });
 
     it('returns 500 on malformed JSON body', async () => {

@@ -20,8 +20,13 @@ export function validateResponse(
   const priceMatches = [...text.matchAll(/\$([\d,\.]+)/g)];
   for (const match of priceMatches) {
     const priceStr = match[0]; // ej: "$800"
+    // Strip trailing punctuation (e.g. "$500." → numeric "500") so prices
+    // followed by sentence punctuation still match the RAG context.
+    const numericRaw = match[1].replace(/[.,]+$/, '');
+    const priceStrTrimmed = priceStr.replace(/[.,]+$/, '');
     if (!ragContext.includes(priceStr) &&
-        !ragContext.includes(match[1])) {
+        !ragContext.includes(priceStrTrimmed) &&
+        !ragContext.includes(numericRaw)) {
       // Precio inventado — reemplazar respuesta completa
       return {
         valid: false,

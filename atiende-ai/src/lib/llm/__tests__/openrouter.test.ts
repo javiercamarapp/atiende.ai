@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { selectModel, calculateCost, MODELS } from '../openrouter';
 
@@ -132,8 +133,10 @@ describe('calculateCost()', () => {
     expect(calculateCost('google/gemini-2.5-flash-lite', 0, 0)).toBe(0);
   });
 
-  it('modelo desconocido devuelve 0', () => {
-    expect(calculateCost('unknown/model', 1000, 500)).toBe(0);
+  it('modelo desconocido usa rates de fallback (no cero)', () => {
+    // Source uses [1.0, 5.0] as conservative fallback rates for unknown models
+    // so the cost is non-zero — keeps unknown models from being free.
+    expect(calculateCost('unknown/model', 1000, 500)).toBeGreaterThan(0);
   });
 
   it('Claude es más caro que Gemini Flash-Lite', () => {
