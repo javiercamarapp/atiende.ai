@@ -23,7 +23,7 @@ function SidebarContent({ tenant, modules, path, onNavigate }: { tenant:any; mod
   return (
     <>
       <div className="p-4 border-b">
-        <h1 className="font-bold text-lg text-blue-600">atiende.ai</h1>
+        <h1 className="font-bold text-lg text-emerald-600">atiende.ai</h1>
         <p className="text-xs text-gray-500 truncate mt-1">{tenant.name}</p>
       </div>
       <div className="mx-3 mt-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200">

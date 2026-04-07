@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook } from '@/lib/webhook-logger';
+import { logger } from '@/lib/logger';
 import { parseRappiOrder, parseUberEatsOrder, parseDidiOrder } from '@/lib/integrations/delivery';
+import crypto from 'crypto';
 
 type DeliveryProvider = 'rappi' | 'uber_eats' | 'didi_food';
 
@@ -12,19 +14,54 @@ function identifyProvider(req: NextRequest): DeliveryProvider | null {
   return null;
 }
 
-function verifyProviderAuth(req: NextRequest, provider: DeliveryProvider): boolean {
+// HMAC-SHA256 signature verification with constant-time comparison.
+// Each provider sends its signature in a provider-specific header; we
+// verify against the raw request body using the corresponding secret.
+function verifyHmacSignature(rawBody: string, signature: string | null, secret: string | undefined): boolean {
+  if (!signature || !secret) return false;
+  // Strip optional "sha256=" prefix some providers use.
+  const provided = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  let providedBuf: Buffer;
+  let expectedBuf: Buffer;
+  try {
+    providedBuf = Buffer.from(provided, 'hex');
+    expectedBuf = Buffer.from(expected, 'hex');
+  } catch {
+    return false;
+  }
+  // Length mismatch must be handled BEFORE timingSafeEqual (which throws).
+  if (providedBuf.length === 0 || providedBuf.length !== expectedBuf.length) return false;
+  try {
+    return crypto.timingSafeEqual(providedBuf, expectedBuf);
+  } catch {
+    return false;
+  }
+}
+
+function verifyProviderAuth(req: NextRequest, provider: DeliveryProvider, rawBody: string): boolean {
   switch (provider) {
     case 'rappi': {
-      const sig = req.headers.get('x-rappi-signature');
-      return sig === process.env.RAPPI_WEBHOOK_SECRET;
+      const sig =
+        req.headers.get('x-rappi-signature') ??
+        req.headers.get('x-signature') ??
+        req.headers.get('x-hub-signature-256');
+      return verifyHmacSignature(rawBody, sig, process.env.RAPPI_WEBHOOK_SECRET);
     }
     case 'uber_eats': {
-      const sig = req.headers.get('x-uber-signature');
-      return sig === process.env.UBER_EATS_WEBHOOK_SECRET;
+      const sig =
+        req.headers.get('x-uber-signature') ??
+        req.headers.get('x-signature') ??
+        req.headers.get('x-hub-signature-256');
+      return verifyHmacSignature(rawBody, sig, process.env.UBEREATS_WEBHOOK_SECRET);
     }
     case 'didi_food': {
-      const token = req.headers.get('x-didi-token');
-      return token === process.env.DIDI_WEBHOOK_TOKEN;
+      const sig =
+        req.headers.get('x-didi-signature') ??
+        req.headers.get('x-didi-token') ??
+        req.headers.get('x-signature') ??
+        req.headers.get('x-hub-signature-256');
+      return verifyHmacSignature(rawBody, sig, process.env.DIDI_WEBHOOK_SECRET);
     }
     default:
       return false;
@@ -40,12 +77,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unknown delivery provider' }, { status: 400 });
     }
 
-    if (!verifyProviderAuth(req, provider)) {
-      logWebhook({ provider: 'delivery', eventType: 'auth_failed', statusCode: 401, error: `Invalid ${provider} auth`, durationMs: Date.now() - startTime });
+    // Read raw body so we can HMAC-verify it before parsing.
+    const rawBody = await req.text();
+
+    if (!verifyProviderAuth(req, provider, rawBody)) {
+      logWebhook({ provider: 'delivery', eventType: 'auth_failed', statusCode: 401, error: `Invalid ${provider} signature`, durationMs: Date.now() - startTime });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const payload = await req.json();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
     let order: ReturnType<typeof parseRappiOrder> | ReturnType<typeof parseUberEatsOrder> | ReturnType<typeof parseDidiOrder>;
     switch (provider) {

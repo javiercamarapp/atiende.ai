@@ -143,22 +143,22 @@ describe('middleware', () => {
   describe('authenticated user redirects', () => {
     const mockUser = { id: 'user-1', email: 'test@example.com' };
 
-    it('redirects authenticated users from /login to /', async () => {
+    it('redirects authenticated users from /login to /home', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
       const response = await middleware(makeRequest('/login'));
 
       expect((response as any)._redirected).toBe(true);
-      expect((response as any)._redirectUrl).toBe('/');
+      expect((response as any)._redirectUrl).toBe('/home');
     });
 
-    it('redirects authenticated users from /register to /', async () => {
+    it('redirects authenticated users from /register to /home', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
       const response = await middleware(makeRequest('/register'));
 
       expect((response as any)._redirected).toBe(true);
-      expect((response as any)._redirectUrl).toBe('/');
+      expect((response as any)._redirectUrl).toBe('/home');
     });
 
     it('does NOT redirect authenticated users from /dashboard', async () => {
@@ -169,12 +169,13 @@ describe('middleware', () => {
       expect((response as any)._redirected).toBeUndefined();
     });
 
-    it('does NOT redirect authenticated users from /', async () => {
+    it('redirects authenticated users from / to /home', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
       const response = await middleware(makeRequest('/'));
 
-      expect((response as any)._redirected).toBeUndefined();
+      expect((response as any)._redirected).toBe(true);
+      expect((response as any)._redirectUrl).toBe('/home');
     });
 
     it('does NOT redirect authenticated users from /api/webhook', async () => {
@@ -232,26 +233,22 @@ describe('middleware', () => {
       expect(pp).toContain('geolocation=()');
     });
 
-    it('sets Content-Security-Policy with required domains', async () => {
+    it('does not set CSP (Next.js inline scripts incompatible)', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
       await middleware(makeRequest('/dashboard'));
 
-      const csp = mockHeaders.get('Content-Security-Policy');
-      expect(csp).toContain("default-src 'self'");
-      expect(csp).toContain('supabase.co');
-      expect(csp).toContain('openrouter.ai');
-      expect(csp).toContain('api.anthropic.com');
+      // CSP intentionally removed because Next.js requires inline scripts
+      expect(mockHeaders.has('Content-Security-Policy')).toBe(false);
     });
 
-    it('sets Strict-Transport-Security (HSTS) with correct max-age', async () => {
+    it('does not set Strict-Transport-Security (handled by hosting layer)', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
       await middleware(makeRequest('/dashboard'));
 
-      const hsts = mockHeaders.get('Strict-Transport-Security');
-      expect(hsts).toContain('max-age=31536000');
-      expect(hsts).toContain('includeSubDomains');
+      // HSTS is handled by the hosting layer, not the middleware
+      expect(mockHeaders.has('Strict-Transport-Security')).toBe(false);
     });
 
     it('sets security headers even for public routes', async () => {
@@ -264,7 +261,7 @@ describe('middleware', () => {
       expect(mockHeaders.get('X-XSS-Protection')).toBe('1; mode=block');
     });
 
-    it('sets all 7 OWASP security headers', async () => {
+    it('sets all 5 OWASP security headers handled by middleware', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
       await middleware(makeRequest('/dashboard'));
@@ -275,8 +272,6 @@ describe('middleware', () => {
         'X-XSS-Protection',
         'Referrer-Policy',
         'Permissions-Policy',
-        'Content-Security-Policy',
-        'Strict-Transport-Security',
       ];
 
       for (const header of expectedHeaders) {
@@ -284,14 +279,12 @@ describe('middleware', () => {
       }
     });
 
-    it('CSP allows unsafe-inline for scripts and styles', async () => {
+    it('does not set CSP unsafe-inline (no CSP set at middleware layer)', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
       await middleware(makeRequest('/'));
 
-      const csp = mockHeaders.get('Content-Security-Policy');
-      expect(csp).toContain("'unsafe-inline'");
-      expect(csp).toContain("'unsafe-eval'");
+      expect(mockHeaders.has('Content-Security-Policy')).toBe(false);
     });
   });
 

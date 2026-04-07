@@ -128,6 +128,10 @@ vi.mock('@/lib/guardrails/validate', () => ({
 
 vi.mock('@/lib/whatsapp/send', () => ({
   sendTextMessage: mockSendTextMessage,
+  sendButtonMessage: vi.fn().mockResolvedValue(undefined),
+  sendListMessage: vi.fn().mockResolvedValue(undefined),
+  sendTemplate: vi.fn().mockResolvedValue(undefined),
+  sendLocation: vi.fn().mockResolvedValue(undefined),
   markAsRead: mockMarkAsRead,
   sendTypingIndicator: mockSendTypingIndicator,
 }));

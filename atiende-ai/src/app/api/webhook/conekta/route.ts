@@ -9,14 +9,21 @@ function verifyConektaSignature(
   webhookKey: string
 ): boolean {
   if (!signatureHeader) return false;
+  // SHA-256 hex digest must be exactly 64 lowercase hex characters.
+  if (!/^[a-f0-9]{64}$/i.test(signatureHeader)) return false;
   const expectedDigest = crypto
     .createHmac('sha256', webhookKey)
     .update(payload)
     .digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(expectedDigest, 'hex'),
-    Buffer.from(signatureHeader, 'hex')
-  );
+  const expectedBuf = Buffer.from(expectedDigest, 'hex');
+  const receivedBuf = Buffer.from(signatureHeader, 'hex');
+  if (expectedBuf.length !== receivedBuf.length) return false;
+  // Belt-and-suspenders: timingSafeEqual still throws on length mismatch.
+  try {
+    return crypto.timingSafeEqual(expectedBuf, receivedBuf);
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(req: NextRequest) {

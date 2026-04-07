@@ -1,24 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook } from '@/lib/webhook-logger';
+import { logger } from '@/lib/logger';
+import crypto from 'crypto';
+
+// Retell signs the raw request body with HMAC-SHA256.
+function verifyRetellSignature(rawBody: string, signature: string | null, secret: string): boolean {
+  if (!signature) return false;
+  const provided = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  let providedBuf: Buffer;
+  let expectedBuf: Buffer;
+  try {
+    providedBuf = Buffer.from(provided, 'hex');
+    expectedBuf = Buffer.from(expected, 'hex');
+  } catch {
+    return false;
+  }
+  // Length mismatch must be handled BEFORE timingSafeEqual (which throws).
+  if (providedBuf.length === 0 || providedBuf.length !== expectedBuf.length) return false;
+  try {
+    return crypto.timingSafeEqual(providedBuf, expectedBuf);
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
-  // Support both Bearer token (official Retell webhook signature) and legacy x-retell-api-key header
-  const authHeader = req.headers.get('authorization');
-  const legacyApiKey = req.headers.get('x-retell-api-key');
-  const isAuthorized =
-    (authHeader && authHeader === `Bearer ${process.env.RETELL_API_KEY}`) ||
-    (legacyApiKey && legacyApiKey === process.env.RETELL_API_KEY);
+  const webhookSecret = process.env.RETELL_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    logger.error('RETELL_WEBHOOK_SECRET missing — refusing to process webhook');
+    logWebhook({ provider: 'retell', eventType: 'config_error', statusCode: 500, error: 'RETELL_WEBHOOK_SECRET not configured', durationMs: Date.now() - startTime });
+    return NextResponse.json({ error: 'RETELL_WEBHOOK_SECRET not configured' }, { status: 500 });
+  }
 
-  if (!isAuthorized) {
-    logWebhook({ provider: 'retell', eventType: 'auth_failed', statusCode: 401, error: 'Invalid API key', durationMs: Date.now() - startTime });
+  const rawBody = await req.text();
+  const signature = req.headers.get('x-retell-signature');
+
+  if (!verifyRetellSignature(rawBody, signature, webhookSecret)) {
+    logWebhook({ provider: 'retell', eventType: 'auth_failed', statusCode: 401, error: 'Invalid signature', durationMs: Date.now() - startTime });
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const body = await req.json();
+    const body = JSON.parse(rawBody);
     const event = body.event;
     const tenantId = body.metadata?.tenant_id;
 
