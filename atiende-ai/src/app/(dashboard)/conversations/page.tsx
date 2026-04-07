@@ -112,7 +112,21 @@ export default async function ConversationsPage({
       </div>
 
       {/* Results */}
-      <ConversationList conversations={conversations || []} />
+      {(!conversations || conversations.length === 0) ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center rounded-lg border bg-card">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 mb-4">
+            <MessageSquare className="w-8 h-8 text-emerald-600" aria-hidden="true" />
+          </div>
+          <h3 className="text-lg font-medium text-zinc-900">No hay conversaciones</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+            {hasFilters
+              ? 'Ningun resultado coincide con los filtros aplicados. Prueba a ajustarlos.'
+              : 'Cuando tus clientes empiecen a escribir al bot, sus conversaciones apareceran aqui.'}
+          </p>
+        </div>
+      ) : (
+        <ConversationList conversations={conversations} />
+      )}
     </div>
   );
 }

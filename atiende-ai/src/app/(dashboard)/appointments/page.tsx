@@ -1,5 +1,6 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { AppointmentsList } from '@/components/dashboard/appointments-list';
+import { Button } from '@/components/ui/button';
 import { Calendar } from 'lucide-react';
 
 export default async function AppointmentsPage() {
@@ -11,9 +12,12 @@ export default async function AppointmentsPage() {
       <h1 className="text-xl font-bold mb-4">Citas</h1>
       {(!apts || apts.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Calendar className="w-12 h-12 text-zinc-300 mb-4" />
-          <h3 className="text-lg font-medium text-zinc-900">Sin citas todavia</h3>
-          <p className="text-sm text-zinc-500 mt-1">Las citas agendadas por el bot apareceran aqui</p>
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 mb-4">
+            <Calendar className="w-8 h-8 text-emerald-600" aria-hidden="true" />
+          </div>
+          <h3 className="text-lg font-medium text-zinc-900">No tienes citas todavia</h3>
+          <p className="text-sm text-zinc-500 mt-1 max-w-sm">Las citas agendadas por el bot apareceran aqui. Crea tu primera cita para comenzar.</p>
+          <Button className="mt-6">Crear primera cita</Button>
         </div>
       ) : (
         <AppointmentsList appointments={apts} />
