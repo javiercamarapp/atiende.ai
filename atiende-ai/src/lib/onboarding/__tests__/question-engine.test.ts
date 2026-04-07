@@ -112,11 +112,41 @@ describe('getTotalQuestions', () => {
 });
 
 describe('formatQuestionMessage', () => {
-  it('formats a "Pregunta X/Y: text" string', () => {
+  it('returns the conversational text (no "Pregunta X/Y:" prefix)', () => {
     const q = getNextQuestion('dental', 1)!;
     const msg = formatQuestionMessage(q);
-    expect(msg).toMatch(/^Pregunta 1\/\d+: /);
-    expect(msg).toContain(q.text);
+    // New format: plain conversational text. The old "Pregunta X/Y:" prefix
+    // was removed in favor of a progress indicator in the UI header.
+    expect(msg).not.toMatch(/^Pregunta \d+\/\d+:/);
+    expect(msg).toBe(q.text);
+  });
+
+  it('Q2 includes a conversational connector', () => {
+    const q2 = getNextQuestion('dental', 2, 'DentaCare')!;
+    expect(q2.text.toLowerCase()).toMatch(/^perfecto/);
+  });
+
+  it('Q3+ include connectors without the business name', () => {
+    const q3 = getNextQuestion('dental', 3, 'DentaCare')!;
+    expect(q3.text).not.toContain('DentaCare');
+    // One of the rotating connectors should be present at the start
+    expect(q3.text).toMatch(/^(Perfecto|Genial|Listo|Excelente|Ok|Anotado|Entendido)\./);
+  });
+
+  it('exposes acceptsUpload on price_list questions', () => {
+    // Walk the dental questions until we find a price_list one
+    const total = getTotalQuestions('dental');
+    let priceListQuestion: ReturnType<typeof getNextQuestion> = null;
+    for (let i = 1; i <= total; i++) {
+      const q = getNextQuestion('dental', i);
+      if (q?.inputType === 'price_list') {
+        priceListQuestion = q;
+        break;
+      }
+    }
+    if (priceListQuestion) {
+      expect(priceListQuestion.acceptsUpload).toBe(true);
+    }
   });
 });
 

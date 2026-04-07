@@ -19,6 +19,11 @@ interface ChatMessage {
   insight?: string;
 }
 
+interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export function OnboardingChat() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('channel');
@@ -26,13 +31,15 @@ export function OnboardingChat() {
   const [channel, setChannel] = useState<'web' | 'whatsapp' | null>(null);
   const [vertical, setVertical] = useState<VerticalEnum | null>(null);
   const [verticalName, setVerticalName] = useState('');
-  const [currentQuestion, setCurrentQuestion] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
+  const [collectedCount, setCollectedCount] = useState(0);
   const [businessName, setBusinessName] = useState('');
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [history, setHistory] = useState<ChatTurn[]>([]);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [typingDone, setTypingDone] = useState<Set<string>>(new Set());
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -73,133 +80,161 @@ export function OnboardingChat() {
     }, 300);
   }, [addAiMessage]);
 
+  // Call the AI-native chat endpoint. The server uses the vertical's question
+  // checklist + metadata as context and returns the next natural message.
+  const callChat = useCallback(
+    async (vert: VerticalEnum, nextHistory: ChatTurn[], currentAnswers: Record<string, string>) => {
+      setInputDisabled(true);
+      try {
+        const res = await fetch('/api/onboarding/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vertical: vert, history: nextHistory, answers: currentAnswers }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.message) {
+          addAiMessage('Hubo un error. Intenta de nuevo.');
+          return;
+        }
+
+        addAiMessage(data.message);
+        setHistory([...nextHistory, { role: 'assistant', content: data.message }]);
+        setAnswers(data.answers || currentAnswers);
+        setCollectedCount(data.progress?.collected ?? 0);
+
+        // Capture business name on first collected answer (q1 by convention)
+        if (data.answers?.q1 && !businessName) {
+          setBusinessName(data.answers.q1);
+        }
+
+        if (data.isComplete) {
+          setTimeout(() => setPhase('generating'), 1500);
+        }
+      } catch {
+        addAiMessage('Error de conexion. Intenta de nuevo.');
+      }
+    },
+    [addAiMessage, businessName],
+  );
+
   // Phase: Vertical Detection
-  const handleDetection = useCallback(async (userInput: string) => {
-    addUserMessage(userInput);
-    setInputDisabled(true);
+  const handleDetection = useCallback(
+    async (userInput: string) => {
+      addUserMessage(userInput);
+      setInputDisabled(true);
 
-    try {
-      const res = await fetch('/api/onboarding/detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: userInput }),
-      });
+      try {
+        const res = await fetch('/api/onboarding/detect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: userInput }),
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!data.vertical) {
-        addAiMessage('No pude identificar tu tipo de negocio. Intenta ser mas especifico, por ejemplo: "Soy dentista", "Tengo un restaurante", "Mi negocio es un hotel".');
-        return;
+        if (!data.vertical) {
+          addAiMessage('No pude identificar tu tipo de negocio. Intenta ser mas especifico, por ejemplo: "Soy dentista", "Tengo un restaurante", "Mi negocio es un hotel".');
+          return;
+        }
+
+        setVertical(data.vertical);
+        setVerticalName(data.displayName);
+        setTotalQuestions(data.totalQuestions);
+
+        if (data.totalQuestions === 0) {
+          addAiMessage(`Detecte que tienes un negocio de tipo ${data.displayName}. Este vertical estara disponible pronto.`);
+          return;
+        }
+
+        // Warm greeting (human tone, no meta text)
+        addAiMessage(data.insightMessage);
+
+        // Start the AI conversation with an empty history — the server's
+        // system prompt will open with a natural first question.
+        setTimeout(() => {
+          setPhase('questions');
+          callChat(data.vertical, [], {});
+        }, 1800);
+      } catch {
+        addAiMessage('Hubo un error al detectar tu tipo de negocio. Intenta de nuevo.');
       }
+    },
+    [addAiMessage, addUserMessage, callChat],
+  );
 
-      setVertical(data.vertical);
-      setVerticalName(data.displayName);
-      setTotalQuestions(data.totalQuestions);
-
-      if (data.totalQuestions === 0) {
-        addAiMessage(`Detecte que tienes un negocio de tipo ${data.displayName}. Este vertical estara disponible pronto. Estamos trabajando en las preguntas especificas para tu industria.`);
-        return;
-      }
-
-      // Show detection insight
-      addAiMessage(`${data.insightMessage}\n\nVamos a configurar tu agente. Son ${data.totalQuestions} preguntas rapidas.`);
-
-      // Start questions after a delay
-      setTimeout(() => {
-        setPhase('questions');
-        setCurrentQuestion(1);
-        fetchQuestion(data.vertical, 1);
-      }, 2000);
-    } catch {
-      addAiMessage('Hubo un error al detectar tu tipo de negocio. Intenta de nuevo.');
-    }
-  }, [addAiMessage, addUserMessage]);
-
-  // Fetch next question from API
-  const fetchQuestion = useCallback(async (vert: VerticalEnum, qNum: number, bName?: string) => {
-    try {
-      const res = await fetch('/api/onboarding/question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vertical: vert, questionNumber: qNum, businessName: bName }),
-      });
-      const data = await res.json();
-      if (data.text) {
-        addAiMessage(`Pregunta ${data.questionNumber}/${data.totalQuestions}: ${data.text}`);
-      }
-    } catch {
-      addAiMessage('Error al cargar la pregunta. Intenta de nuevo.');
-    }
-  }, [addAiMessage]);
-
-  // Phase: Answer a question
-  const handleAnswer = useCallback(async (userInput: string) => {
-    if (!vertical) return;
-
-    addUserMessage(userInput);
-    setInputDisabled(true);
-
-    // Store answer
-    const key = `q${currentQuestion}`;
-    const newAnswers = { ...answers, [key]: userInput };
-    setAnswers(newAnswers);
-
-    // Extract business name from Q1
-    let bName = businessName;
-    if (currentQuestion === 1) {
-      bName = userInput;
-      setBusinessName(userInput);
-    }
-
-    // Validate answer
-    try {
-      const res = await fetch('/api/onboarding/answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vertical,
-          questionNumber: currentQuestion,
-          answer: userInput,
-        }),
-      });
-      const data = await res.json();
-
-      if (!data.isValid) {
-        addAiMessage(data.errorMessage || 'Respuesta no valida. Intenta de nuevo.');
-        return;
-      }
-
-      // Show insight if any
-      if (data.insight) {
-        addAiMessage(data.insight);
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-
-      // Check if last question
-      if (currentQuestion >= totalQuestions) {
-        setPhase('generating');
-        return;
-      }
-
-      // Next question
-      const next = currentQuestion + 1;
-      setCurrentQuestion(next);
-      setTimeout(() => {
-        fetchQuestion(vertical, next, bName);
-      }, data.insight ? 1500 : 500);
-    } catch {
-      addAiMessage('Error al procesar tu respuesta. Intenta de nuevo.');
-    }
-  }, [vertical, currentQuestion, totalQuestions, answers, businessName, addAiMessage, addUserMessage, fetchQuestion]);
+  // Phase: Answer (just feeds the user's text into the AI chat)
+  const handleAnswer = useCallback(
+    async (userInput: string) => {
+      if (!vertical) return;
+      addUserMessage(userInput);
+      const nextHistory: ChatTurn[] = [...history, { role: 'user', content: userInput }];
+      await callChat(vertical, nextHistory, answers);
+    },
+    [vertical, history, answers, addUserMessage, callChat],
+  );
 
   // Handle send based on phase
-  const handleSend = useCallback((text: string) => {
-    if (phase === 'detect') {
-      handleDetection(text);
-    } else if (phase === 'questions') {
-      handleAnswer(text);
-    }
-  }, [phase, handleDetection, handleAnswer]);
+  const handleSend = useCallback(
+    (text: string) => {
+      if (phase === 'detect') {
+        handleDetection(text);
+      } else if (phase === 'questions') {
+        handleAnswer(text);
+      }
+    },
+    [phase, handleDetection, handleAnswer],
+  );
+
+  // Handle file upload: server extracts text from PDF/image and we feed it
+  // into the chat as the user's answer.
+  const handleUpload = useCallback(
+    async (file: File) => {
+      if (phase !== 'questions' || !vertical) return;
+      addUserMessage(`📎 Subi un archivo: ${file.name}`);
+      setUploading(true);
+      setInputDisabled(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        // Use the last AI message as context for the extraction prompt
+        const lastAi = [...messages].reverse().find((m) => m.role === 'ai');
+        formData.append('question', lastAi?.text || 'informacion del negocio');
+
+        const res = await fetch('/api/onboarding/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+          addAiMessage(data.error || 'No pude leer el archivo. ¿Puedes escribir la respuesta?');
+          setUploading(false);
+          return;
+        }
+
+        const preview =
+          data.extractedText.length > 260
+            ? data.extractedText.slice(0, 260) + '...'
+            : data.extractedText;
+        addAiMessage(`Perfecto, leí tu ${file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'imagen'}. Encontré esto:\n\n${preview}`);
+
+        setUploading(false);
+        await new Promise((r) => setTimeout(r, 800));
+        // Feed the extracted text into the AI chat as the user's answer
+        const nextHistory: ChatTurn[] = [
+          ...history,
+          { role: 'user', content: data.extractedText },
+        ];
+        await callChat(vertical, nextHistory, answers);
+      } catch {
+        setUploading(false);
+        setInputDisabled(false);
+        addAiMessage('Hubo un error al procesar el archivo. Intenta de nuevo.');
+      }
+    },
+    [phase, vertical, messages, history, answers, addAiMessage, addUserMessage, callChat],
+  );
 
   // Generation complete
   const handleGenerationComplete = useCallback(async () => {
@@ -222,7 +257,11 @@ export function OnboardingChat() {
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
         <h1 className="text-lg font-semibold tracking-tight">atiende.ai</h1>
         {phase === 'questions' && vertical && (
-          <ProgressIndicator current={currentQuestion} total={totalQuestions} verticalName={verticalName} />
+          <ProgressIndicator
+            current={collectedCount}
+            total={totalQuestions}
+            verticalName={verticalName}
+          />
         )}
       </header>
 
@@ -290,7 +329,7 @@ export function OnboardingChat() {
               <div className="flex gap-3 justify-center">
                 <button
                   onClick={() => router.push('/home')}
-                  className="px-6 py-3 rounded-2xl bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition-colors"
+                  className="px-6 py-3 rounded-2xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors"
                 >
                   Ir al Dashboard
                 </button>
@@ -307,11 +346,14 @@ export function OnboardingChat() {
         <footer className="border-t border-zinc-100 py-4">
           <ChatInput
             onSend={handleSend}
+            onUpload={phase === 'questions' ? handleUpload : undefined}
+            acceptsUpload={phase === 'questions'}
+            uploading={uploading}
             disabled={inputDisabled}
             placeholder={
               phase === 'detect'
                 ? 'Ej: "Soy dentista en Merida" o "Tengo una taqueria"...'
-                : 'Escribe tu respuesta...'
+                : 'Escribe tu respuesta o sube un PDF / foto...'
             }
           />
         </footer>

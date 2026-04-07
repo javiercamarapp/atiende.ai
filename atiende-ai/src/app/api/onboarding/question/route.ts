@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     inputType: q.inputType,
     required: q.required,
     isLastQuestion: q.isLastQuestion,
+    acceptsUpload: q.acceptsUpload,
     formattedMessage: formatQuestionMessage(q),
   });
 }

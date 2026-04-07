@@ -44,6 +44,13 @@ export const MODELS = {
   // ─── GENERAR PROMPTS (onboarding) ───
   // Gemini 2.5 Flash: buen seguimiento de instrucciones largas
   GENERATOR: 'google/gemini-2.5-flash',
+
+  // ─── ONBOARDING CONVERSATIONAL (free open-source) ───
+  // DeepSeek V3 0324 via OpenRouter free tier: $0/$0
+  // Strong Spanish + instruction following + JSON output.
+  // Used only for the onboarding chat where latency/cost isn't critical
+  // and users benefit from a natural conversation instead of a rigid form.
+  FREE_CHAT: 'deepseek/deepseek-chat-v3-0324:free',
 } as const;
 
 // Precios por millon de tokens [input, output]
