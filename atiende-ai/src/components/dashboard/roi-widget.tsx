@@ -25,7 +25,7 @@ export function ROIWidget({ roi }: { roi: ROIData }) {
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center">
-            <MessageSquare className="w-4 h-4 text-blue-600 mx-auto mb-1" />
+            <MessageSquare className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
             <p className="text-xl font-bold">{roi.messagesSaved.toLocaleString()}</p>
             <p className="text-xs text-gray-500">Msgs contestados</p>
           </div>

@@ -214,7 +214,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
         {PLANS.map((p) => (
           <Card
             key={p.key}
-            className={tenantPlan === p.key ? 'border-blue-500 bg-blue-50' : ''}
+            className={tenantPlan === p.key ? 'border-emerald-500 bg-emerald-50' : ''}
           >
             <CardContent className="pt-6">
               <h3 className="font-bold text-lg">{p.name}</h3>
@@ -262,7 +262,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                 </div>
               )}
               {tenantPlan === p.key && (
-                <p className="mt-4 text-sm text-blue-600 font-medium text-center">
+                <p className="mt-4 text-sm text-emerald-600 font-medium text-center">
                   Plan actual
                 </p>
               )}

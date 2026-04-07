@@ -88,7 +88,7 @@ export function MarketplaceGrid({ agents, activeIds, tenantId }: { agents: Agent
                     </CardHeader>
                     <CardContent>
                       <p className="text-xs text-gray-600">{ag.description}</p>
-                      <p className="text-sm font-bold text-blue-600 mt-2">${ag.price_mxn} MXN/mes</p>
+                      <p className="text-sm font-bold text-emerald-600 mt-2">${ag.price_mxn} MXN/mes</p>
                     </CardContent>
                     <CardFooter>
                       <Button

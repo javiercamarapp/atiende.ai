@@ -132,7 +132,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }:{
                   m.direction === 'outbound'
                     ? m.sender_type === 'human'
                       ? 'bg-purple-100'
-                      : 'bg-blue-100'
+                      : 'bg-emerald-100'
                     : 'bg-white border'
                 }`}
               >

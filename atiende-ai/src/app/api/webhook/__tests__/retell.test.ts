@@ -3,7 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
 
 const mockInsert = vi.fn(() => Promise.resolve({ data: null, error: null }));
-const mockUpdateEq = vi.fn(() => Promise.resolve({ data: null, error: null }));
+// Support chained .eq().eq() for (retell_call_id, tenant_id) tenant-scoped updates.
+const mockUpdateEqTenant = vi.fn(() => Promise.resolve({ data: null, error: null }));
+const mockUpdateEq = vi.fn(() => ({
+  eq: mockUpdateEqTenant,
+  then: (resolve: (v: { data: null; error: null }) => void) => resolve({ data: null, error: null }),
+}));
 const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
 const mockSelectSingle = vi.fn(() => Promise.resolve({
   data: { tenant_id: 'tid-1', from_number: '+525551234567', to_number: '+525559876543', direction: 'inbound' },

@@ -53,7 +53,7 @@ export default async function CallsPage() {
               <div className="flex items-start gap-3">
                 {c.direction === 'inbound'
                   ? <PhoneIncoming className="w-5 h-5 text-green-600 mt-0.5" />
-                  : <PhoneOutgoing className="w-5 h-5 text-blue-600 mt-0.5" />}
+                  : <PhoneOutgoing className="w-5 h-5 text-emerald-600 mt-0.5" />}
                 <div className="space-y-1">
                   <p className="font-medium">{c.direction === 'inbound' ? c.from_number : c.to_number}</p>
                   <p className="text-xs text-gray-400">

@@ -94,6 +94,23 @@ async function handleCallStarted(body: Record<string, unknown>) {
 }
 
 async function handleCallEnded(body: Record<string, unknown>) {
+  const callId = body.call_id;
+
+  // Defense-in-depth: look up tenant_id for this call BEFORE any updates,
+  // so we can scope every subsequent .update() by tenant_id.
+  const { data: call } = await supabaseAdmin
+    .from('voice_calls')
+    .select('tenant_id, from_number, to_number, direction')
+    .eq('retell_call_id', callId)
+    .single();
+
+  if (!call) {
+    logger.warn('Retell call_ended: no voice_calls row found for retell_call_id', { callId });
+    return;
+  }
+
+  const tenantId = call.tenant_id;
+
   const updateData: Record<string, unknown> = {
     duration_seconds: body.duration_ms
       ? Math.round((body.duration_ms as number) / 1000)
@@ -113,16 +130,10 @@ async function handleCallEnded(body: Record<string, unknown>) {
   await supabaseAdmin
     .from('voice_calls')
     .update(updateData)
-    .eq('retell_call_id', body.call_id);
+    .eq('retell_call_id', callId)
+    .eq('tenant_id', tenantId);
 
-  // Crear/actualizar conversacion y contacto
-  const { data: call } = await supabaseAdmin
-    .from('voice_calls')
-    .select('tenant_id, from_number, to_number, direction')
-    .eq('retell_call_id', body.call_id)
-    .single();
-
-  if (call) {
+  {
     const customerPhone = call.direction === 'inbound'
       ? call.from_number : call.to_number;
 
@@ -159,13 +170,27 @@ async function handleCallEnded(body: Record<string, unknown>) {
     // Vincular call con conversacion
     await supabaseAdmin.from('voice_calls')
       .update({ conversation_id: conv?.id })
-      .eq('retell_call_id', body.call_id);
+      .eq('retell_call_id', callId)
+      .eq('tenant_id', tenantId);
   }
 }
 
 async function handleCallAnalyzed(body: Record<string, unknown>) {
+  const callId = body.call_id;
   const analysis = (body.call_analysis as Record<string, unknown>) || {};
   const customAnalysis = analysis.custom_analysis as Record<string, unknown> | undefined;
+
+  // Defense-in-depth: scope update by tenant_id from a prior lookup of the call.
+  const { data: call } = await supabaseAdmin
+    .from('voice_calls')
+    .select('tenant_id')
+    .eq('retell_call_id', callId)
+    .single();
+
+  if (!call) {
+    logger.warn('Retell call_analyzed: no voice_calls row found for retell_call_id', { callId });
+    return;
+  }
 
   await supabaseAdmin
     .from('voice_calls')
@@ -175,5 +200,6 @@ async function handleCallAnalyzed(body: Record<string, unknown>) {
       outcome: (analysis.call_outcome as string) || customAnalysis?.outcome,
       recording_url: body.recording_url,
     })
-    .eq('retell_call_id', body.call_id);
+    .eq('retell_call_id', callId)
+    .eq('tenant_id', call.tenant_id);
 }

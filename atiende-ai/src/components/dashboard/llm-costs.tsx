@@ -68,9 +68,9 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
 
   return (
     <div className="space-y-4">
-      <Card className="p-4 text-center border-2 border-blue-200 bg-blue-50">
-        <p className="text-sm text-blue-600 font-medium">Costo total este mes</p>
-        <p className="text-3xl font-bold text-blue-800">${totalMonthCost.toFixed(2)} USD</p>
+      <Card className="p-4 text-center border-2 border-emerald-200 bg-emerald-50">
+        <p className="text-sm text-emerald-600 font-medium">Costo total este mes</p>
+        <p className="text-3xl font-bold text-emerald-800">${totalMonthCost.toFixed(2)} USD</p>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

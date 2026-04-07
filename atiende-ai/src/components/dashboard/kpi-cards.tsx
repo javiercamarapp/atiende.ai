@@ -9,7 +9,7 @@ function getKPIs(type:string, today:any, month:any[]) {
   const tOrders=month.reduce((s,d)=>s+(d.orders_total||0),0);
   const tLeads=month.reduce((s,d)=>s+(d.leads_new||0),0);
   const base=[
-    {label:'Mensajes hoy',value:today?.messages_inbound||0,icon:MessageSquare,color:'text-blue-600'},
+    {label:'Mensajes hoy',value:today?.messages_inbound||0,icon:MessageSquare,color:'text-emerald-600'},
     {label:'Msgs ahorrados',value:tMsgs,icon:Zap,color:'text-green-600'},
   ];
   const food=['restaurant','taqueria','cafe','florist'];
@@ -19,10 +19,10 @@ function getKPIs(type:string, today:any, month:any[]) {
     {label:'Revenue hoy',value:'$'+(today?.orders_revenue||0).toLocaleString(),icon:ShoppingBag,color:'text-green-600'},
     {label:'Pedidos mes',value:tOrders,icon:ShoppingBag,color:'text-purple-600'}];
   if(realty.includes(type)) return [...base,
-    {label:'Leads nuevos',value:today?.leads_new||0,icon:Users,color:'text-blue-600'},
+    {label:'Leads nuevos',value:today?.leads_new||0,icon:Users,color:'text-emerald-600'},
     {label:'Leads mes',value:tLeads,icon:Users,color:'text-purple-600'}];
   return [...base,
-    {label:'Citas hoy',value:today?.appointments_booked||0,icon:Calendar,color:'text-blue-600'},
+    {label:'Citas hoy',value:today?.appointments_booked||0,icon:Calendar,color:'text-emerald-600'},
     {label:'No-shows mes',value:tNoShow,icon:TrendingDown,color:tNoShow>5?'text-red-600':'text-green-600'},
     {label:'Citas mes',value:tAppts,icon:Calendar,color:'text-purple-600'}];
 }

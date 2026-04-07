@@ -76,7 +76,7 @@ export function OxxoReference({ reference, clabe, amount, expiresAt }: OxxoRefer
           {isOxxo ? (
             <Store className="w-6 h-6 text-yellow-600" />
           ) : (
-            <Building2 className="w-6 h-6 text-blue-600" />
+            <Building2 className="w-6 h-6 text-emerald-600" />
           )}
           <h3 className="text-lg font-bold">
             {isOxxo ? 'Pago en OXXO' : 'Transferencia SPEI'}
