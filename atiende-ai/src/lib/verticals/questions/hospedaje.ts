@@ -164,7 +164,6 @@ export const hospedajeQuestions: Partial<Record<VerticalEnum, VerticalQuestion[]
     },
   ],
 
-  // Sprint 1 stubs — full questions coming in future sprints
   hotel_boutique: [
     {
       number: 1,

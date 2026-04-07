@@ -276,7 +276,6 @@ export const gastronomiaQuestions: Partial<Record<VerticalEnum, VerticalQuestion
     },
   ],
 
-  // Sprint 2 stubs
   cafeteria: [
     {
       number: 1,

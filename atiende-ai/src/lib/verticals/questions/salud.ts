@@ -206,7 +206,6 @@ export const saludQuestions: Partial<Record<VerticalEnum, VerticalQuestion[]>> =
     },
   ],
 
-  // Sprint 2 stubs
   medico: [
     { number: 1, text: 'Nombre del consultorio y del medico titular', why: 'Dr./Dra. [nombre completo] — como quieres que el bot se refiera al doctor.', inputType: 'text', required: true },
     { number: 2, text: 'Especialidad(es) del medico', why: 'Medicina general, medicina interna, familiar, otra. Certificaciones vigentes.', inputType: 'text', required: true },
