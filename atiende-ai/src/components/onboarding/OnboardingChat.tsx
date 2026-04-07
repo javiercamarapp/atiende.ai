@@ -50,6 +50,45 @@ export function OnboardingChat() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // On mount: check if the user already has saved onboarding state. If so,
+  // resume right where they left off — skip channel + detect phases.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/onboarding/state');
+        if (!res.ok) return;
+        const state = await res.json();
+        if (cancelled || !state?.hasSavedState || !state.vertical) return;
+
+        setVertical(state.vertical);
+        setVerticalName(state.verticalName);
+        setTotalQuestions(state.totalQuestions);
+        setCollectedCount(state.collected);
+        setAnswers(state.answers || {});
+        setBusinessName(state.businessName || '');
+        setPhase('questions');
+        setShowInput(true);
+
+        const id = `ai-resume-${Date.now()}`;
+        setMessages([
+          {
+            id,
+            role: 'ai',
+            text: `¡Bienvenido de vuelta${state.businessName ? `, ${state.businessName}` : ''}! Seguimos donde nos quedamos. ¿Continuamos?`,
+          },
+        ]);
+        // Mark the resume message as typed so input isn't stuck disabled
+        setTypingDone(new Set([id]));
+      } catch {
+        // Silent fail — user continues from scratch
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const addAiMessage = useCallback((text: string, insight?: string) => {
     const id = `ai-${Date.now()}-${Math.random()}`;
     setMessages((prev) => [...prev, { id, role: 'ai', text, insight }]);

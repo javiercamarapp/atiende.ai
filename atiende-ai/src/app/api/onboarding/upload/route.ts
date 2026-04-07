@@ -10,6 +10,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { openrouter, MODELS } from '@/lib/llm/openrouter';
 import { logger } from '@/lib/logger';
+import {
+  ensureTenant,
+  getAuthUserId,
+  saveKnowledgeChunk,
+} from '@/lib/onboarding/persistence';
 
 // Max 10 MB per file — prevents abuse + keeps LLM context sane.
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -44,6 +49,11 @@ type MultimodalContent =
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file');
     const question = (formData.get('question') as string | null) ?? 'informacion del negocio';
@@ -120,6 +130,19 @@ export async function POST(request: NextRequest) {
       sizeBytes: file.size,
       extractedChars: extracted.length,
     });
+
+    // Persist the extracted content as a knowledge chunk under the user's
+    // tenant. This is immediately searchable by RAG later and doesn't wait
+    // for the final /generate step. Failures are logged but don't block.
+    try {
+      const tenantId = await ensureTenant(userId);
+      await saveKnowledgeChunk(tenantId, extracted, 'onboarding_upload', file.name);
+    } catch (persistErr) {
+      logger.error(
+        'Onboarding upload persistence failed',
+        persistErr instanceof Error ? persistErr : new Error(String(persistErr)),
+      );
+    }
 
     return NextResponse.json({
       success: true,

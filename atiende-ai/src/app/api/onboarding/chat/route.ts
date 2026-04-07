@@ -15,6 +15,11 @@ import {
 } from '@/lib/verticals';
 import type { VerticalEnum } from '@/lib/verticals/types';
 import { logger } from '@/lib/logger';
+import {
+  ensureTenant,
+  getAuthUserId,
+  saveAnswers,
+} from '@/lib/onboarding/persistence';
 
 interface ChatTurn {
   role: 'user' | 'assistant';
@@ -142,6 +147,11 @@ function parseModelJson(raw: string): { message: string; answers: Record<string,
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+    }
+
     const body = (await request.json()) as ChatRequestBody;
     const { vertical, history = [], answers = {} } = body;
 
@@ -204,6 +214,24 @@ export async function POST(request: NextRequest) {
       (k) => typeof mergedAnswers[k] === 'string' && mergedAnswers[k].trim().length > 0,
     );
     const isComplete = parsed.isComplete && allRequiredFilled;
+
+    // Persist: make sure the tenant exists and save the latest answers.
+    // First answer (q1) is conventionally the business name — feed it to
+    // ensureTenant so tenants.name is kept in sync.
+    try {
+      const tenantId = await ensureTenant(userId, {
+        vertical,
+        businessName: mergedAnswers.q1,
+      });
+      await saveAnswers(tenantId, mergedAnswers);
+    } catch (persistErr) {
+      // Don't block the user's conversation if persistence fails — log it
+      // and let them keep chatting. They can retry the generate step.
+      logger.error(
+        'Onboarding chat persistence failed',
+        persistErr instanceof Error ? persistErr : new Error(String(persistErr)),
+      );
+    }
 
     const payload: ChatResponsePayload = {
       message: parsed.message,
