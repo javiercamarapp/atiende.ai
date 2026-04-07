@@ -52,7 +52,7 @@ export default async function InsurancePoliciesPage() {
                   </div>
                   <div className="text-right">
                     <span className={`text-xs px-2 py-1 rounded-full ${
-                      p.status === 'active' ? 'bg-green-50 text-green-700' :
+                      p.status === 'active' ? 'bg-emerald-50 text-emerald-700' :
                       p.status === 'expired' ? 'bg-red-50 text-red-700' :
                       'bg-zinc-100 text-zinc-600'
                     }`}>

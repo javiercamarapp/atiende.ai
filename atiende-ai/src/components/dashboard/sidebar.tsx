@@ -32,16 +32,19 @@ function SidebarContent({ tenant, modules, path, onNavigate }: { tenant:any; mod
           <span className="text-xs font-bold text-emerald-700">ROI este mes</span>
         </div>
       </div>
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto" aria-label="Navegacion principal">
         {modules.map(mod => {
           const Icon = ICONS[mod] || LayoutDashboard;
           const href = mod === 'dashboard' ? '/home' : mod === 'settings' ? '/settings/agent' : '/' + mod;
           const active = mod === 'dashboard' ? path === '/home' : path.startsWith('/' + mod);
           return (
             <Link key={mod} href={href} onClick={onNavigate}
-              className={cn('flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition',
-                active ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100')}>
-              <Icon className="w-4 h-4" />{LABELS[mod] || mod}
+              aria-current={active ? 'page' : undefined}
+              className={cn('flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2',
+                active
+                  ? 'border-l-2 border-emerald-600 bg-emerald-50 text-emerald-700 font-medium'
+                  : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700')}>
+              <Icon className="w-4 h-4" aria-hidden="true" />{LABELS[mod] || mod}
             </Link>
           );
         })}
@@ -71,8 +74,14 @@ export function Sidebar({ tenant, modules }: { tenant:any; modules:string[] }) {
 
       {/* Mobile hamburger button */}
       <div className="fixed top-3 left-3 z-50 md:hidden">
-        <Button variant="outline" size="icon" onClick={() => setOpen(true)} className="bg-white shadow-md">
-          <Menu className="w-5 h-5" />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setOpen(true)}
+          aria-label="Abrir menu de navegacion"
+          className="bg-white shadow-md focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+        >
+          <Menu className="w-5 h-5" aria-hidden="true" />
         </Button>
       </div>
 
