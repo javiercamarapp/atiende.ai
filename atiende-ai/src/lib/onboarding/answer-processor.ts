@@ -1,3 +1,7 @@
+// TODO(onboarding-v2): deprecated — answer validation now happens inside the
+// conversational agent (src/lib/onboarding/chat-agent.ts). Delete in a
+// follow-up PR once the new flow is validated in prod.
+//
 // Answer Processor — validates and stores onboarding answers
 
 import type { VerticalQuestion } from '@/lib/verticals/types';
