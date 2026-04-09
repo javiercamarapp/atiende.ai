@@ -34,7 +34,7 @@ interface PersistedState {
 
 const STORAGE_KEY = 'atiende_onboarding_v2';
 const INITIAL_AI_MESSAGE =
-  '¡Hola! Cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"), o si prefieres pégame el link de tu sitio web y extraigo lo que pueda.';
+  '¡Hola! Cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"). Si prefieres, pégame el link de tu sitio web o adjunta fotos de tu menú, lista de precios o cédula — las leo y extraigo lo que pueda.';
 
 function loadPersistedState(): PersistedState | null {
   if (typeof window === 'undefined') return null;
@@ -140,11 +140,64 @@ export function OnboardingChat() {
     [vertical, capturedFields, totalRequired, capturedRequired, historyRef],
   );
 
+  // ── Upload helper: POST a single file to /api/onboarding/upload ──
+  const uploadFile = useCallback(
+    async (
+      file: File,
+    ): Promise<{ filename: string; markdown: string } | { error: string }> => {
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/onboarding/upload', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          return {
+            error:
+              body.message ||
+              body.error ||
+              `No pude leer ${file.name}. Intenta con otra imagen.`,
+          };
+        }
+        const body = await res.json();
+        return { filename: body.filename, markdown: body.markdown };
+      } catch {
+        return { error: `Error de red al subir ${file.name}.` };
+      }
+    },
+    [],
+  );
+
   // ── Unified turn handler ──
   const handleTurn = useCallback(
-    async (userText: string) => {
-      addUserMessage(userText);
+    async (userText: string, files: File[] = []) => {
+      // Render user message with attachment count if any.
+      const userDisplay =
+        files.length > 0
+          ? `${userText}\n\n📎 ${files.length} archivo${files.length === 1 ? '' : 's'}: ${files.map((f) => f.name).join(', ')}`
+          : userText;
+      addUserMessage(userDisplay);
       setInputDisabled(true);
+
+      // Upload all attached files in parallel and collect successful extractions.
+      const uploadedContent: { filename: string; markdown: string }[] = [];
+      if (files.length > 0) {
+        const uploadResults = await Promise.all(files.map((f) => uploadFile(f)));
+        const errors: string[] = [];
+        for (const r of uploadResults) {
+          if ('error' in r) errors.push(r.error);
+          else uploadedContent.push({ filename: r.filename, markdown: r.markdown });
+        }
+        if (errors.length > 0) {
+          await addAiMessage(errors.join(' '));
+          if (uploadedContent.length === 0) {
+            setInputDisabled(false);
+            return;
+          }
+        }
+      }
 
       // Append to history before sending (so the server sees it).
       const nextHistory: HistoryTurn[] = [
@@ -162,6 +215,7 @@ export function OnboardingChat() {
             capturedFields,
             history: nextHistory.slice(0, -1), // server appends userMessage itself
             userMessage: userText,
+            uploadedContent: uploadedContent.length > 0 ? uploadedContent : undefined,
           }),
         });
 
@@ -215,7 +269,7 @@ export function OnboardingChat() {
         await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
       }
     },
-    [vertical, capturedFields, historyRef, addAiMessage, addUserMessage],
+    [vertical, capturedFields, historyRef, addAiMessage, addUserMessage, uploadFile],
   );
 
   // ── Channel selection ──
@@ -265,9 +319,9 @@ export function OnboardingChat() {
 
   // ── Send handler ──
   const handleSend = useCallback(
-    (text: string) => {
+    (text: string, files: File[] = []) => {
       if (phase === 'conversation') {
-        handleTurn(text);
+        handleTurn(text, files);
       }
     },
     [phase, handleTurn],
