@@ -328,9 +328,12 @@ export function OnboardingChat() {
   );
 
   // ── Generation step (when done) ──
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
   const handleGenerationComplete = useCallback(async () => {
+    setGenerateError(null);
     try {
-      await fetch('/api/onboarding/generate', {
+      const res = await fetch('/api/onboarding/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -339,12 +342,32 @@ export function OnboardingChat() {
           businessName: capturedFields.q1 ?? '',
         }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        // Surface the error to the user instead of silently landing on the
+        // "done" screen — a failed generate means nothing got saved to the
+        // DB and the dashboard redirect will bounce back to /onboarding.
+        setGenerateError(
+          body.error === 'Unauthorized'
+            ? 'Parece que tu sesión expiró. Inicia sesión de nuevo e intenta otra vez.'
+            : `No pudimos guardar tu configuración (${body.error || res.status}). Intenta de nuevo.`,
+        );
+        return;
+      }
     } catch {
-      // Non-blocking.
+      setGenerateError(
+        'Error de red al guardar tu configuración. Revisa tu conexión e intenta de nuevo.',
+      );
+      return;
     }
     clearPersistedState();
     setPhase('done');
   }, [vertical, capturedFields]);
+
+  const retryGeneration = useCallback(() => {
+    setGenerateError(null);
+    handleGenerationComplete();
+  }, [handleGenerationComplete]);
 
   const businessName = capturedFields.q1 ?? '';
   const verticalDisplayName = vertical ?? '';
@@ -410,12 +433,31 @@ export function OnboardingChat() {
           ))}
 
           {/* Generation animation */}
-          {phase === 'generating' && (
+          {phase === 'generating' && !generateError && (
             <GenerationAnimation
               businessName={businessName || 'Tu negocio'}
               verticalName={verticalDisplayName}
               onComplete={handleGenerationComplete}
             />
+          )}
+
+          {/* Generation error state with retry */}
+          {phase === 'generating' && generateError && (
+            <div className="text-center py-8 animate-element animate-delay-100">
+              <div className="text-5xl mb-4">⚠️</div>
+              <h3 className="text-xl font-semibold mb-2">
+                No pudimos guardar tu configuración
+              </h3>
+              <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
+                {generateError}
+              </p>
+              <button
+                onClick={retryGeneration}
+                className="px-6 py-3 rounded-2xl bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition-colors"
+              >
+                Reintentar
+              </button>
+            </div>
           )}
 
           {/* Done state */}
