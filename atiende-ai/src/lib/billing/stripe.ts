@@ -1,13 +1,23 @@
 import Stripe from 'stripe';
-// Stripe SDK version mismatch
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-12-18.acacia' as string & Stripe.LatestApiVersion });
+
+let _stripe: Stripe | null = null;
+
+export function getStripe(): Stripe {
+  if (_stripe) return _stripe;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('STRIPE_SECRET_KEY is not configured');
+  _stripe = new Stripe(key, {
+    apiVersion: '2024-12-18.acacia' as string & Stripe.LatestApiVersion,
+  });
+  return _stripe;
+}
 
 const PLAN_PRICES: Record<string,string> = {
   basic:'price_basic_499_mxn', pro:'price_pro_999_mxn', premium:'price_premium_1499_mxn',
 };
 
 export async function createCheckoutSession(tenantId:string, email:string, plan:string) {
-  return stripe.checkout.sessions.create({
+  return getStripe().checkout.sessions.create({
     customer_email:email, mode:'subscription',
     line_items:[{price:PLAN_PRICES[plan],quantity:1}],
     success_url:`${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?success=true`,
@@ -17,7 +27,7 @@ export async function createCheckoutSession(tenantId:string, email:string, plan:
 }
 
 export async function createPortalSession(customerId:string) {
-  return stripe.billingPortal.sessions.create({
+  return getStripe().billingPortal.sessions.create({
     customer:customerId,
     return_url:`${process.env.NEXT_PUBLIC_APP_URL}/settings/billing`,
   });
