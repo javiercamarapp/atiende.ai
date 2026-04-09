@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, X, ImageIcon } from 'lucide-react';
+import { Send, Paperclip, X, ImageIcon, FileText } from 'lucide-react';
 
 export interface AttachedFilePreview {
   id: string;
@@ -21,7 +21,13 @@ interface ChatInputProps {
   acceptedTypes?: string[];
 }
 
-const DEFAULT_ACCEPTED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+const DEFAULT_ACCEPTED = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'application/pdf',
+];
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 
 export function ChatInput({
@@ -66,7 +72,7 @@ export function ChatInput({
         break;
       }
       if (!acceptedTypes.includes(file.type)) {
-        errors.push(`${file.name}: tipo no soportado (solo PNG/JPG/WebP).`);
+        errors.push(`${file.name}: tipo no soportado (PNG, JPG, WebP o PDF).`);
         continue;
       }
       if (file.size > maxBytes) {
@@ -127,7 +133,11 @@ export function ChatInput({
               key={att.id}
               className="flex items-center gap-2 bg-zinc-100 border border-zinc-200 rounded-xl px-3 py-1.5 text-xs"
             >
-              <ImageIcon className="w-3.5 h-3.5 text-zinc-600" />
+              {att.file.type === 'application/pdf' ? (
+                <FileText className="w-3.5 h-3.5 text-zinc-600" />
+              ) : (
+                <ImageIcon className="w-3.5 h-3.5 text-zinc-600" />
+              )}
               <span className="max-w-[180px] truncate text-zinc-800">
                 {att.file.name}
               </span>
@@ -162,7 +172,7 @@ export function ChatInput({
           disabled={disabled || attachedFiles.length >= maxFiles}
           className="p-2.5 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
           aria-label="Adjuntar archivo"
-          title="Adjuntar foto o imagen"
+          title="Adjuntar foto, imagen o PDF"
         >
           <Paperclip className="w-4 h-4" />
         </button>

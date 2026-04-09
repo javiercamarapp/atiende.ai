@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockExtractFromImage = vi.fn();
+const mockExtractFromPdf = vi.fn();
 
 vi.mock('@/lib/onboarding/extract-upload', async () => {
   const actual = await vi.importActual<
@@ -9,6 +10,7 @@ vi.mock('@/lib/onboarding/extract-upload', async () => {
   return {
     ...actual,
     extractFromImage: (...args: unknown[]) => mockExtractFromImage(...args),
+    extractFromPdf: (...args: unknown[]) => mockExtractFromPdf(...args),
   };
 });
 
@@ -40,6 +42,7 @@ function fakePng(sizeBytes: number, name = 'test.png'): File {
 describe('POST /api/onboarding/upload', () => {
   beforeEach(() => {
     mockExtractFromImage.mockReset();
+    mockExtractFromPdf.mockReset();
   });
 
   it('extracts markdown from a valid image and returns it', async () => {
@@ -60,12 +63,51 @@ describe('POST /api/onboarding/upload', () => {
     expect(json.filename).toBe('menu.png');
     expect(json.kind).toBe('image');
     expect(json.markdown).toContain('Tacos: $50');
+    expect(mockExtractFromImage).toHaveBeenCalledTimes(1);
+    expect(mockExtractFromPdf).not.toHaveBeenCalled();
+  });
+
+  it('routes PDF uploads to extractFromPdf', async () => {
+    mockExtractFromPdf.mockResolvedValueOnce({
+      filename: 'menu.pdf',
+      kind: 'pdf',
+      mimeType: 'application/pdf',
+      markdown: '# Menú extraído del PDF\n- Tacos: $50',
+      sizeBytes: 2048,
+      cost: 0.0002,
+      tokensIn: 600,
+      tokensOut: 80,
+    });
+
+    const buf = new Uint8Array(2048);
+    const pdf = new File([buf], 'menu.pdf', { type: 'application/pdf' });
+    const res = await POST(makeMultipartRequest(pdf));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.kind).toBe('pdf');
+    expect(json.markdown).toContain('extraído del PDF');
+    expect(mockExtractFromPdf).toHaveBeenCalledTimes(1);
+    expect(mockExtractFromImage).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 with PDF_NO_TEXT when the PDF is scanned/image-only', async () => {
+    const { UploadError } = await import('@/lib/onboarding/extract-upload');
+    mockExtractFromPdf.mockRejectedValueOnce(
+      new UploadError('PDF_NO_TEXT', 'El PDF no contiene texto legible.'),
+    );
+    const buf = new Uint8Array(1024);
+    const pdf = new File([buf], 'scanned.pdf', { type: 'application/pdf' });
+    const res = await POST(makeMultipartRequest(pdf));
+    expect(res.status).toBe(400); // user-fixable, not 500
+    const json = await res.json();
+    expect(json.error).toBe('PDF_NO_TEXT');
   });
 
   it('rejects unsupported MIME types with 400 and UNSUPPORTED_TYPE', async () => {
     const buf = new Uint8Array(100);
-    const pdf = new File([buf], 'doc.pdf', { type: 'application/pdf' });
-    const res = await POST(makeMultipartRequest(pdf));
+    // zip is neither image nor PDF — should be rejected.
+    const zip = new File([buf], 'archive.zip', { type: 'application/zip' });
+    const res = await POST(makeMultipartRequest(zip));
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe('UNSUPPORTED_TYPE');

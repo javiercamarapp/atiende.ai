@@ -34,7 +34,7 @@ interface PersistedState {
 
 const STORAGE_KEY = 'atiende_onboarding_v2';
 const INITIAL_AI_MESSAGE =
-  '¡Hola! Cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"). Si prefieres, pégame el link de tu sitio web o adjunta fotos de tu menú, lista de precios o cédula — las leo y extraigo lo que pueda.';
+  '¡Hola! Cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"). Si prefieres, pégame el link de tu sitio web o adjunta fotos o PDFs de tu menú, lista de precios o cédula — los leo y extraigo lo que pueda.';
 
 function loadPersistedState(): PersistedState | null {
   if (typeof window === 'undefined') return null;

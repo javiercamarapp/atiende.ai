@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import {
   extractFromImage,
+  extractFromPdf,
   validateUpload,
+  isPdfMimeType,
   UploadError,
   MAX_UPLOAD_BYTES,
-  ACCEPTED_IMAGE_TYPES,
+  ACCEPTED_UPLOAD_TYPES,
 } from '@/lib/onboarding/extract-upload';
 import { logger } from '@/lib/logger';
 
@@ -65,17 +67,23 @@ export async function POST(request: Request) {
   }
 
   // Read file bytes
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString('base64');
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
 
-  // Extract via Gemini
+  // Dispatch to the right extractor based on MIME type.
   try {
-    const result = await extractFromImage({
-      filename,
-      mimeType: file.type,
-      base64,
-      sizeBytes: file.size,
-    });
+    const result = isPdfMimeType(file.type)
+      ? await extractFromPdf({
+          filename,
+          buffer: new Uint8Array(arrayBuffer),
+          sizeBytes: file.size,
+        })
+      : await extractFromImage({
+          filename,
+          mimeType: file.type,
+          base64: buffer.toString('base64'),
+          sizeBytes: file.size,
+        });
 
     logger.info('onboarding_upload_extracted', {
       filename: result.filename,
@@ -100,9 +108,11 @@ export async function POST(request: Request) {
         code: err.code,
         filename,
       });
+      // PDF_NO_TEXT is a user-fixable error (retry as image), not 500.
+      const status = err.code === 'PDF_NO_TEXT' ? 400 : 500;
       return NextResponse.json(
         { error: err.code, message: err.message },
-        { status: 500 },
+        { status },
       );
     }
     logger.error('onboarding_upload unexpected error', err as Error, { filename });
@@ -114,6 +124,6 @@ export async function POST(request: Request) {
 export async function GET() {
   return NextResponse.json({
     maxBytes: MAX_UPLOAD_BYTES,
-    acceptedTypes: ACCEPTED_IMAGE_TYPES,
+    acceptedTypes: ACCEPTED_UPLOAD_TYPES,
   });
 }
