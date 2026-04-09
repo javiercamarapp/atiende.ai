@@ -82,6 +82,8 @@ export function OnboardingChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingTypingResolvers = useRef<Map<string, () => void>>(new Map());
   const hydratedRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  const pendingQueueRef = useRef<{ text: string; files: File[] }[]>([]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -170,18 +172,12 @@ export function OnboardingChat() {
     [],
   );
 
-  // ── Unified turn handler ──
-  const handleTurn = useCallback(
-    async (userText: string, files: File[] = []) => {
-      // Render user message with attachment count if any.
-      const userDisplay =
-        files.length > 0
-          ? `${userText}\n\n📎 ${files.length} archivo${files.length === 1 ? '' : 's'}: ${files.map((f) => f.name).join(', ')}`
-          : userText;
-      addUserMessage(userDisplay);
-      setInputDisabled(true);
+  // ── Process a single queued item (upload files, call chat API, render AI) ──
+  const processOneItem = useCallback(
+    async (item: { text: string; files: File[] }) => {
+      const { text: userText, files } = item;
 
-      // Upload all attached files in parallel and collect successful extractions.
+      // Upload all attached files in parallel.
       const uploadedContent: { filename: string; markdown: string }[] = [];
       if (files.length > 0) {
         const uploadResults = await Promise.all(files.map((f) => uploadFile(f)));
@@ -192,19 +188,15 @@ export function OnboardingChat() {
         }
         if (errors.length > 0) {
           await addAiMessage(errors.join(' '));
-          if (uploadedContent.length === 0) {
-            setInputDisabled(false);
-            return;
-          }
+          if (uploadedContent.length === 0) return;
         }
       }
 
-      // Append to history before sending (so the server sees it).
-      const nextHistory: HistoryTurn[] = [
+      // Append user turn to history.
+      historyRef.current = [
         ...historyRef.current,
         { role: 'user', content: userText },
       ];
-      historyRef.current = nextHistory;
 
       try {
         const res = await fetch('/api/onboarding/chat', {
@@ -213,7 +205,7 @@ export function OnboardingChat() {
           body: JSON.stringify({
             vertical,
             capturedFields,
-            history: nextHistory.slice(0, -1), // server appends userMessage itself
+            history: historyRef.current.slice(0, -1),
             userMessage: userText,
             uploadedContent: uploadedContent.length > 0 ? uploadedContent : undefined,
           }),
@@ -242,14 +234,11 @@ export function OnboardingChat() {
           capturedRequired: number;
         } = await res.json();
 
-        // Update state from server response.
         if (data.vertical) setVertical(data.vertical);
         setCapturedFields(data.capturedFields);
         setTotalRequired(data.totalRequired);
         setCapturedRequired(data.capturedRequired);
 
-        // Append each assistant message as its own history entry — the next
-        // server turn will see the full sequence as separate assistant turns.
         const messagesToRender = data.assistantMessages.filter(
           (m) => typeof m === 'string' && m.trim().length > 0,
         );
@@ -261,8 +250,6 @@ export function OnboardingChat() {
           })),
         ];
 
-        // Persist BEFORE showing the bubbles so a refresh mid-typewriter keeps
-        // the full conversation (including any un-rendered tail messages).
         savePersistedState({
           version: 2,
           vertical: data.vertical ?? vertical,
@@ -273,13 +260,8 @@ export function OnboardingChat() {
           done: data.done,
         });
 
-        // Render each message as its own bubble, with a short pause between
-        // them so the user gets a natural "the assistant is continuing"
-        // rhythm instead of a wall of text dumped at once.
         for (let i = 0; i < messagesToRender.length; i++) {
-          if (i > 0) {
-            await new Promise((r) => setTimeout(r, 450));
-          }
+          if (i > 0) await new Promise((r) => setTimeout(r, 450));
           await addAiMessage(messagesToRender[i]);
         }
 
@@ -290,7 +272,40 @@ export function OnboardingChat() {
         await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
       }
     },
-    [vertical, capturedFields, historyRef, addAiMessage, addUserMessage, uploadFile],
+    [vertical, capturedFields, historyRef, addAiMessage, uploadFile],
+  );
+
+  // ── Queue-based turn handler — input stays unlocked ──
+  // The user can type and send multiple messages while the AI is still
+  // processing/typing a previous one. Each message gets rendered
+  // immediately as a user bubble; the queue drains sequentially so the
+  // AI responds to each in order, like a real chat.
+  const handleTurn = useCallback(
+    (userText: string, files: File[] = []) => {
+      // Render the user message immediately (no locking the input).
+      const userDisplay =
+        files.length > 0
+          ? `${userText}\n\n📎 ${files.length} archivo${files.length === 1 ? '' : 's'}: ${files.map((f) => f.name).join(', ')}`
+          : userText;
+      addUserMessage(userDisplay);
+
+      // Push to queue.
+      pendingQueueRef.current.push({ text: userText, files });
+
+      // If the processing loop is already running, it will pick this up.
+      if (isProcessingRef.current) return;
+
+      // Start the drain loop.
+      isProcessingRef.current = true;
+      (async () => {
+        while (pendingQueueRef.current.length > 0) {
+          const next = pendingQueueRef.current.shift()!;
+          await processOneItem(next);
+        }
+        isProcessingRef.current = false;
+      })();
+    },
+    [addUserMessage, processOneItem],
   );
 
   // ── Channel selection ──
