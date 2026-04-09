@@ -1,3 +1,6 @@
+// TODO(onboarding-v2): deprecated — replaced by /api/onboarding/chat.
+// Kept only while the new conversational flow is validated in prod.
+// Delete in a follow-up PR once metrics confirm migration is stable.
 import { NextResponse } from 'next/server';
 import { detectVertical } from '@/lib/onboarding/detect-vertical';
 

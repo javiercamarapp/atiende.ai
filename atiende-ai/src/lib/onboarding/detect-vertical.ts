@@ -1,3 +1,7 @@
+// TODO(onboarding-v2): deprecated — vertical detection now happens inline
+// inside runChatAgent (or via detectVerticalFromContext in chat-agent.ts).
+// Delete in a follow-up PR once the conversational flow is validated in prod.
+//
 // Vertical Detection Engine
 // Classifies natural language business descriptions into one of 43 verticals
 // Uses LLM (Gemini 2.5 Flash-Lite) via OpenRouter
