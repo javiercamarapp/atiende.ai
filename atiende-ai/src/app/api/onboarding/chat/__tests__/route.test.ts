@@ -197,6 +197,48 @@ describe('POST /api/onboarding/chat', () => {
     expect(json.assistantMessage).toMatch(/trabó/);
   });
 
+  it('forwards uploadedContent to the agent', async () => {
+    mockRunChatAgent.mockResolvedValueOnce({
+      ...defaultAgentResult,
+      updatedFields: { q8: 'Limpieza $500' },
+    });
+
+    const res = await POST(
+      makeRequest({
+        vertical: 'dental',
+        capturedFields: {},
+        history: [],
+        userMessage: 'aquí va mi lista de precios',
+        uploadedContent: [
+          {
+            filename: 'precios.jpg',
+            markdown: '# Precios\n- Limpieza: $500',
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const agentCall = mockRunChatAgent.mock.calls[0][0];
+    expect(agentCall.uploadedContent).toHaveLength(1);
+    expect(agentCall.uploadedContent[0].filename).toBe('precios.jpg');
+    expect(agentCall.uploadedContent[0].markdown).toContain('Limpieza');
+  });
+
+  it('rejects bodies with malformed uploadedContent entries', async () => {
+    const res = await POST(
+      makeRequest({
+        vertical: 'dental',
+        capturedFields: {},
+        history: [],
+        userMessage: 'x',
+        uploadedContent: [
+          { filename: '', markdown: 'x' }, // empty filename
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it('passes incoming history into agent', async () => {
     mockRunChatAgent.mockResolvedValueOnce(defaultAgentResult);
     const history = [

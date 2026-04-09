@@ -20,6 +20,13 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface UploadedContentItem {
+  /** Original filename as provided by the user. */
+  filename: string;
+  /** Markdown extracted from the upload (e.g. menu, price list, cedula). */
+  markdown: string;
+}
+
 export interface ChatAgentInput {
   vertical: VerticalEnum | null;
   capturedFields: Record<string, string>;
@@ -29,6 +36,8 @@ export interface ChatAgentInput {
   scrapedMarkdown?: string;
   /** Human-readable reason why the scrape failed (if applicable). */
   scrapeError?: string;
+  /** Content already extracted from files the user uploaded in this turn. */
+  uploadedContent?: UploadedContentItem[];
 }
 
 export interface ChatAgentResult {
@@ -98,14 +107,15 @@ ${fieldsBlock}
 REGLAS DURAS:
 1. Un solo tema por turno. No hagas preguntas dobles.
 2. Si el usuario pega una URL, asume que nosotros ya procesamos su sitio; NO le pidas que la vuelva a mandar. Usa el contenido extraído (aparece abajo en "CONTENIDO DEL SITIO WEB") para llenar campos. SOLO llena campos con datos que aparezcan LITERALMENTE en el markdown. Si no están, pregunta normal.
-3. Si una respuesta es vaga, evasiva o irrelevante ("no sé", "luego te digo", "lo que tú creas", "cualquier cosa"), NO la aceptes. Haz una re-pregunta amable y específica en assistantMessage, marca clarificationOf="qN", y NO incluyas ese campo en updatedFields en este turno.
-4. Si el usuario da un dato que cubre varios campos en una sola frase (ej: "lunes a viernes 9 a 19 y cerramos domingos" llena horario + días de cierre), llena TODOS esos campos en updatedFields.
-5. Prefiere siempre el siguiente campo [REQ] pendiente. Los opcionales [ ] los dejas para el final o los omites si el usuario parece con prisa.
-6. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado). Responde el enum exacto en el campo "vertical" del JSON y continúa la conversación asumiendo ese vertical. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
-7. Verticales válidos: ${verticalList}.
-8. Cuando TODOS los [REQ] estén completos, responde done=true con un mensaje de cierre breve ("Listo, con esto armo tu agente").
-9. Nunca inventes datos. Si no sabes algo, pregúntalo.
-10. Nunca pidas datos que ya están en [YA CAPTURADO]. Continúa con el siguiente pendiente.
+3. Si el usuario sube archivos o imágenes (menús, listas de precios, fotos de cédulas, logos, cartas), aparecerán abajo como "ARCHIVO SUBIDO POR EL USUARIO". Ya fueron procesados con visión; NO pidas que los vuelva a mandar. SOLO llena campos con datos que aparezcan LITERALMENTE en la extracción del archivo. Agradece que los haya mandado en el assistantMessage.
+4. Si una respuesta es vaga, evasiva o irrelevante ("no sé", "luego te digo", "lo que tú creas", "cualquier cosa"), NO la aceptes. Haz una re-pregunta amable y específica en assistantMessage, marca clarificationOf="qN", y NO incluyas ese campo en updatedFields en este turno.
+5. Si el usuario da un dato que cubre varios campos en una sola frase (ej: "lunes a viernes 9 a 19 y cerramos domingos" llena horario + días de cierre), llena TODOS esos campos en updatedFields.
+6. Prefiere siempre el siguiente campo [REQ] pendiente. Los opcionales [ ] los dejas para el final o los omites si el usuario parece con prisa.
+7. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado / archivo subido). Responde el enum exacto en el campo "vertical" del JSON y continúa la conversación asumiendo ese vertical. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
+8. Verticales válidos: ${verticalList}.
+9. Cuando TODOS los [REQ] estén completos, responde done=true con un mensaje de cierre breve ("Listo, con esto armo tu agente").
+10. Nunca inventes datos. Si no sabes algo, pregúntalo. Cuando tengas duda entre "subir un archivo" y "escribirlo a mano", sugiere subir (ej: "¿tienes tu menú en foto? Puedes subirla y la leo").
+11. Nunca pidas datos que ya están en [YA CAPTURADO]. Continúa con el siguiente pendiente.
 
 FORMATO DE RESPUESTA (JSON estricto, nada más):
 {
@@ -127,14 +137,20 @@ function buildMessagesForAgent(input: ChatAgentInput): {
 }[] {
   const trimmed = input.history.slice(-MAX_HISTORY_TURNS);
 
-  // Build the final user turn, with scraped markdown appended as a developer-style
-  // appendix block if present. Jina Reader output is markdown, so we fence it.
+  // Build the final user turn, with scraped markdown / uploaded content appended
+  // as appendix blocks if present.
   let finalUserContent = input.userMessage;
 
   if (input.scrapedMarkdown) {
     finalUserContent += `\n\n--- CONTENIDO DEL SITIO WEB DEL USUARIO (scraping automático) ---\n${input.scrapedMarkdown}\n--- FIN DEL CONTENIDO ---`;
   } else if (input.scrapeError) {
     finalUserContent += `\n\n(nota interna: intentamos abrir el link que pegó el usuario pero falló: ${input.scrapeError}. Pídele los datos a mano.)`;
+  }
+
+  if (input.uploadedContent && input.uploadedContent.length > 0) {
+    for (const item of input.uploadedContent) {
+      finalUserContent += `\n\n--- ARCHIVO SUBIDO POR EL USUARIO: ${item.filename} (extracción automática con visión) ---\n${item.markdown}\n--- FIN DEL ARCHIVO ---`;
+    }
   }
 
   // If the last history entry is already the same user message (edge case),
