@@ -34,6 +34,7 @@ export function OnboardingChat() {
   const [showInput, setShowInput] = useState(false);
   const [typingDone, setTypingDone] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingTypingResolvers = useRef<Map<string, () => void>>(new Map());
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,11 +44,13 @@ export function OnboardingChat() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  const addAiMessage = useCallback((text: string, insight?: string) => {
+  const addAiMessage = useCallback((text: string, insight?: string): Promise<void> => {
     const id = `ai-${Date.now()}-${Math.random()}`;
     setMessages((prev) => [...prev, { id, role: 'ai', text, insight }]);
     setInputDisabled(true); // Disable input during typewriter
-    return id;
+    return new Promise((resolve) => {
+      pendingTypingResolvers.current.set(id, resolve);
+    });
   }, []);
 
   const addUserMessage = useCallback((text: string) => {
@@ -58,6 +61,11 @@ export function OnboardingChat() {
   const handleTypingComplete = useCallback((msgId: string) => {
     setTypingDone((prev) => new Set(prev).add(msgId));
     setInputDisabled(false);
+    const resolver = pendingTypingResolvers.current.get(msgId);
+    if (resolver) {
+      pendingTypingResolvers.current.delete(msgId);
+      resolver();
+    }
   }, []);
 
   // Phase: Channel Selection
@@ -71,6 +79,23 @@ export function OnboardingChat() {
     setTimeout(() => {
       addAiMessage('Cuentame sobre tu negocio. Por ejemplo: "Soy dentista en Merida" o "Tengo una taqueria"');
     }, 300);
+  }, [addAiMessage]);
+
+  // Fetch next question from API
+  const fetchQuestion = useCallback(async (vert: VerticalEnum, qNum: number, bName?: string) => {
+    try {
+      const res = await fetch('/api/onboarding/question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vertical: vert, questionNumber: qNum, businessName: bName }),
+      });
+      const data = await res.json();
+      if (data.text) {
+        await addAiMessage(`Pregunta ${data.questionNumber}/${data.totalQuestions}: ${data.text}`);
+      }
+    } catch {
+      await addAiMessage('Error al cargar la pregunta. Intenta de nuevo.');
+    }
   }, [addAiMessage]);
 
   // Phase: Vertical Detection
@@ -88,7 +113,7 @@ export function OnboardingChat() {
       const data = await res.json();
 
       if (!data.vertical) {
-        addAiMessage('No pude identificar tu tipo de negocio. Intenta ser mas especifico, por ejemplo: "Soy dentista", "Tengo un restaurante", "Mi negocio es un hotel".');
+        await addAiMessage('No pude identificar tu tipo de negocio. Intenta ser mas especifico, por ejemplo: "Soy dentista", "Tengo un restaurante", "Mi negocio es un hotel".');
         return;
       }
 
@@ -97,40 +122,23 @@ export function OnboardingChat() {
       setTotalQuestions(data.totalQuestions);
 
       if (data.totalQuestions === 0) {
-        addAiMessage(`Detecte que tienes un negocio de tipo ${data.displayName}. Este vertical estara disponible pronto. Estamos trabajando en las preguntas especificas para tu industria.`);
+        await addAiMessage(`Detecte que tienes un negocio de tipo ${data.displayName}. Este vertical estara disponible pronto. Estamos trabajando en las preguntas especificas para tu industria.`);
         return;
       }
 
-      // Show detection insight
-      addAiMessage(`${data.insightMessage}\n\nVamos a configurar tu agente. Son ${data.totalQuestions} preguntas rapidas.`);
+      // Show detection insight, then config message, then first question — one bubble at a time
+      await addAiMessage(data.insightMessage);
+      await new Promise((r) => setTimeout(r, 400));
+      await addAiMessage(`Vamos a configurar tu agente. Son ${data.totalQuestions} preguntas rapidas.`);
+      await new Promise((r) => setTimeout(r, 500));
 
-      // Start questions after a delay
-      setTimeout(() => {
-        setPhase('questions');
-        setCurrentQuestion(1);
-        fetchQuestion(data.vertical, 1);
-      }, 2000);
+      setPhase('questions');
+      setCurrentQuestion(1);
+      await fetchQuestion(data.vertical, 1);
     } catch {
-      addAiMessage('Hubo un error al detectar tu tipo de negocio. Intenta de nuevo.');
+      await addAiMessage('Hubo un error al detectar tu tipo de negocio. Intenta de nuevo.');
     }
-  }, [addAiMessage, addUserMessage]);
-
-  // Fetch next question from API
-  const fetchQuestion = useCallback(async (vert: VerticalEnum, qNum: number, bName?: string) => {
-    try {
-      const res = await fetch('/api/onboarding/question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vertical: vert, questionNumber: qNum, businessName: bName }),
-      });
-      const data = await res.json();
-      if (data.text) {
-        addAiMessage(`Pregunta ${data.questionNumber}/${data.totalQuestions}: ${data.text}`);
-      }
-    } catch {
-      addAiMessage('Error al cargar la pregunta. Intenta de nuevo.');
-    }
-  }, [addAiMessage]);
+  }, [addAiMessage, addUserMessage, fetchQuestion]);
 
   // Phase: Answer a question
   const handleAnswer = useCallback(async (userInput: string) => {
@@ -165,14 +173,14 @@ export function OnboardingChat() {
       const data = await res.json();
 
       if (!data.isValid) {
-        addAiMessage(data.errorMessage || 'Respuesta no valida. Intenta de nuevo.');
+        await addAiMessage(data.errorMessage || 'Respuesta no valida. Intenta de nuevo.');
         return;
       }
 
       // Show insight if any
       if (data.insight) {
-        addAiMessage(data.insight);
-        await new Promise((r) => setTimeout(r, 1500));
+        await addAiMessage(data.insight);
+        await new Promise((r) => setTimeout(r, 500));
       }
 
       // Check if last question
@@ -184,11 +192,9 @@ export function OnboardingChat() {
       // Next question
       const next = currentQuestion + 1;
       setCurrentQuestion(next);
-      setTimeout(() => {
-        fetchQuestion(vertical, next, bName);
-      }, data.insight ? 1500 : 500);
+      await fetchQuestion(vertical, next, bName);
     } catch {
-      addAiMessage('Error al procesar tu respuesta. Intenta de nuevo.');
+      await addAiMessage('Error al procesar tu respuesta. Intenta de nuevo.');
     }
   }, [vertical, currentQuestion, totalQuestions, answers, businessName, addAiMessage, addUserMessage, fetchQuestion]);
 
