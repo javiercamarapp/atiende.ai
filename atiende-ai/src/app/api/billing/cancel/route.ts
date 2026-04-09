@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { stripe } from '@/lib/billing/stripe';
+import { getStripe } from '@/lib/billing/stripe';
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
 
     // Cancel active Stripe subscriptions
     if (tenant.stripe_customer_id) {
+      const stripe = getStripe();
       const subscriptions = await stripe.subscriptions.list({
         customer: tenant.stripe_customer_id,
         status: 'active',
