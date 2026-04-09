@@ -247,6 +247,63 @@ describe('runChatAgent', () => {
     expect(finalUserMsg.content).toContain('timed out');
   });
 
+  it('injects uploadedContent blocks into the final user turn', async () => {
+    mockGenerateStructured.mockResolvedValueOnce(
+      mockAgentResult({
+        vertical: 'dental',
+        updatedFields: { q8: 'Limpieza $500, Resina $800' },
+        assistantMessage: 'Vi tu lista de precios, ¡gracias!',
+      }),
+    );
+
+    await runChatAgent({
+      vertical: 'dental',
+      capturedFields: {},
+      history: [],
+      userMessage: 'aquí va mi menú',
+      uploadedContent: [
+        {
+          filename: 'precios.jpg',
+          markdown: '# Lista de precios\n- Limpieza: $500\n- Resina: $800',
+        },
+      ],
+    });
+
+    const call = mockGenerateStructured.mock.calls[0][0];
+    const finalUserMsg = call.messages[call.messages.length - 1];
+    expect(finalUserMsg.content).toContain('ARCHIVO SUBIDO POR EL USUARIO');
+    expect(finalUserMsg.content).toContain('precios.jpg');
+    expect(finalUserMsg.content).toContain('Limpieza: $500');
+  });
+
+  it('injects multiple uploadedContent items when user sends several files', async () => {
+    mockGenerateStructured.mockResolvedValueOnce(
+      mockAgentResult({
+        vertical: 'dental',
+        updatedFields: {},
+        assistantMessage: 'ok',
+      }),
+    );
+
+    await runChatAgent({
+      vertical: 'dental',
+      capturedFields: {},
+      history: [],
+      userMessage: 'te mando dos cosas',
+      uploadedContent: [
+        { filename: 'a.png', markdown: 'AAA' },
+        { filename: 'b.png', markdown: 'BBB' },
+      ],
+    });
+
+    const call = mockGenerateStructured.mock.calls[0][0];
+    const finalUserMsg = call.messages[call.messages.length - 1];
+    expect(finalUserMsg.content).toContain('a.png');
+    expect(finalUserMsg.content).toContain('AAA');
+    expect(finalUserMsg.content).toContain('b.png');
+    expect(finalUserMsg.content).toContain('BBB');
+  });
+
   it('caps history to last 20 turns', async () => {
     mockGenerateStructured.mockResolvedValueOnce(
       mockAgentResult({

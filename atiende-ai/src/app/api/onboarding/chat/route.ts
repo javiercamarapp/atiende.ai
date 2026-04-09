@@ -30,6 +30,15 @@ const ChatRequestSchema = z.object({
     .max(40)
     .default([]),
   userMessage: z.string().min(1).max(4000),
+  uploadedContent: z
+    .array(
+      z.object({
+        filename: z.string().min(1).max(255),
+        markdown: z.string().min(1).max(30_000),
+      }),
+    )
+    .max(5)
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -48,7 +57,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { userMessage, history, capturedFields } = parsed.data;
+  const { userMessage, history, capturedFields, uploadedContent } = parsed.data;
   const incomingVertical = parsed.data.vertical ?? null;
 
   // ── 1. Detect URL in the user message and scrape it (best-effort) ──
@@ -83,6 +92,7 @@ export async function POST(request: Request) {
       userMessage,
       scrapedMarkdown,
       scrapeError,
+      uploadedContent,
     });
 
     // ── 3. Merge captured fields (only valid keys, filtered by runChatAgent) ──
@@ -113,6 +123,7 @@ export async function POST(request: Request) {
       clarificationOf: agentResult.clarificationOf,
       scrapeSucceeded: scrapedMarkdown !== undefined,
       scrapeFailed: scrapeError !== undefined,
+      uploadsProvided: uploadedContent?.length ?? 0,
       done: doneFinal,
     });
 
