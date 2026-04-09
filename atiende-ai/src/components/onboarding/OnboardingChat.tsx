@@ -5,36 +5,83 @@ import { TypewriterMessage } from './TypewriterMessage';
 import { ChannelSelector } from './ChannelSelector';
 import { ChatInput } from './ChatInput';
 import { ProgressIndicator } from './ProgressIndicator';
-import { InsightCard } from './InsightCard';
 import { GenerationAnimation } from './GenerationAnimation';
 import type { VerticalEnum } from '@/lib/verticals/types';
 
 type MessageRole = 'ai' | 'user';
-type Phase = 'channel' | 'detect' | 'questions' | 'generating' | 'done';
+type Phase = 'channel' | 'conversation' | 'generating' | 'done';
 
 interface ChatMessage {
   id: string;
   role: MessageRole;
   text: string;
-  insight?: string;
+}
+
+interface HistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface PersistedState {
+  version: 2;
+  vertical: VerticalEnum | null;
+  capturedFields: Record<string, string>;
+  history: HistoryTurn[];
+  totalRequired: number;
+  capturedRequired: number;
+  done: boolean;
+}
+
+const STORAGE_KEY = 'atiende_onboarding_v2';
+const INITIAL_AI_MESSAGE =
+  '¡Hola! Cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"), o si prefieres pégame el link de tu sitio web y extraigo lo que pueda.';
+
+function loadPersistedState(): PersistedState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 2) return null;
+    return parsed as PersistedState;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(state: PersistedState): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage quota or privacy mode — non-fatal.
+  }
+}
+
+function clearPersistedState(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignore.
+  }
 }
 
 export function OnboardingChat() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('channel');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [channel, setChannel] = useState<'web' | 'whatsapp' | null>(null);
   const [vertical, setVertical] = useState<VerticalEnum | null>(null);
-  const [verticalName, setVerticalName] = useState('');
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [totalQuestions, setTotalQuestions] = useState(0);
-  const [businessName, setBusinessName] = useState('');
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [capturedFields, setCapturedFields] = useState<Record<string, string>>({});
+  const [historyRef] = useState<{ current: HistoryTurn[] }>({ current: [] });
+  const [totalRequired, setTotalRequired] = useState(0);
+  const [capturedRequired, setCapturedRequired] = useState(0);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [typingDone, setTypingDone] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingTypingResolvers = useRef<Map<string, () => void>>(new Map());
+  const hydratedRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -44,17 +91,25 @@ export function OnboardingChat() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  const addAiMessage = useCallback((text: string, insight?: string): Promise<void> => {
+  // ── Message helpers ──
+  const addAiMessage = useCallback((text: string): Promise<void> => {
     const id = `ai-${Date.now()}-${Math.random()}`;
-    setMessages((prev) => [...prev, { id, role: 'ai', text, insight }]);
-    setInputDisabled(true); // Disable input during typewriter
+    setMessages((prev) => [...prev, { id, role: 'ai', text }]);
+    setInputDisabled(true); // Disabled while typewriter runs.
     return new Promise((resolve) => {
       pendingTypingResolvers.current.set(id, resolve);
     });
   }, []);
 
+  const addAiMessageSilent = useCallback((text: string) => {
+    // Used when rehydrating from localStorage — skip typewriter and mark done.
+    const id = `ai-silent-${Date.now()}-${Math.random()}`;
+    setMessages((prev) => [...prev, { id, role: 'ai', text }]);
+    setTypingDone((prev) => new Set(prev).add(id));
+  }, []);
+
   const addUserMessage = useCallback((text: string) => {
-    const id = `user-${Date.now()}`;
+    const id = `user-${Date.now()}-${Math.random()}`;
     setMessages((prev) => [...prev, { id, role: 'user', text }]);
   }, []);
 
@@ -68,179 +123,207 @@ export function OnboardingChat() {
     }
   }, []);
 
-  // Phase: Channel Selection
-  const handleChannelSelect = useCallback((ch: 'web' | 'whatsapp') => {
-    setChannel(ch);
-    if (ch === 'whatsapp') {
-      addAiMessage('El onboarding por WhatsApp estara disponible pronto. Por ahora, continuemos por web.');
-    }
-    setPhase('detect');
-    setShowInput(true);
-    setTimeout(() => {
-      addAiMessage('Cuentame sobre tu negocio. Por ejemplo: "Soy dentista en Merida" o "Tengo una taqueria"');
-    }, 300);
-  }, [addAiMessage]);
+  // ── Persistence helper ──
+  const persist = useCallback(
+    (next: Partial<PersistedState>) => {
+      const base: PersistedState = {
+        version: 2,
+        vertical,
+        capturedFields,
+        history: historyRef.current,
+        totalRequired,
+        capturedRequired,
+        done: false,
+      };
+      savePersistedState({ ...base, ...next });
+    },
+    [vertical, capturedFields, totalRequired, capturedRequired, historyRef],
+  );
 
-  // Fetch next question from API
-  const fetchQuestion = useCallback(async (vert: VerticalEnum, qNum: number, bName?: string) => {
-    try {
-      const res = await fetch('/api/onboarding/question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vertical: vert, questionNumber: qNum, businessName: bName }),
-      });
-      const data = await res.json();
-      if (data.text) {
-        await addAiMessage(`Pregunta ${data.questionNumber}/${data.totalQuestions}: ${data.text}`);
+  // ── Unified turn handler ──
+  const handleTurn = useCallback(
+    async (userText: string) => {
+      addUserMessage(userText);
+      setInputDisabled(true);
+
+      // Append to history before sending (so the server sees it).
+      const nextHistory: HistoryTurn[] = [
+        ...historyRef.current,
+        { role: 'user', content: userText },
+      ];
+      historyRef.current = nextHistory;
+
+      try {
+        const res = await fetch('/api/onboarding/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vertical,
+            capturedFields,
+            history: nextHistory.slice(0, -1), // server appends userMessage itself
+            userMessage: userText,
+          }),
+        });
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const fallback =
+            errBody.assistantMessage ||
+            'Hubo un problema procesando tu mensaje. Inténtalo otra vez.';
+          await addAiMessage(fallback);
+          return;
+        }
+
+        const data: {
+          vertical: VerticalEnum | null;
+          capturedFields: Record<string, string>;
+          assistantMessage: string;
+          done: boolean;
+          totalRequired: number;
+          capturedRequired: number;
+        } = await res.json();
+
+        // Update state from server response.
+        if (data.vertical) setVertical(data.vertical);
+        setCapturedFields(data.capturedFields);
+        setTotalRequired(data.totalRequired);
+        setCapturedRequired(data.capturedRequired);
+
+        // Append assistant turn to history.
+        historyRef.current = [
+          ...historyRef.current,
+          { role: 'assistant', content: data.assistantMessage },
+        ];
+
+        // Persist BEFORE showing the message so a refresh mid-typewriter keeps it.
+        savePersistedState({
+          version: 2,
+          vertical: data.vertical ?? vertical,
+          capturedFields: data.capturedFields,
+          history: historyRef.current,
+          totalRequired: data.totalRequired,
+          capturedRequired: data.capturedRequired,
+          done: data.done,
+        });
+
+        await addAiMessage(data.assistantMessage);
+
+        if (data.done) {
+          setPhase('generating');
+        }
+      } catch {
+        await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
       }
-    } catch {
-      await addAiMessage('Error al cargar la pregunta. Intenta de nuevo.');
-    }
-  }, [addAiMessage]);
+    },
+    [vertical, capturedFields, historyRef, addAiMessage, addUserMessage],
+  );
 
-  // Phase: Vertical Detection
-  const handleDetection = useCallback(async (userInput: string) => {
-    addUserMessage(userInput);
-    setInputDisabled(true);
+  // ── Channel selection ──
+  const handleChannelSelect = useCallback(
+    (ch: 'web' | 'whatsapp') => {
+      setPhase('conversation');
+      setShowInput(true);
 
-    try {
-      const res = await fetch('/api/onboarding/detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: userInput }),
-      });
-
-      const data = await res.json();
-
-      if (!data.vertical) {
-        await addAiMessage('No pude identificar tu tipo de negocio. Intenta ser mas especifico, por ejemplo: "Soy dentista", "Tengo un restaurante", "Mi negocio es un hotel".');
+      if (ch === 'whatsapp') {
+        // WhatsApp onboarding not implemented yet; announce and fall back to web.
+        addAiMessage(
+          'El onboarding por WhatsApp estará disponible pronto. Por ahora continuamos por web.',
+        ).then(() => {
+          addAiMessage(INITIAL_AI_MESSAGE).then(() => {
+            historyRef.current.push({ role: 'assistant', content: INITIAL_AI_MESSAGE });
+          });
+        });
         return;
       }
 
-      setVertical(data.vertical);
-      setVerticalName(data.displayName);
-      setTotalQuestions(data.totalQuestions);
-
-      if (data.totalQuestions === 0) {
-        await addAiMessage(`Detecte que tienes un negocio de tipo ${data.displayName}. Este vertical estara disponible pronto. Estamos trabajando en las preguntas especificas para tu industria.`);
-        return;
+      // Web channel → try to rehydrate, else show initial prompt.
+      const persisted = loadPersistedState();
+      if (persisted && !persisted.done && persisted.history.length > 0) {
+        hydratedRef.current = true;
+        setVertical(persisted.vertical);
+        setCapturedFields(persisted.capturedFields);
+        setTotalRequired(persisted.totalRequired);
+        setCapturedRequired(persisted.capturedRequired);
+        historyRef.current = persisted.history;
+        // Replay history as silent messages.
+        for (const turn of persisted.history) {
+          if (turn.role === 'user') {
+            addUserMessage(turn.content);
+          } else {
+            addAiMessageSilent(turn.content);
+          }
+        }
+        setShowInput(true);
+      } else {
+        addAiMessage(INITIAL_AI_MESSAGE).then(() => {
+          historyRef.current.push({ role: 'assistant', content: INITIAL_AI_MESSAGE });
+        });
       }
+    },
+    [addAiMessage, addAiMessageSilent, addUserMessage, historyRef],
+  );
 
-      // Show detection insight, then config message, then first question — one bubble at a time
-      await addAiMessage(data.insightMessage);
-      await new Promise((r) => setTimeout(r, 400));
-      await addAiMessage(`Vamos a configurar tu agente. Son ${data.totalQuestions} preguntas rapidas.`);
-      await new Promise((r) => setTimeout(r, 500));
-
-      setPhase('questions');
-      setCurrentQuestion(1);
-      await fetchQuestion(data.vertical, 1);
-    } catch {
-      await addAiMessage('Hubo un error al detectar tu tipo de negocio. Intenta de nuevo.');
-    }
-  }, [addAiMessage, addUserMessage, fetchQuestion]);
-
-  // Phase: Answer a question
-  const handleAnswer = useCallback(async (userInput: string) => {
-    if (!vertical) return;
-
-    addUserMessage(userInput);
-    setInputDisabled(true);
-
-    // Store answer
-    const key = `q${currentQuestion}`;
-    const newAnswers = { ...answers, [key]: userInput };
-    setAnswers(newAnswers);
-
-    // Extract business name from Q1
-    let bName = businessName;
-    if (currentQuestion === 1) {
-      bName = userInput;
-      setBusinessName(userInput);
-    }
-
-    // Validate answer
-    try {
-      const res = await fetch('/api/onboarding/answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vertical,
-          questionNumber: currentQuestion,
-          answer: userInput,
-        }),
-      });
-      const data = await res.json();
-
-      if (!data.isValid) {
-        await addAiMessage(data.errorMessage || 'Respuesta no valida. Intenta de nuevo.');
-        return;
+  // ── Send handler ──
+  const handleSend = useCallback(
+    (text: string) => {
+      if (phase === 'conversation') {
+        handleTurn(text);
       }
+    },
+    [phase, handleTurn],
+  );
 
-      // Show insight if any
-      if (data.insight) {
-        await addAiMessage(data.insight);
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      // Check if last question
-      if (currentQuestion >= totalQuestions) {
-        setPhase('generating');
-        return;
-      }
-
-      // Next question
-      const next = currentQuestion + 1;
-      setCurrentQuestion(next);
-      await fetchQuestion(vertical, next, bName);
-    } catch {
-      await addAiMessage('Error al procesar tu respuesta. Intenta de nuevo.');
-    }
-  }, [vertical, currentQuestion, totalQuestions, answers, businessName, addAiMessage, addUserMessage, fetchQuestion]);
-
-  // Handle send based on phase
-  const handleSend = useCallback((text: string) => {
-    if (phase === 'detect') {
-      handleDetection(text);
-    } else if (phase === 'questions') {
-      handleAnswer(text);
-    }
-  }, [phase, handleDetection, handleAnswer]);
-
-  // Generation complete
+  // ── Generation step (when done) ──
   const handleGenerationComplete = useCallback(async () => {
-    // Call generate API
     try {
       await fetch('/api/onboarding/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vertical, answers, businessName }),
+        body: JSON.stringify({
+          vertical,
+          answers: capturedFields,
+          businessName: capturedFields.q1 ?? '',
+        }),
       });
     } catch {
-      // Non-blocking
+      // Non-blocking.
     }
+    clearPersistedState();
     setPhase('done');
-  }, [vertical, answers, businessName]);
+  }, [vertical, capturedFields]);
+
+  const businessName = capturedFields.q1 ?? '';
+  const verticalDisplayName = vertical ?? '';
+
+  // Suppress unused-warning on persist — it's retained for future inline uses
+  // (e.g., when we want to persist after a partial UI mutation outside handleTurn).
+  void persist;
 
   return (
     <div className="h-[100dvh] flex flex-col bg-white">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
         <h1 className="text-lg font-semibold tracking-tight">atiende.ai</h1>
-        {phase === 'questions' && vertical && (
-          <ProgressIndicator current={currentQuestion} total={totalQuestions} verticalName={verticalName} />
+        {phase === 'conversation' && vertical && totalRequired > 0 && (
+          <ProgressIndicator
+            current={capturedRequired}
+            total={totalRequired}
+            verticalName={verticalDisplayName}
+          />
         )}
       </header>
 
       {/* Chat area */}
       <main className="flex-1 overflow-y-auto px-6 py-8">
         <div className="max-w-2xl mx-auto flex flex-col gap-4">
-          {/* Welcome message */}
+          {/* Welcome header */}
           <div className="text-center mb-6 animate-element animate-delay-100">
             <h2 className="text-3xl font-light tracking-tighter mb-2">
               Bienvenido a <span className="font-semibold">atiende.ai</span>
             </h2>
-            <p className="text-muted-foreground text-sm">Configura tu agente AI en minutos</p>
+            <p className="text-muted-foreground text-sm">
+              Configura tu agente AI en minutos
+            </p>
           </div>
 
           {/* Channel selector */}
@@ -248,7 +331,10 @@ export function OnboardingChat() {
 
           {/* Messages */}
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
               <div
                 className={`max-w-lg px-4 py-3 rounded-2xl text-sm ${
                   msg.role === 'user'
@@ -269,18 +355,11 @@ export function OnboardingChat() {
             </div>
           ))}
 
-          {/* Insight cards */}
-          {messages.filter((m) => m.insight && typingDone.has(m.id)).map((msg) => (
-            <div key={`insight-${msg.id}`} className="flex justify-start">
-              <InsightCard text={msg.insight!} />
-            </div>
-          ))}
-
           {/* Generation animation */}
           {phase === 'generating' && (
             <GenerationAnimation
               businessName={businessName || 'Tu negocio'}
-              verticalName={verticalName}
+              verticalName={verticalDisplayName}
               onComplete={handleGenerationComplete}
             />
           )}
@@ -289,9 +368,10 @@ export function OnboardingChat() {
           {phase === 'done' && (
             <div className="text-center py-8 animate-element animate-delay-100">
               <div className="text-5xl mb-4">🎉</div>
-              <h3 className="text-2xl font-semibold mb-2">Tu agente esta listo!</h3>
+              <h3 className="text-2xl font-semibold mb-2">¡Tu agente está listo!</h3>
               <p className="text-muted-foreground mb-6">
-                Asistente de {businessName || verticalName} configurado con {Object.keys(answers).length} respuestas.
+                Asistente de {businessName || verticalDisplayName} configurado con{' '}
+                {Object.keys(capturedFields).length} datos.
               </p>
               <div className="flex gap-3 justify-center">
                 <button
@@ -314,19 +394,13 @@ export function OnboardingChat() {
           <ChatInput
             onSend={handleSend}
             disabled={inputDisabled}
-            placeholder={
-              phase === 'detect'
-                ? 'Ej: "Soy dentista en Merida" o "Tengo una taqueria"...'
-                : 'Escribe tu respuesta...'
-            }
+            placeholder="Escribe o pega tu URL…"
           />
         </footer>
       )}
 
       {/* Footer version */}
-      <div className="text-center py-2 text-[10px] text-zinc-300">
-        atiende.ai v2.0
-      </div>
+      <div className="text-center py-2 text-[10px] text-zinc-300">atiende.ai v2.0</div>
     </div>
   );
 }
