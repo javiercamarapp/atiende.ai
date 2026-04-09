@@ -221,17 +221,22 @@ export function OnboardingChat() {
 
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          const fallback =
-            errBody.assistantMessage ||
-            'Hubo un problema procesando tu mensaje. Inténtalo otra vez.';
-          await addAiMessage(fallback);
+          const fallbackList: string[] = Array.isArray(errBody.assistantMessages)
+            ? errBody.assistantMessages
+            : [
+                errBody.assistantMessage ||
+                  'Hubo un problema procesando tu mensaje. Inténtalo otra vez.',
+              ];
+          for (const msg of fallbackList) {
+            await addAiMessage(msg);
+          }
           return;
         }
 
         const data: {
           vertical: VerticalEnum | null;
           capturedFields: Record<string, string>;
-          assistantMessage: string;
+          assistantMessages: string[];
           done: boolean;
           totalRequired: number;
           capturedRequired: number;
@@ -243,13 +248,21 @@ export function OnboardingChat() {
         setTotalRequired(data.totalRequired);
         setCapturedRequired(data.capturedRequired);
 
-        // Append assistant turn to history.
+        // Append each assistant message as its own history entry — the next
+        // server turn will see the full sequence as separate assistant turns.
+        const messagesToRender = data.assistantMessages.filter(
+          (m) => typeof m === 'string' && m.trim().length > 0,
+        );
         historyRef.current = [
           ...historyRef.current,
-          { role: 'assistant', content: data.assistantMessage },
+          ...messagesToRender.map((content) => ({
+            role: 'assistant' as const,
+            content,
+          })),
         ];
 
-        // Persist BEFORE showing the message so a refresh mid-typewriter keeps it.
+        // Persist BEFORE showing the bubbles so a refresh mid-typewriter keeps
+        // the full conversation (including any un-rendered tail messages).
         savePersistedState({
           version: 2,
           vertical: data.vertical ?? vertical,
@@ -260,7 +273,15 @@ export function OnboardingChat() {
           done: data.done,
         });
 
-        await addAiMessage(data.assistantMessage);
+        // Render each message as its own bubble, with a short pause between
+        // them so the user gets a natural "the assistant is continuing"
+        // rhythm instead of a wall of text dumped at once.
+        for (let i = 0; i < messagesToRender.length; i++) {
+          if (i > 0) {
+            await new Promise((r) => setTimeout(r, 450));
+          }
+          await addAiMessage(messagesToRender[i]);
+        }
 
         if (data.done) {
           setPhase('generating');

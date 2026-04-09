@@ -18,15 +18,18 @@ import { runChatAgent, buildAgentSystemPrompt, detectVerticalFromContext } from 
 function mockAgentResult(data: {
   vertical: string | null;
   updatedFields: Record<string, string>;
-  assistantMessage: string;
+  /** Either a single assistantMessage string (wrapped to array) or an explicit array. */
+  assistantMessage?: string;
+  assistantMessages?: string[];
   done?: boolean;
   clarificationOf?: string | null;
 }) {
+  const messages = data.assistantMessages ?? [data.assistantMessage ?? 'ok'];
   return {
     data: {
       vertical: data.vertical,
       updatedFields: data.updatedFields,
-      assistantMessage: data.assistantMessage,
+      assistantMessages: messages,
       done: data.done ?? false,
       clarificationOf: data.clarificationOf ?? null,
     },
@@ -85,7 +88,7 @@ describe('runChatAgent', () => {
     });
 
     expect(result.vertical).toBe('dental');
-    expect(result.assistantMessage).toContain('consultorio');
+    expect(result.assistantMessages[0]).toContain('consultorio');
     expect(mockGenerateStructured).toHaveBeenCalledTimes(1);
   });
 
@@ -302,6 +305,70 @@ describe('runChatAgent', () => {
     expect(finalUserMsg.content).toContain('AAA');
     expect(finalUserMsg.content).toContain('b.png');
     expect(finalUserMsg.content).toContain('BBB');
+  });
+
+  it('returns assistantMessages as an array for multi-message turns', async () => {
+    mockGenerateStructured.mockResolvedValueOnce(
+      mockAgentResult({
+        vertical: 'dental',
+        updatedFields: { q1: 'Clínica X' },
+        assistantMessages: [
+          '¡Perfecto, gracias!',
+          '¿Me confirmas la dirección?',
+        ],
+      }),
+    );
+
+    const result = await runChatAgent({
+      vertical: 'dental',
+      capturedFields: {},
+      history: [],
+      userMessage: 'Clínica X',
+    });
+
+    expect(Array.isArray(result.assistantMessages)).toBe(true);
+    expect(result.assistantMessages).toHaveLength(2);
+    expect(result.assistantMessages[0]).toContain('Perfecto');
+    expect(result.assistantMessages[1]).toContain('dirección');
+  });
+
+  it('trims and drops empty/whitespace-only messages, capping at 3', async () => {
+    mockGenerateStructured.mockResolvedValueOnce(
+      mockAgentResult({
+        vertical: 'dental',
+        updatedFields: {},
+        assistantMessages: ['  hola  ', '   ', 'segundo', '', 'tercero', 'cuarto'],
+      }),
+    );
+
+    const result = await runChatAgent({
+      vertical: 'dental',
+      capturedFields: {},
+      history: [],
+      userMessage: 'x',
+    });
+
+    expect(result.assistantMessages).toEqual(['hola', 'segundo', 'tercero']);
+  });
+
+  it('falls back to a safe message when all messages are empty', async () => {
+    mockGenerateStructured.mockResolvedValueOnce(
+      mockAgentResult({
+        vertical: 'dental',
+        updatedFields: {},
+        assistantMessages: ['   ', ''],
+      }),
+    );
+
+    const result = await runChatAgent({
+      vertical: 'dental',
+      capturedFields: {},
+      history: [],
+      userMessage: 'x',
+    });
+
+    expect(result.assistantMessages).toHaveLength(1);
+    expect(result.assistantMessages[0].length).toBeGreaterThan(0);
   });
 
   it('caps history to last 20 turns', async () => {

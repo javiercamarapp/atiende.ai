@@ -39,7 +39,7 @@ function makeRequest(body: unknown): Request {
 const defaultAgentResult = {
   vertical: 'dental' as const,
   updatedFields: {},
-  assistantMessage: 'ok',
+  assistantMessages: ['ok'],
   done: false,
   clarificationOf: null,
   cost: 0.0001,
@@ -70,18 +70,20 @@ describe('POST /api/onboarding/chat', () => {
 
   it('accepts minimal valid body and returns agent response', async () => {
     mockRunChatAgent.mockResolvedValueOnce(defaultAgentResult);
+    // Pass vertical=dental so this isn't a detection turn; the insight
+    // injection path is covered by its own dedicated test below.
     const res = await POST(
       makeRequest({
-        vertical: null,
+        vertical: 'dental',
         capturedFields: {},
         history: [],
-        userMessage: 'soy dentista en Mérida',
+        userMessage: 'un mensaje cualquiera',
       }),
     );
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.vertical).toBe('dental');
-    expect(json.assistantMessage).toBe('ok');
+    expect(json.assistantMessages).toEqual(['ok']);
     expect(json.done).toBe(false);
   });
 
@@ -194,7 +196,7 @@ describe('POST /api/onboarding/chat', () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json.error).toBe('agent_failed');
-    expect(json.assistantMessage).toMatch(/trabó/);
+    expect(json.assistantMessages[0]).toMatch(/trabó/);
   });
 
   it('forwards uploadedContent to the agent', async () => {
@@ -237,6 +239,79 @@ describe('POST /api/onboarding/chat', () => {
       }),
     );
     expect(res.status).toBe(400);
+  });
+
+  it('prepends the vertical insight when vertical is newly detected', async () => {
+    // incoming vertical is null, agent returns vertical='dental' → insight should be injected
+    mockRunChatAgent.mockResolvedValueOnce({
+      ...defaultAgentResult,
+      vertical: 'dental',
+      assistantMessages: ['¡Qué bien! ¿Cómo se llama tu consultorio?'],
+    });
+
+    const res = await POST(
+      makeRequest({
+        vertical: null,
+        capturedFields: {},
+        history: [],
+        userMessage: 'soy dentista en Mérida',
+      }),
+    );
+    const json = await res.json();
+    expect(json.verticalJustDetected).toBe(true);
+    expect(json.assistantMessages).toHaveLength(2);
+    // First message is the insight (contains a stat / value prop)
+    expect(json.assistantMessages[0]).toContain('dentales');
+    // Second message is the agent's own follow-up
+    expect(json.assistantMessages[1]).toContain('consultorio');
+  });
+
+  it('does NOT prepend insight when vertical was already set', async () => {
+    mockRunChatAgent.mockResolvedValueOnce({
+      ...defaultAgentResult,
+      vertical: 'dental',
+      assistantMessages: ['¿Me confirmas tu horario?'],
+    });
+
+    const res = await POST(
+      makeRequest({
+        vertical: 'dental', // already known, not a detection turn
+        capturedFields: { q1: 'Clínica X' },
+        history: [],
+        userMessage: 'L-V 9-19',
+      }),
+    );
+    const json = await res.json();
+    expect(json.verticalJustDetected).toBe(false);
+    expect(json.assistantMessages).toHaveLength(1);
+    expect(json.assistantMessages[0]).toContain('horario');
+  });
+
+  it('caps injected insight + agent messages at 3 total', async () => {
+    mockRunChatAgent.mockResolvedValueOnce({
+      ...defaultAgentResult,
+      vertical: 'dental',
+      assistantMessages: [
+        'mensaje 1 del agente',
+        'mensaje 2 del agente',
+        'mensaje 3 del agente', // would overflow with insight prepended
+      ],
+    });
+
+    const res = await POST(
+      makeRequest({
+        vertical: null,
+        capturedFields: {},
+        history: [],
+        userMessage: 'soy dentista',
+      }),
+    );
+    const json = await res.json();
+    expect(json.assistantMessages).toHaveLength(3); // insight + 2 agent msgs (3rd truncated)
+    // Insight is first, then first 2 agent msgs
+    expect(json.assistantMessages[0]).toContain('dentales');
+    expect(json.assistantMessages[1]).toBe('mensaje 1 del agente');
+    expect(json.assistantMessages[2]).toBe('mensaje 2 del agente');
   });
 
   it('passes incoming history into agent', async () => {
