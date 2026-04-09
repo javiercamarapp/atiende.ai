@@ -9,6 +9,7 @@ import {
 } from '@/lib/onboarding/vertical-schema-for-agent';
 import { ALL_VERTICALS } from '@/lib/verticals';
 import type { VerticalEnum } from '@/lib/verticals/types';
+import { getVerticalInsight } from '@/lib/onboarding/vertical-insights';
 import { logger } from '@/lib/logger';
 import { StructuredGenerationError } from '@/lib/llm/openrouter';
 
@@ -108,6 +109,19 @@ export async function POST(request: Request) {
       effectiveVertical !== null &&
       allRequiredFilled(effectiveVertical, mergedFields);
 
+    // ── 4b. Inject industry insight on the turn where the vertical is newly
+    // detected. The insight is prepended to the agent's own messages so the
+    // user sees: [1] industry stat + value prop, [2] LLM's acknowledge,
+    // [3] LLM's next question. Capped at 3 total bubbles.
+    const verticalJustDetected =
+      incomingVertical === null && effectiveVertical !== null;
+    const finalAssistantMessages: string[] = verticalJustDetected
+      ? [
+          getVerticalInsight(effectiveVertical),
+          ...agentResult.assistantMessages,
+        ].slice(0, 3)
+      : agentResult.assistantMessages;
+
     // ── 5. Log telemetry — counts and cost only, never PII ──
     logger.info('onboarding_chat_turn', {
       vertical: effectiveVertical,
@@ -124,19 +138,22 @@ export async function POST(request: Request) {
       scrapeSucceeded: scrapedMarkdown !== undefined,
       scrapeFailed: scrapeError !== undefined,
       uploadsProvided: uploadedContent?.length ?? 0,
+      assistantMessageCount: finalAssistantMessages.length,
+      verticalJustDetected,
       done: doneFinal,
     });
 
     return NextResponse.json({
       vertical: effectiveVertical,
       capturedFields: mergedFields,
-      assistantMessage: agentResult.assistantMessage,
+      assistantMessages: finalAssistantMessages,
       done: doneFinal,
       clarificationOf: agentResult.clarificationOf,
       totalRequired: effectiveVertical ? countRequired(effectiveVertical) : 0,
       capturedRequired: effectiveVertical
         ? countCapturedRequired(effectiveVertical, mergedFields)
         : 0,
+      verticalJustDetected,
       scrape: maybeUrl
         ? {
             url: scrapedUrl ?? maybeUrl,
@@ -153,8 +170,9 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: 'agent_failed',
-          assistantMessage:
+          assistantMessages: [
             'Se me trabó un segundo, ¿puedes repetirme lo último en una sola oración?',
+          ],
         },
         { status: 500 },
       );

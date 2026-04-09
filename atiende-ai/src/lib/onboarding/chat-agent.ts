@@ -43,7 +43,13 @@ export interface ChatAgentInput {
 export interface ChatAgentResult {
   vertical: VerticalEnum | null;
   updatedFields: Record<string, string>;
-  assistantMessage: string;
+  /**
+   * One-to-three sequential messages the client should render as separate
+   * bubbles with short pauses between them. Lets the agent acknowledge a
+   * scrape/upload in one bubble and follow up with the next question in a
+   * second bubble — without needing the user to send a new message first.
+   */
+  assistantMessages: string[];
   done: boolean;
   /** If non-null, the agent chose to re-ask this field instead of filling it. */
   clarificationOf: string | null;
@@ -65,7 +71,7 @@ const VerticalEnumSchema = z.enum(ALL_VERTICALS as [VerticalEnum, ...VerticalEnu
 const AgentOutputSchema = z.object({
   vertical: z.union([VerticalEnumSchema, z.null()]),
   updatedFields: z.record(z.string(), z.string()),
-  assistantMessage: z.string().min(1).max(1500),
+  assistantMessages: z.array(z.string().min(1).max(800)).min(1).max(3),
   done: z.boolean(),
   clarificationOf: z.union([z.string(), z.null()]),
 });
@@ -95,7 +101,7 @@ export function buildAgentSystemPrompt(
 
   const verticalList = ALL_VERTICALS.join(', ');
 
-  return `Eres el agente de pre-conversación de atiende.ai. Conoces el negocio del usuario mediante una charla natural, NO un cuestionario. Hablas español mexicano, cálido y breve (máximo 2 oraciones por turno, 1 idealmente).
+  return `Eres el agente de pre-conversación de atiende.ai. Conoces el negocio del usuario mediante una charla natural, NO un cuestionario. Hablas español mexicano, cálido y breve.
 
 ${header}
 
@@ -107,8 +113,8 @@ ${fieldsBlock}
 REGLAS DURAS:
 1. Un solo tema por turno. No hagas preguntas dobles.
 2. Si el usuario pega una URL, asume que nosotros ya procesamos su sitio; NO le pidas que la vuelva a mandar. Usa el contenido extraído (aparece abajo en "CONTENIDO DEL SITIO WEB") para llenar campos. SOLO llena campos con datos que aparezcan LITERALMENTE en el markdown. Si no están, pregunta normal.
-3. Si el usuario sube archivos o imágenes (menús, listas de precios, fotos de cédulas, logos, cartas), aparecerán abajo como "ARCHIVO SUBIDO POR EL USUARIO". Ya fueron procesados con visión; NO pidas que los vuelva a mandar. SOLO llena campos con datos que aparezcan LITERALMENTE en la extracción del archivo. Agradece que los haya mandado en el assistantMessage.
-4. Si una respuesta es vaga, evasiva o irrelevante ("no sé", "luego te digo", "lo que tú creas", "cualquier cosa"), NO la aceptes. Haz una re-pregunta amable y específica en assistantMessage, marca clarificationOf="qN", y NO incluyas ese campo en updatedFields en este turno.
+3. Si el usuario sube archivos o imágenes (menús, listas de precios, fotos de cédulas, logos, cartas), aparecerán abajo como "ARCHIVO SUBIDO POR EL USUARIO". Ya fueron procesados con visión; NO pidas que los vuelva a mandar. SOLO llena campos con datos que aparezcan LITERALMENTE en la extracción del archivo. Agradece que los haya mandado.
+4. Si una respuesta es vaga, evasiva o irrelevante ("no sé", "luego te digo", "lo que tú creas", "cualquier cosa"), NO la aceptes. Haz una re-pregunta amable y específica en el último mensaje de assistantMessages, marca clarificationOf="qN", y NO incluyas ese campo en updatedFields en este turno.
 5. Si el usuario da un dato que cubre varios campos en una sola frase (ej: "lunes a viernes 9 a 19 y cerramos domingos" llena horario + días de cierre), llena TODOS esos campos en updatedFields.
 6. Prefiere siempre el siguiente campo [REQ] pendiente. Los opcionales [ ] los dejas para el final o los omites si el usuario parece con prisa.
 7. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado / archivo subido). Responde el enum exacto en el campo "vertical" del JSON y continúa la conversación asumiendo ese vertical. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
@@ -117,11 +123,29 @@ REGLAS DURAS:
 10. Nunca inventes datos. Si no sabes algo, pregúntalo. Cuando tengas duda entre "subir un archivo" y "escribirlo a mano", sugiere subir (ej: "¿tienes tu menú en foto? Puedes subirla y la leo").
 11. Nunca pidas datos que ya están en [YA CAPTURADO]. Continúa con el siguiente pendiente.
 
+REGLA CLAVE — MENSAJES EN SECUENCIA (assistantMessages):
+El campo "assistantMessages" es un array de 1 a 3 mensajes que el cliente renderiza como burbujas separadas con pausas cortas entre ellas. Úsalo así:
+
+- Casos de 2-3 mensajes (preferente):
+  a) Cuando el usuario acaba de pegar una URL o subir un archivo y extrajimos info: primer mensaje corto reconociendo ("Perfecto, vi tu sitio ✨ Encontré dirección, horario y teléfono."), segundo mensaje con la siguiente pregunta natural ("¿Me confirmas si también ofrecen servicio a domicilio?").
+  b) Cuando necesites confirmar algo Y seguir con el siguiente campo: primer mensaje confirma ("Genial, guardo el horario."), segundo pregunta lo siguiente.
+  c) Cuando quieras un quiebre natural entre un comentario empático y una pregunta.
+
+- Casos de 1 mensaje (default para respuestas simples):
+  a) Preguntas directas cuando el usuario solo escribió texto.
+  b) Re-preguntas / clarificaciones (mantén todo en 1 mensaje para no abrumar).
+
+- Cada mensaje individual: máximo 2 oraciones, cálido, sin preámbulo. MÁXIMO 3 mensajes por turno.
+- Cuando uses 2-3 mensajes, el PRIMERO es el acuse / reacción corta, y el ÚLTIMO es la pregunta / acción. No repitas la misma idea en varios mensajes.
+
+REGLA ESPECIAL — INSIGHT DE INDUSTRIA:
+Cuando detectas el vertical por PRIMERA vez en la conversación, el servidor automáticamente prepende una burbuja con un insight de la industria (una estadística + value prop de atiende). NO duplicar ese estilo de contenido en tus propios mensajes. Ve directo al siguiente paso natural ("Para empezar, ¿cómo se llama tu consultorio?"). Típicamente 1 mensaje es suficiente en ese turno — el insight + tu mensaje = 2 burbujas totales.
+
 FORMATO DE RESPUESTA (JSON estricto, nada más):
 {
   "vertical": "<enum del vertical o null si aún no sabes>",
   "updatedFields": { "qN": "valor", ... },
-  "assistantMessage": "texto en español, 1-2 oraciones",
+  "assistantMessages": ["mensaje 1", "mensaje 2 (opcional)", "mensaje 3 (opcional)"],
   "done": false,
   "clarificationOf": "qN o null"
 }`;
@@ -211,10 +235,22 @@ export async function runChatAgent(input: ChatAgentInput): Promise<ChatAgentResu
     filteredFields = {};
   }
 
+  // Defensive: trim, drop empties, cap at 3. Guarantees the client always gets
+  // at least one non-empty message (Zod schema already enforces min length,
+  // but a whitespace-only entry would sneak past — filter it here).
+  const cleanMessages = result.data.assistantMessages
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0)
+    .slice(0, 3);
+  const assistantMessages: string[] =
+    cleanMessages.length > 0
+      ? cleanMessages
+      : ['Dame un segundo para pensar eso...'];
+
   return {
     vertical: effectiveVertical,
     updatedFields: filteredFields,
-    assistantMessage: result.data.assistantMessage,
+    assistantMessages,
     done: result.data.done,
     clarificationOf: result.data.clarificationOf,
     cost: result.cost,
