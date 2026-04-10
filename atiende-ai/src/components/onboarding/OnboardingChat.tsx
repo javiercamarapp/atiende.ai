@@ -5,7 +5,6 @@ import { TypewriterMessage } from './TypewriterMessage';
 import { ChannelSelector } from './ChannelSelector';
 import { ChatInput } from './ChatInput';
 import { ProgressIndicator } from './ProgressIndicator';
-import { GenerationAnimation } from './GenerationAnimation';
 import type { VerticalEnum } from '@/lib/verticals/types';
 
 type MessageRole = 'ai' | 'user';
@@ -154,6 +153,52 @@ export function OnboardingChat() {
     [vertical, capturedFields, totalRequired, capturedRequired, historyRef],
   );
 
+  // ── Generation step (when done) ──
+  // Declared BEFORE processOneItem because processOneItem calls it directly
+  // when the agent signals done=true (no animation callback indirection).
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  const handleGenerationComplete = useCallback(async () => {
+    setGenerateError(null);
+    try {
+      const currentVertical = verticalRef.current;
+      const currentFields = capturedFieldsRef.current;
+      const bName = currentFields.q1 || currentVertical || 'Mi negocio';
+
+      const res = await fetch('/api/onboarding/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vertical: currentVertical,
+          answers: currentFields,
+          businessName: bName,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setGenerateError(
+          body.error === 'Unauthorized'
+            ? 'Parece que tu sesión expiró. Inicia sesión de nuevo e intenta otra vez.'
+            : `No pudimos guardar tu configuración (${body.error || res.status}). Intenta de nuevo.`,
+        );
+        return;
+      }
+    } catch (err) {
+      console.error('[onboarding] generate failed:', err);
+      setGenerateError(
+        'Error de red al guardar tu configuración. Revisa tu conexión e intenta de nuevo.',
+      );
+      return;
+    }
+    clearPersistedState();
+    setPhase('done');
+  }, []);
+
+  const retryGeneration = useCallback(() => {
+    setGenerateError(null);
+    handleGenerationComplete();
+  }, [handleGenerationComplete]);
+
   // ── Upload helper: POST a single file to /api/onboarding/upload ──
   const uploadFile = useCallback(
     async (
@@ -278,13 +323,18 @@ export function OnboardingChat() {
         }
 
         if (data.done) {
+          // Skip animation — call generate API immediately to avoid the
+          // GenerationAnimation component, which may be causing the
+          // "Algo salió mal" error boundary crash.
           setPhase('generating');
+          await handleGenerationComplete();
         }
-      } catch {
+      } catch (err) {
+        console.error('[onboarding] processOneItem error:', err);
         await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
       }
     },
-    [vertical, capturedFields, historyRef, addAiMessage, uploadFile],
+    [vertical, capturedFields, historyRef, addAiMessage, uploadFile, handleGenerationComplete],
   );
 
   // ── Queue-based turn handler — input stays unlocked ──
@@ -380,52 +430,6 @@ export function OnboardingChat() {
     [phase, handleTurn],
   );
 
-  // ── Generation step (when done) ──
-  const [generateError, setGenerateError] = useState<string | null>(null);
-
-  const handleGenerationComplete = useCallback(async () => {
-    setGenerateError(null);
-    try {
-      // Read from refs (always latest) instead of closure state to avoid
-      // stale data after the 6.5s generation animation delay.
-      const currentVertical = verticalRef.current;
-      const currentFields = capturedFieldsRef.current;
-      const bName = currentFields.q1 || currentVertical || 'Mi negocio';
-
-      const res = await fetch('/api/onboarding/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vertical: currentVertical,
-          answers: currentFields,
-          businessName: bName,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setGenerateError(
-          body.error === 'Unauthorized'
-            ? 'Parece que tu sesión expiró. Inicia sesión de nuevo e intenta otra vez.'
-            : `No pudimos guardar tu configuración (${body.error || res.status}). Intenta de nuevo.`,
-        );
-        return;
-      }
-    } catch (err) {
-      console.error('[onboarding] generate failed:', err);
-      setGenerateError(
-        'Error de red al guardar tu configuración. Revisa tu conexión e intenta de nuevo.',
-      );
-      return;
-    }
-    clearPersistedState();
-    setPhase('done');
-  }, []); // no deps — reads from refs, not closure state
-
-  const retryGeneration = useCallback(() => {
-    setGenerateError(null);
-    handleGenerationComplete();
-  }, [handleGenerationComplete]);
-
   const businessName = capturedFields.q1 ?? '';
   const verticalDisplayName = vertical ?? '';
 
@@ -489,13 +493,16 @@ export function OnboardingChat() {
             </div>
           ))}
 
-          {/* Generation animation */}
+          {/* Generation loading — simple spinner while the API call runs.
+              We call handleGenerationComplete directly from processOneItem
+              instead of relying on GenerationAnimation's onComplete callback
+              to eliminate a source of error-boundary crashes. */}
           {phase === 'generating' && !generateError && (
-            <GenerationAnimation
-              businessName={businessName || 'Tu negocio'}
-              verticalName={verticalDisplayName}
-              onComplete={handleGenerationComplete}
-            />
+            <div className="text-center py-8 animate-element animate-delay-100">
+              <div className="w-10 h-10 border-3 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4" />
+              <h3 className="text-lg font-semibold">{businessName || 'Tu negocio'}</h3>
+              <p className="text-sm text-muted-foreground mt-1">Configurando tu agente...</p>
+            </div>
           )}
 
           {/* Generation error state with retry */}
