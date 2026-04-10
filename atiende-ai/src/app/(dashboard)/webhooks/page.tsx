@@ -9,23 +9,23 @@ const PROVIDER_ICONS: Record<string, string> = {
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
-  whatsapp: 'bg-green-100 text-green-700',
-  stripe: 'bg-purple-100 text-purple-700',
-  conekta: 'bg-blue-100 text-blue-700',
-  retell: 'bg-orange-100 text-orange-700',
+  whatsapp: 'bg-zinc-100 text-zinc-700',
+  stripe: 'bg-zinc-100 text-zinc-700',
+  conekta: 'bg-zinc-100 text-zinc-700',
+  retell: 'bg-zinc-100 text-zinc-700',
 };
 
 function statusColor(code: number | null): string {
   if (!code) return 'text-gray-500';
-  if (code >= 200 && code < 300) return 'text-green-600';
-  if (code >= 400 && code < 500) return 'text-yellow-600';
+  if (code >= 200 && code < 300) return 'text-zinc-900';
+  if (code >= 400 && code < 500) return 'text-zinc-400';
   return 'text-red-600';
 }
 
 function statusBg(code: number | null): string {
   if (!code) return 'bg-gray-50';
-  if (code >= 200 && code < 300) return 'bg-green-50';
-  if (code >= 400 && code < 500) return 'bg-yellow-50';
+  if (code >= 200 && code < 300) return 'bg-zinc-50';
+  if (code >= 400 && code < 500) return 'bg-zinc-50';
   return 'bg-red-50';
 }
 
