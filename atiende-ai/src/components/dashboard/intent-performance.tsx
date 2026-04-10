@@ -5,7 +5,7 @@ import { Brain } from 'lucide-react';
 
 interface IntentStat { intent: string; total: number; resolved: number; escalated: number; rate: number; }
 
-const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+const COLORS = ['#18181b', '#3f3f46', '#52525b', '#71717a', '#a1a1aa', '#d4d4d8', '#e4e4e7', '#f4f4f5'];
 
 export function IntentPerformance({ stats }: { stats: IntentStat[] }) {
   if (!stats.length) {
@@ -35,7 +35,7 @@ export function IntentPerformance({ stats }: { stats: IntentStat[] }) {
             <div key={s.intent} className="flex items-center gap-2 text-sm">
               <span className="w-28 truncate text-zinc-600">{s.intent}</span>
               <div className="flex-1 h-2 bg-zinc-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${s.rate}%` }} />
+                <div className="h-full bg-zinc-900 rounded-full" style={{ width: `${s.rate}%` }} />
               </div>
               <span className="text-xs text-zinc-500 w-12 text-right">{s.rate}% AI</span>
             </div>

@@ -8,8 +8,8 @@ interface BotHealthProps {
 }
 
 export function BotHealthScore({ score, breakdown }: BotHealthProps) {
-  const color = score >= 80 ? 'text-emerald-600' : score >= 50 ? 'text-amber-500' : 'text-red-500';
-  const bg = score >= 80 ? 'bg-emerald-50' : score >= 50 ? 'bg-amber-50' : 'bg-red-50';
+  const color = score >= 80 ? 'text-emerald-600' : score >= 50 ? 'text-zinc-500' : 'text-red-500';
+  const bg = score >= 80 ? 'bg-zinc-50' : score >= 50 ? 'bg-zinc-50' : 'bg-red-50';
   const label = score >= 80 ? 'Excelente' : score >= 50 ? 'En progreso' : 'Necesita atención';
 
   const items = [
@@ -35,7 +35,7 @@ export function BotHealthScore({ score, breakdown }: BotHealthProps) {
               <item.icon className="w-4 h-4 text-zinc-400" />
               <span className="text-sm text-zinc-600 flex-1">{item.label}</span>
               <div className="w-24 h-2 bg-zinc-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(item.value / item.max) * 100}%` }} />
+                <div className="h-full bg-zinc-900 rounded-full transition-all" style={{ width: `${(item.value / item.max) * 100}%` }} />
               </div>
               <span className="text-xs text-zinc-500 w-10 text-right">{item.value}/{item.max}</span>
             </div>

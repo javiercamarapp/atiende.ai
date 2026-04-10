@@ -156,13 +156,13 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
         <CardContent className="pt-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Plan actual</p>
+              <p className="text-sm text-zinc-500">Plan actual</p>
               <Badge className="text-lg px-3 py-1 mt-1">
                 {tenantPlan === 'free_trial' ? 'Prueba gratuita' : (currentPlanInfo?.name || tenantPlan)}
               </Badge>
             </div>
             {Boolean(tenant?.stripe_customer_id as string) && (
-              <div className="flex items-center gap-1 text-sm text-gray-500">
+              <div className="flex items-center gap-1 text-sm text-zinc-500">
                 <CreditCard className="w-4 h-4" />
                 <span>Metodo de pago registrado</span>
               </div>
@@ -170,15 +170,15 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
           </div>
 
           {Boolean(tenant?.trial_ends_at as string) && (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-zinc-500">
               Prueba hasta: {new Date(tenant!.trial_ends_at as string).toLocaleDateString('es-MX')}
             </p>
           )}
 
           {currentPlanInfo && (
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-1">Incluye:</p>
-              <ul className="text-sm text-gray-500 space-y-0.5">
+              <p className="text-sm font-medium text-zinc-700 mb-1">Incluye:</p>
+              <ul className="text-sm text-zinc-500 space-y-0.5">
                 {currentPlanInfo.features.map((f) => (
                   <li key={f}>- {f}</li>
                 ))}
@@ -193,13 +193,13 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
         <CardContent className="pt-6 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">Uso este mes</p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-zinc-500">
               {usedCount.toLocaleString()} / {limit.toLocaleString()} mensajes
             </p>
           </div>
           <Progress value={usagePercent} />
           {usagePercent >= 90 && (
-            <p className="text-xs text-amber-600 flex items-center gap-1">
+            <p className="text-xs text-red-600 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               {usagePercent >= 100
                 ? 'Limite de mensajes alcanzado. Mejora tu plan para continuar.'
@@ -214,16 +214,16 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
         {PLANS.map((p) => (
           <Card
             key={p.key}
-            className={tenantPlan === p.key ? 'border-blue-500 bg-blue-50' : ''}
+            className={tenantPlan === p.key ? 'border-zinc-900 bg-zinc-50' : ''}
           >
             <CardContent className="pt-6">
               <h3 className="font-bold text-lg">{p.name}</h3>
               <p className="text-2xl font-bold mt-1">
                 ${p.price}
-                <span className="text-sm text-gray-500"> MXN/mes</span>
+                <span className="text-sm text-zinc-500"> MXN/mes</span>
               </p>
-              <p className="text-xs text-gray-500 mt-1">{p.msgs}</p>
-              <ul className="text-xs text-gray-500 mt-2 space-y-0.5">
+              <p className="text-xs text-zinc-500 mt-1">{p.msgs}</p>
+              <ul className="text-xs text-zinc-500 mt-2 space-y-0.5">
                 {p.features.map((f) => (
                   <li key={f}>- {f}</li>
                 ))}
@@ -262,7 +262,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                 </div>
               )}
               {tenantPlan === p.key && (
-                <p className="mt-4 text-sm text-blue-600 font-medium text-center">
+                <p className="mt-4 text-sm text-zinc-900 font-medium text-center">
                   Plan actual
                 </p>
               )}

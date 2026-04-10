@@ -74,9 +74,9 @@ export function OxxoReference({ reference, clabe, amount, expiresAt }: OxxoRefer
       <CardContent className="pt-6 space-y-4">
         <div className="flex items-center gap-2">
           {isOxxo ? (
-            <Store className="w-6 h-6 text-yellow-600" />
+            <Store className="w-6 h-6 text-zinc-400" />
           ) : (
-            <Building2 className="w-6 h-6 text-blue-600" />
+            <Building2 className="w-6 h-6 text-zinc-400" />
           )}
           <h3 className="text-lg font-bold">
             {isOxxo ? 'Pago en OXXO' : 'Transferencia SPEI'}
@@ -85,16 +85,16 @@ export function OxxoReference({ reference, clabe, amount, expiresAt }: OxxoRefer
 
         {amount && (
           <div>
-            <p className="text-sm text-gray-500">Monto a pagar</p>
+            <p className="text-sm text-zinc-500">Monto a pagar</p>
             <p className="text-2xl font-bold">${amount} MXN</p>
           </div>
         )}
 
         <div>
-          <p className="text-sm text-gray-500 mb-1">
+          <p className="text-sm text-zinc-500 mb-1">
             {isOxxo ? 'Numero de referencia' : 'CLABE interbancaria'}
           </p>
-          <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-3 border">
+          <div className="flex items-center gap-2 bg-zinc-50 rounded-lg p-3 border">
             <code className="text-lg font-mono font-bold tracking-wider flex-1 text-center">
               {displayValue}
             </code>
@@ -114,7 +114,7 @@ export function OxxoReference({ reference, clabe, amount, expiresAt }: OxxoRefer
         </div>
 
         {isOxxo && (
-          <div className="text-sm text-gray-500 space-y-1">
+          <div className="text-sm text-zinc-500 space-y-1">
             <p>1. Acude a cualquier tienda OXXO</p>
             <p>2. Indica que deseas hacer un pago de servicios</p>
             <p>3. Proporciona el numero de referencia</p>
@@ -123,7 +123,7 @@ export function OxxoReference({ reference, clabe, amount, expiresAt }: OxxoRefer
         )}
 
         {isSPEI && (
-          <div className="text-sm text-gray-500 space-y-1">
+          <div className="text-sm text-zinc-500 space-y-1">
             <p>1. Ingresa a tu banca en linea o app de tu banco</p>
             <p>2. Realiza una transferencia SPEI a la CLABE indicada</p>
             <p>3. Ingresa el monto exacto</p>
@@ -132,11 +132,11 @@ export function OxxoReference({ reference, clabe, amount, expiresAt }: OxxoRefer
 
         {expiresAt && countdown && (
           <div className="flex items-center gap-2 text-sm">
-            <Clock className="w-4 h-4 text-amber-500" />
+            <Clock className="w-4 h-4 text-zinc-400" />
             {countdown === 'Expirado' ? (
               <Badge variant="destructive">Referencia expirada</Badge>
             ) : (
-              <span className="text-gray-600">
+              <span className="text-zinc-600">
                 Expira en: <span className="font-mono font-medium">{countdown}</span>
               </span>
             )}

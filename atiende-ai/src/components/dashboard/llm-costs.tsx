@@ -33,10 +33,10 @@ interface LLMCostsProps {
 }
 
 const MODEL_COLORS: Record<string, string> = {
-  'google/gemini-2.5-flash-lite': '#10b981',
-  'google/gemini-2.5-flash': '#3b82f6',
-  'anthropic/claude-sonnet-4-6': '#8b5cf6',
-  'openai/gpt-5-nano': '#f97316',
+  'google/gemini-2.5-flash-lite': '#18181b',
+  'google/gemini-2.5-flash': '#52525b',
+  'anthropic/claude-sonnet-4-6': '#a1a1aa',
+  'openai/gpt-5-nano': '#d4d4d8',
 };
 
 const MODEL_LABELS: Record<string, string> = {
@@ -68,9 +68,9 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
 
   return (
     <div className="space-y-4">
-      <Card className="p-4 text-center border-2 border-blue-200 bg-blue-50">
-        <p className="text-sm text-blue-600 font-medium">Costo total este mes</p>
-        <p className="text-3xl font-bold text-blue-800">${totalMonthCost.toFixed(2)} USD</p>
+      <Card className="p-4 text-center border-2 border-zinc-200/60 bg-zinc-50">
+        <p className="text-sm text-zinc-500 font-medium">Costo total este mes</p>
+        <p className="text-3xl font-bold text-zinc-900">${totalMonthCost.toFixed(2)} USD</p>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -80,7 +80,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
           </CardHeader>
           <CardContent>
             {pieData.length === 0 ? (
-              <p className="text-center text-gray-400 py-8">Sin datos</p>
+              <p className="text-center text-zinc-400 py-8">Sin datos</p>
             ) : (
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
@@ -114,7 +114,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
           </CardHeader>
           <CardContent>
             {chartDaily.length === 0 ? (
-              <p className="text-center text-gray-400 py-8">Sin datos</p>
+              <p className="text-center text-zinc-400 py-8">Sin datos</p>
             ) : (
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={chartDaily}>
@@ -122,7 +122,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
                   <XAxis dataKey="date" fontSize={10} />
                   <YAxis fontSize={10} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
                   <Tooltip formatter={(value) => `$${Number(value).toFixed(4)}`} />
-                  <Bar dataKey="costo" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="costo" fill="#18181b" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -137,7 +137,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
         <CardContent>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-gray-500">
+              <tr className="border-b text-left text-zinc-500">
                 <th className="pb-2 font-medium">Modelo</th>
                 <th className="pb-2 font-medium text-right">Mensajes</th>
                 <th className="pb-2 font-medium text-right">Costo total</th>
@@ -147,7 +147,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
             <tbody>
               {modelCosts.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-4 text-center text-gray-400">
+                  <td colSpan={4} className="py-4 text-center text-zinc-400">
                     Sin datos de uso de LLM
                   </td>
                 </tr>
@@ -163,7 +163,7 @@ export function LLMCosts({ modelCosts, dailyCosts, totalMonthCost }: LLMCostsPro
                   </td>
                   <td className="py-2 text-right">{m.count.toLocaleString()}</td>
                   <td className="py-2 text-right font-mono">${m.total_cost.toFixed(4)}</td>
-                  <td className="py-2 text-right font-mono text-gray-500">
+                  <td className="py-2 text-right font-mono text-zinc-500">
                     ${m.count > 0 ? (m.total_cost / m.count).toFixed(6) : '0.000000'}
                   </td>
                 </tr>

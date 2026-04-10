@@ -47,7 +47,7 @@ export function QRGenerator({ phone, businessName }: QRGeneratorProps) {
           <Button size="sm" variant="outline" onClick={() => setSize(s => s === 256 ? 512 : 256)}>
             {size === 256 ? 'Grande' : 'Normal'}
           </Button>
-          <Button size="sm" onClick={download} className="bg-emerald-600 hover:bg-emerald-700">
+          <Button size="sm" onClick={download} className="bg-zinc-900 text-white hover:bg-zinc-800">
             <Download className="w-4 h-4 mr-1" /> Descargar PNG
           </Button>
         </div>

@@ -48,7 +48,7 @@ export function ReminderConfig({ tenantId, currentConfig }: ReminderConfigProps)
             <Switch checked={config[t.key]} onCheckedChange={(v) => setConfig(prev => ({ ...prev, [t.key]: v }))} />
           </div>
         ))}
-        <Button onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700">
+        <Button onClick={save} disabled={saving} className="w-full bg-zinc-900 text-white hover:bg-zinc-800">
           <Save className="w-4 h-4 mr-1" /> {saving ? 'Guardando...' : 'Guardar configuración'}
         </Button>
       </CardContent>
