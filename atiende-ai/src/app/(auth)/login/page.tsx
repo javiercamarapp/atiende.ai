@@ -74,7 +74,7 @@ export default function LoginPage() {
         </span>
       }
       description="Inicia sesión y automatiza tu negocio con inteligencia artificial"
-      heroImageSrc="https://images.unsplash.com/photo-1556761175-b413da4baf72?w=1200&q=80"
+      heroVideoSrc="/hero-video.mp4"
       testimonials={testimonials}
       onSignIn={handleSignIn}
       onGoogleSignIn={handleGoogleSignIn}
