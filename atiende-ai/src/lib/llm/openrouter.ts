@@ -28,30 +28,24 @@ export function getOpenRouter(): OpenAI {
 // ═══ MODELOS ABRIL 2026 — PIVOTE DENTAL + RESTAURANTE ═══
 // Qwen 3.5 Flash como workhorse principal + fallbacks
 export const MODELS = {
-  // ─── MODELO PRINCIPAL (dental + restaurante) ───
-  // Qwen 3.5 Flash: $0.065/$0.26 por M tokens
-  // Non-thinking mode para velocidad. Buen español mexicano.
-  PRIMARY: 'qwen/qwen3.5-flash',
+  // ─── MODELO PRINCIPAL ───
+  // Qwen3 235B A22B — probado, funciona en OpenRouter, buen español
+  PRIMARY: 'qwen/qwen3-235b-a22b-2507',
 
-  // ─── CLASIFICAR INTENT (cada mensaje) ───
-  // Qwen 3.5 9B: ultra barato, solo responde 1 palabra
-  CLASSIFIER: 'qwen/qwen3.5-9b',
+  // ─── CLASIFICAR INTENT ───
+  CLASSIFIER: 'google/gemini-2.5-flash-lite',
 
-  // ─── ENTERPRISE (restaurante 100+ pedidos/día) ───
-  // DeepSeek V3.2: $0.25/$0.38 — más robusto para volumen alto
+  // ─── ENTERPRISE (restaurante alto volumen) ───
   ENTERPRISE: 'deepseek/deepseek-v3.2',
 
-  // ─── TEMAS SENSIBLES (quejas, emergencias) ───
-  // Claude Sonnet 4.6: $3.00/$15.00 — máximo safety
+  // ─── TEMAS SENSIBLES ───
   PREMIUM: 'anthropic/claude-sonnet-4-6',
 
-  // ─── FALLBACK (si el primario falla) ───
-  // Gemini 2.5 Flash-Lite: modelo anterior, probado y estable
+  // ─── FALLBACK ───
   FALLBACK: 'google/gemini-2.5-flash-lite',
 
   // ─── ONBOARDING CONVERSACIONAL ───
-  // Mismo Qwen 3.5 Flash — consistencia con el bot de producción
-  ONBOARDING_AGENT: 'qwen/qwen3.5-flash',
+  ONBOARDING_AGENT: 'qwen/qwen3-235b-a22b-2507',
   ONBOARDING_AGENT_FALLBACK: 'google/gemini-2.5-flash-lite',
 
   // ─── EXTRACCIÓN DE UPLOADS (visión) ───
