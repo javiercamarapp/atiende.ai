@@ -3,12 +3,14 @@
 
 import type { VerticalEnum, VerticalCategory, VerticalDefinition } from './types';
 
-// Question imports — solo las categorías activas
-import { saludQuestions } from './questions/salud'; // contiene dental
-import { gastronomiaQuestions } from './questions/gastronomia'; // contiene restaurante
+// Question imports — active categories (CITAS + PEDIDOS)
+import { saludQuestions } from './questions/salud'; // 10 verticals → CITAS
+import { bellezaQuestions } from './questions/belleza'; // 6 verticals → CITAS
+import { gastronomiaQuestions } from './questions/gastronomia'; // 6 verticals → PEDIDOS
 
-// Metadata imports — solo las categorías activas
+// Metadata imports — active categories
 import { saludMetadata } from './metadata/salud';
+import { bellezaMetadata } from './metadata/belleza';
 import { gastronomiaMetadata } from './metadata/gastronomia';
 
 import type { VerticalQuestion, VerticalMetadata } from './types';
@@ -63,15 +65,17 @@ export const VERTICAL_NAMES: Record<VerticalEnum, string> = {
   agencia_digital: 'Agencia Digital', fotografo: 'Fotografo',
 };
 
-// All question data combined — only active verticals
+// All question data combined — CITAS (salud + belleza) + PEDIDOS (gastronomia)
 const ALL_QUESTIONS: Partial<Record<VerticalEnum, VerticalQuestion[]>> = {
-  ...saludQuestions, // dental + other salud (dental is the only active one)
-  ...gastronomiaQuestions, // restaurante, taqueria, cafeteria, etc.
+  ...saludQuestions,
+  ...bellezaQuestions,
+  ...gastronomiaQuestions,
 };
 
-// All metadata combined — only active verticals
+// All metadata combined
 const ALL_METADATA: Partial<Record<VerticalEnum, VerticalMetadata>> = {
   ...saludMetadata,
+  ...bellezaMetadata,
   ...gastronomiaMetadata,
 };
 

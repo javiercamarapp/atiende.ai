@@ -12,7 +12,7 @@ interface IndustryDashProps {
   conversations: Record<string, unknown>[];
 }
 
-export function DashboardDental({ roi, todayData, monthData, appointments, conversations }: IndustryDashProps) {
+export function DashboardCitas({ roi, todayData, monthData, appointments, conversations }: IndustryDashProps) {
   const tNoShow = monthData.reduce((s, d) => s + (d.appointments_no_show || 0), 0);
   const tMsgs = monthData.reduce((s, d) => s + (d.messages_inbound || 0), 0);
   return (

@@ -3,8 +3,16 @@
 // Everything else is standby (code exists but is gated).
 
 export const FEATURES = {
-  // ── Verticales activas ──
-  ACTIVE_VERTICALS: ['dental', 'restaurante'] as const,
+  // ── Verticales activas (22: salud 10 + belleza 6 + gastronomia 6) ──
+  ACTIVE_VERTICALS: [
+    // CITAS — salud
+    'dental', 'medico', 'nutriologa', 'psicologo', 'dermatologo',
+    'ginecologo', 'pediatra', 'oftalmologo', 'farmacia', 'veterinaria',
+    // CITAS — belleza
+    'salon_belleza', 'barberia', 'spa', 'gimnasio', 'nail_salon', 'estetica',
+    // PEDIDOS — gastronomia
+    'restaurante', 'taqueria', 'cafeteria', 'panaderia', 'bar_cantina', 'food_truck',
+  ] as const,
 
   // ── Módulos activos ──
   APPOINTMENTS_MODULE: true, // Para dental

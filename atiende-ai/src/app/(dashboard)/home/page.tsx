@@ -1,13 +1,13 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { calculateROI } from '@/lib/analytics/roi';
 import { getCluster } from '@/components/dashboard/industry/cluster-map';
-import { DashboardDental } from '@/components/dashboard/industry/DashboardDental';
-import { DashboardRestaurante } from '@/components/dashboard/industry/DashboardRestaurante';
+import { DashboardCitas } from '@/components/dashboard/industry/DashboardCitas';
+import { DashboardPedidos } from '@/components/dashboard/industry/DashboardPedidos';
 import { redirect } from 'next/navigation';
 
 const CLUSTER_COMPONENTS = {
-  dental: DashboardDental,
-  restaurante: DashboardRestaurante,
+  citas: DashboardCitas,
+  pedidos: DashboardPedidos,
 } as const;
 
 export default async function DashboardPage() {
@@ -23,7 +23,7 @@ export default async function DashboardPage() {
   if (!tenant) redirect('/onboarding');
 
   const cluster = getCluster(tenant.business_type);
-  if (!cluster) redirect('/onboarding'); // unsupported vertical → re-onboard
+  if (!cluster) redirect('/onboarding');
 
   const ago30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     .toISOString()

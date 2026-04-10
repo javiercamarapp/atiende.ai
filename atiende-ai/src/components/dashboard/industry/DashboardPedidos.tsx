@@ -14,7 +14,7 @@ interface IndustryDashProps {
 
 function fmt(n:number){return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(n);}
 
-export function DashboardRestaurante({ roi, todayData, monthData, conversations }: IndustryDashProps) {
+export function DashboardPedidos({ roi, todayData, monthData, conversations }: IndustryDashProps) {
   const tOrders = monthData.reduce((s,d)=>s+(d.orders_total||0),0);
   const tMsgs = monthData.reduce((s,d)=>s+(d.messages_inbound||0),0);
   return (

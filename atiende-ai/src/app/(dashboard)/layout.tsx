@@ -57,13 +57,19 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
 }
 
 function getModules(type: string, hasVoice: boolean) {
-  // PIVOTE: solo 2 verticales activas
+  // 2 service types: CITAS (salud + belleza) and PEDIDOS (gastronomia)
   const base = ['dashboard', 'conversations', 'agents', 'knowledge', 'analytics', 'settings'];
+  const citas = [...base, 'appointments'];
+  const pedidos = [...base, 'orders'];
   const m: Record<string, string[]> = {
-    dental: [...base, 'appointments'],
-    restaurant: [...base, 'orders'],
-    taqueria: [...base, 'orders'],
-    cafe: [...base, 'orders'],
+    // Salud → CITAS
+    dental: citas, medical: citas, nutritionist: citas, psychologist: citas,
+    dermatologist: citas, gynecologist: citas, pediatrician: citas,
+    ophthalmologist: citas, pharmacy: citas, veterinary: citas,
+    // Belleza → CITAS
+    salon: citas, barbershop: citas, spa: citas, gym: citas, optics: citas,
+    // Gastronomia → PEDIDOS
+    restaurant: pedidos, taqueria: pedidos, cafe: pedidos,
   };
   const mods = m[type] || base;
   if (hasVoice && !mods.includes('calls')) mods.push('calls');
