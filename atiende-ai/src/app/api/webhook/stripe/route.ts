@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe } from '@/lib/billing/stripe';
+import { getStripe } from '@/lib/billing/stripe';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook } from '@/lib/webhook-logger';
 
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    event = getStripe().webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch {
     logWebhook({ provider: 'stripe', eventType: 'auth_failed', statusCode: 400, error: 'Invalid signature', durationMs: Date.now() - startTime });
     return NextResponse.json({ error: 'Invalid sig' }, { status: 400 });

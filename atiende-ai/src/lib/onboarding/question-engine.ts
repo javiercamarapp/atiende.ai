@@ -1,3 +1,7 @@
+// TODO(onboarding-v2): deprecated — the rigid Q&A engine is replaced by the
+// conversational agent (src/lib/onboarding/chat-agent.ts). Delete in a
+// follow-up PR once the new flow is validated in prod.
+//
 // Question Engine — asks questions one-by-one conversationally
 // Formats questions naturally using business name after Q1
 
