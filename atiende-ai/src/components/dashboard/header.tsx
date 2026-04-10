@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { LogOut, ChevronRight } from 'lucide-react';
 import { NotificationCenter } from '@/components/dashboard/notification-center';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
 import { getPlanLimit } from '@/lib/analytics/roi';
@@ -17,22 +16,31 @@ const PAGE_NAMES: Record<string, string> = {
   '/orders': 'Pedidos',
   '/leads': 'Leads',
   '/calls': 'Llamadas',
-  '/agents': 'Agents Marketplace',
-  '/knowledge': 'Base Conocimiento',
+  '/agents': 'Marketplace',
+  '/knowledge': 'Conocimiento',
   '/analytics': 'Analytics',
   '/settings': 'Configuracion',
   '/playground': 'Playground',
   '/webhooks': 'Webhooks',
 };
 
-interface TenantHeader { id: string; plan: string; status: string; }
+interface TenantHeader {
+  id: string;
+  plan: string;
+  status: string;
+}
+
 export function DashHeader({ tenant }: { tenant: TenantHeader }) {
   const router = useRouter();
   const pathname = usePathname();
   const [usage, setUsage] = useState<number | null>(null);
   const limit = getPlanLimit(tenant.plan);
 
-  const currentPage = PAGE_NAMES[pathname] || PAGE_NAMES['/' + pathname.split('/')[1]] || pathname.split('/').pop() || 'Dashboard';
+  const currentPage =
+    PAGE_NAMES[pathname] ||
+    PAGE_NAMES['/' + pathname.split('/')[1]] ||
+    pathname.split('/').pop() ||
+    'Dashboard';
   const isHome = pathname === '/' || pathname === '/home';
 
   useEffect(() => {
@@ -44,7 +52,7 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
           setUsage(data.count);
         }
       } catch {
-        // Usage fetch is best-effort
+        // Best-effort
       }
     }
     fetchUsage();
@@ -57,45 +65,56 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
   };
 
   const percent = usage !== null ? Math.min((usage / limit) * 100, 100) : 0;
-  const getColor = () => {
-    if (percent > 90) return 'text-red-600';
-    if (percent >= 70) return 'text-yellow-600';
-    return 'text-green-600';
-  };
-  const getProgressClass = () => {
-    if (percent > 90) return '[&>div]:bg-red-500';
-    if (percent >= 70) return '[&>div]:bg-yellow-500';
-    return '[&>div]:bg-green-500';
-  };
 
   return (
-    <header className="h-14 bg-white border-b flex items-center justify-between px-6 pl-14 md:pl-6">
+    <header className="h-14 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 flex items-center justify-between px-6 pl-14 md:pl-6">
+      {/* Breadcrumb */}
       <div>
-        <div className="text-sm text-zinc-500 flex items-center">
-          <Link href="/home" className="hover:text-zinc-700 transition-colors">Dashboard</Link>
+        <div className="text-sm flex items-center">
+          <Link
+            href="/home"
+            className="text-zinc-400 hover:text-zinc-600 transition-colors"
+          >
+            Dashboard
+          </Link>
           {!isHome && (
             <>
-              <ChevronRight className="w-3 h-3 inline mx-1" />
+              <ChevronRight className="w-3 h-3 text-zinc-300 mx-1.5" />
               <span className="text-zinc-900 font-medium">{currentPage}</span>
             </>
           )}
         </div>
-        <p className="text-xs text-gray-400">
+        <p className="text-[11px] text-zinc-400 mt-0.5 tracking-wide">
           {tenant.status === 'active' ? 'Agente activo' : tenant.status}
         </p>
       </div>
+
+      {/* Right side — usage + actions */}
       <div className="flex items-center gap-4">
         {usage !== null && (
-          <div className="flex items-center gap-2">
-            <Progress value={percent} className={`w-24 h-2 ${getProgressClass()}`} />
-            <span className={`text-xs font-medium ${getColor()}`}>
-              {usage}/{limit === 999999 ? '∞' : limit} mensajes
+          <div className="flex items-center gap-2.5">
+            {/* Thin monochrome bar */}
+            <div className="w-20 h-1 bg-zinc-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-zinc-900 rounded-full transition-all duration-500"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <span className="text-[11px] text-zinc-400 font-medium tabular-nums">
+              {usage}/{limit === 999999 ? '\u221E' : limit}
             </span>
           </div>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <NotificationCenter tenantId={tenant.id} />
-          <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="w-4 h-4" /></Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            className="text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </header>

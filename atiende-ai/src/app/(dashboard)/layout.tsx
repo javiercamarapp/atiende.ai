@@ -14,7 +14,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
   if (!tenant) redirect('/onboarding');
   const modules = getModules(tenant.business_type, tenant.has_voice_agent);
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-zinc-50/50">
       <Sidebar tenant={tenant} modules={modules} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <DashHeader tenant={tenant} />
@@ -22,11 +22,11 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           const daysLeft = Math.ceil((new Date(tenant.trial_ends_at).getTime() - Date.now()) / 86400000);
           if (daysLeft <= 7 && daysLeft > 0) {
             return (
-              <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between">
-                <p className="text-sm text-amber-800">
-                  Tu prueba gratis termina en <strong>{daysLeft} dia{daysLeft !== 1 ? 's' : ''}</strong>.
+              <div className="bg-zinc-900 px-6 py-2.5 flex items-center justify-between">
+                <p className="text-sm text-zinc-300">
+                  Tu prueba gratis termina en <strong className="text-white">{daysLeft} dia{daysLeft !== 1 ? 's' : ''}</strong>.
                 </p>
-                <Link href="/settings/billing" className="text-sm font-medium text-amber-700 hover:text-amber-900 underline">
+                <Link href="/settings/billing" className="text-sm font-medium text-white hover:text-zinc-300 underline underline-offset-2">
                   Elegir plan
                 </Link>
               </div>
@@ -34,11 +34,11 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           }
           if (daysLeft <= 0) {
             return (
-              <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center justify-between">
-                <p className="text-sm text-red-800">
+              <div className="bg-zinc-900 px-6 py-2.5 flex items-center justify-between">
+                <p className="text-sm text-zinc-300">
                   Tu prueba gratis ha terminado. Elige un plan para seguir usando el servicio.
                 </p>
-                <Link href="/settings/billing" className="text-sm font-medium text-red-700 hover:text-red-900 underline">
+                <Link href="/settings/billing" className="text-sm font-medium text-white hover:text-zinc-300 underline underline-offset-2">
                   Elegir plan
                 </Link>
               </div>
