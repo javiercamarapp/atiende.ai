@@ -119,19 +119,23 @@ export const SignInPage: React.FC<SignInPageProps> = ({
       {/* Right: hero video or image + testimonials */}
       {(heroVideoSrc || heroImageSrc) && (
         <section className="hidden md:flex flex-1 relative p-4 bg-zinc-950 rounded-3xl m-4 overflow-hidden">
-          {heroVideoSrc ? (
+          {/* Background image (shows immediately, video overlays when loaded) */}
+          {heroImageSrc && (
+            <div className="absolute inset-0 rounded-3xl bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
+          )}
+          {/* Video overlay (loads on top of image) */}
+          {heroVideoSrc && (
             <video
               autoPlay
               loop
               muted
               playsInline
               preload="auto"
-              className="absolute inset-0 w-full h-full object-cover rounded-3xl"
+              className="absolute inset-0 w-full h-full object-cover rounded-3xl z-10"
             >
               <source src={heroVideoSrc} type="video/mp4" />
             </video>
-          ) : (
-            <div className="absolute inset-0 rounded-3xl bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
+          )}
           )}
           {testimonials.length > 0 && (
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 px-8 w-full justify-center">
