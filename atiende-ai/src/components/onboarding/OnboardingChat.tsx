@@ -9,7 +9,7 @@ import { ProgressIndicator } from './ProgressIndicator';
 import type { VerticalEnum } from '@/lib/verticals/types';
 
 type MessageRole = 'ai' | 'user';
-type Phase = 'channel' | 'conversation' | 'generating' | 'done';
+type Phase = 'channel' | 'conversation' | 'generating' | 'preview' | 'done';
 
 interface ChatMessage {
   id: string;
@@ -192,7 +192,7 @@ export function OnboardingChat() {
       return;
     }
     clearPersistedState();
-    setPhase('done');
+    setPhase('preview');
   }, []);
 
   const retryGeneration = useCallback(() => {
@@ -525,23 +525,84 @@ export function OnboardingChat() {
             </div>
           )}
 
-          {/* Done state */}
+          {/* Preview state — test bot + connect WhatsApp */}
+          {phase === 'preview' && (
+            <div className="py-6 animate-element animate-delay-100 space-y-6 max-w-lg mx-auto">
+              <div className="text-center">
+                <div className="w-14 h-14 bg-zinc-900 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h3 className="text-2xl font-semibold text-zinc-900 mb-1">
+                  ¡Tu agente está listo!
+                </h3>
+                <p className="text-sm text-zinc-500">
+                  {businessName || verticalDisplayName} — {Object.keys(capturedFields).length} datos configurados
+                </p>
+              </div>
+
+              {/* Option 1: Test the bot */}
+              <button
+                onClick={() => router.push('/playground')}
+                className="w-full p-5 rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors text-left group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-zinc-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-zinc-200 transition-colors">
+                    <svg className="w-5 h-5 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">Probar mi agente</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Chatea con tu bot y ve cómo responde antes de conectarlo</p>
+                  </div>
+                  <svg className="w-4 h-4 text-zinc-400 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Option 2: Connect WhatsApp */}
+              <button
+                onClick={() => router.push('/settings/agent')}
+                className="w-full p-5 rounded-2xl border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors text-left group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-zinc-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-zinc-200 transition-colors">
+                    <svg className="w-5 h-5 text-zinc-600" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                      <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a7.96 7.96 0 01-4.106-1.138l-.294-.176-2.862.85.85-2.862-.176-.294A7.96 7.96 0 014 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">Conectar WhatsApp</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Vincula tu número de WhatsApp Business para empezar a recibir clientes</p>
+                  </div>
+                  <svg className="w-4 h-4 text-zinc-400 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Option 3: Go to dashboard */}
+              <button
+                onClick={() => {
+                  setPhase('done');
+                  router.push('/home');
+                }}
+                className="w-full py-3 text-sm text-zinc-500 hover:text-zinc-900 transition-colors"
+              >
+                Ir al dashboard directamente
+              </button>
+            </div>
+          )}
+
+          {/* Done state (redirect) */}
           {phase === 'done' && (
             <div className="text-center py-8 animate-element animate-delay-100">
-              <div className="text-5xl mb-4">🎉</div>
-              <h3 className="text-2xl font-semibold mb-2">¡Tu agente está listo!</h3>
-              <p className="text-muted-foreground mb-6">
-                Asistente de {businessName || verticalDisplayName} configurado con{' '}
-                {Object.keys(capturedFields).length} datos.
-              </p>
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => router.push('/home')}
-                  className="px-6 py-3 rounded-2xl bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition-colors"
-                >
-                  Ir al Dashboard
-                </button>
-              </div>
+              <div className="w-8 h-8 border-2 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto" />
+              <p className="text-sm text-zinc-500 mt-3">Cargando dashboard...</p>
             </div>
           )}
 
