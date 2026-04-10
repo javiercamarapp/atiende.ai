@@ -13,7 +13,9 @@ export const runtime = 'nodejs';
 const GenerateRequestSchema = z.object({
   vertical: z.enum(ALL_VERTICALS as [VerticalEnum, ...VerticalEnum[]]),
   answers: z.record(z.string(), z.string()),
-  businessName: z.string().min(1).max(255),
+  // Allow empty — the client may send '' if the conversational agent never
+  // captured q1 explicitly. We fall back to "Mi negocio" server-side.
+  businessName: z.string().max(255).default(''),
 });
 
 export async function POST(request: Request) {
@@ -41,7 +43,8 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { vertical, answers, businessName } = parsed.data;
+  const { vertical, answers } = parsed.data;
+  const businessName = parsed.data.businessName || answers.q1 || 'Mi negocio';
 
   // ── 3. Build agent config (system prompt + metadata rules) ──
   const config = generateAgentConfig(vertical, answers, businessName);

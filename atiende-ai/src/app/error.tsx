@@ -1,5 +1,11 @@
 'use client';
+import { useEffect } from 'react';
+
 export default function Error({ error, reset }: { error: Error; reset: () => void }) {
+  useEffect(() => {
+    console.error('[error-boundary]', error?.message, error?.stack);
+  }, [error]);
+
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center space-y-4">
