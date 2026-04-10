@@ -4,8 +4,9 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { generateAgentConfig } from '@/lib/onboarding/generate-agent';
 import { verticalToBusinessType } from '@/lib/onboarding/business-type-map';
-import { ALL_VERTICALS } from '@/lib/verticals';
+import { ALL_VERTICALS, getVerticalQuestions } from '@/lib/verticals';
 import type { VerticalEnum } from '@/lib/verticals/types';
+import { ingestKnowledgeBatch } from '@/lib/rag/search';
 import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
@@ -150,6 +151,48 @@ export async function POST(request: Request) {
     });
   }
 
+  // ── 6. Ingest onboarding answers into knowledge_chunks for RAG ──
+  // Each answer becomes a searchable chunk so the WhatsApp bot can find
+  // prices, hours, address, etc. when customers ask. Non-fatal: if
+  // embedding generation or DB insert fails, the tenant is still created.
+  try {
+    const questions = getVerticalQuestions(vertical);
+    const chunks: { content: string; category: string }[] = [];
+
+    for (const [key, value] of Object.entries(answers)) {
+      if (!value || value.trim().length < 3) continue;
+      const qNum = Number(key.replace(/^q/, ''));
+      const question = questions[qNum - 1];
+      const label = question?.text ?? key;
+      const category = categorizeQuestion(label);
+      chunks.push({
+        content: `${label}: ${value}`,
+        category,
+      });
+    }
+
+    // Also add the full system prompt as a "general" chunk
+    chunks.push({
+      content: config.systemPrompt,
+      category: 'prompt_sistema',
+    });
+
+    if (chunks.length > 0) {
+      await ingestKnowledgeBatch(tenantId, chunks, 'onboarding');
+      logger.info('onboarding_generate knowledge ingested', {
+        tenantId,
+        chunkCount: chunks.length,
+      });
+    }
+  } catch (err) {
+    // Non-fatal — the tenant exists and the bot works with the system prompt.
+    // Knowledge chunks enhance RAG accuracy but aren't strictly required.
+    logger.warn('onboarding_generate knowledge ingestion failed', {
+      tenantId,
+      error: (err as Error).message,
+    });
+  }
+
   logger.info('onboarding_generate_success', {
     userId: user.id,
     tenantId,
@@ -171,4 +214,26 @@ export async function POST(request: Request) {
       topFaqs: config.topFaqs.length,
     },
   });
+}
+
+/** Map a question label to a knowledge category for RAG filtering. */
+function categorizeQuestion(label: string): string {
+  const l = label.toLowerCase();
+  if (l.includes('precio') || l.includes('costo') || l.includes('tarifa') || l.includes('revenue'))
+    return 'precios';
+  if (l.includes('horario') || l.includes('hora') || l.includes('dia'))
+    return 'horarios';
+  if (l.includes('direccion') || l.includes('ubicacion') || l.includes('referencia'))
+    return 'ubicacion';
+  if (l.includes('pago') || l.includes('factura') || l.includes('tarjeta'))
+    return 'pagos';
+  if (l.includes('tratamiento') || l.includes('servicio') || l.includes('menu') || l.includes('platillo'))
+    return 'servicios';
+  if (l.includes('nombre') || l.includes('dentista') || l.includes('doctor') || l.includes('titular'))
+    return 'equipo';
+  if (l.includes('urgencia') || l.includes('emergencia') || l.includes('crisis'))
+    return 'urgencias';
+  if (l.includes('cancelacion') || l.includes('politica'))
+    return 'politicas';
+  return 'general';
 }
