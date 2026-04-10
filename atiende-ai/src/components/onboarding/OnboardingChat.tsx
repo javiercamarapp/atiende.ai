@@ -232,7 +232,7 @@ export function OnboardingChat() {
 
   // ── Process a single queued item (upload files, call chat API, render AI) ──
   const processOneItem = useCallback(
-    async (item: { text: string; files: File[] }) => {
+    async (item: { text: string; files: File[]; _retried?: boolean }) => {
       const { text: userText, files } = item;
 
       // Upload all attached files in parallel.
@@ -332,7 +332,14 @@ export function OnboardingChat() {
         }
       } catch (err) {
         console.error('[onboarding] processOneItem error:', err);
-        await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
+        // Auto-retry once before showing error to user
+        if (!item._retried) {
+          console.log('[onboarding] Auto-retrying...');
+          await new Promise((r) => setTimeout(r, 1500));
+          await processOneItem({ ...item, _retried: true } as typeof item & { _retried: boolean });
+          return;
+        }
+        await addAiMessage('Tuve un problema con eso. ¿Me lo puedes repetir?');
       }
     },
     [vertical, capturedFields, historyRef, addAiMessage, uploadFile, handleGenerationComplete],
