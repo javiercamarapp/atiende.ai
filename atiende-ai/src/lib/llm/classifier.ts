@@ -1,10 +1,10 @@
-import { openrouter, MODELS } from './openrouter';
+import { getOpenRouter, MODELS } from './openrouter';
 
 // Clasifica el intent de cada mensaje entrante
 // Usa GPT-5 Nano ($0.05/M tokens) — el mas barato del mercado
 // Costo: ~$0.000005 por clasificacion = $4.50/mes a 100K msgs
 export async function classifyIntent(message: string): Promise<string> {
-  const response = await openrouter.chat.completions.create({
+  const response = await getOpenRouter().chat.completions.create({
     model: MODELS.CLASSIFIER,
     messages: [{
       role: 'system',

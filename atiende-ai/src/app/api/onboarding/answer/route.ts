@@ -1,3 +1,5 @@
+// TODO(onboarding-v2): deprecated — replaced by /api/onboarding/chat.
+// Delete in a follow-up PR once the conversational flow is validated in prod.
 import { NextResponse } from 'next/server';
 import { processAnswer } from '@/lib/onboarding/answer-processor';
 import { getNextQuestion, formatInsightMessage } from '@/lib/onboarding/question-engine';
