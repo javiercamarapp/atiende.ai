@@ -55,8 +55,8 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
-        <div className="p-3 border-b font-medium text-sm">Notificaciones</div>
+      <PopoverContent className="w-80 p-0 shadow-xl border border-zinc-200 rounded-xl bg-white z-50" align="end" sideOffset={8}>
+        <div className="p-3 border-b border-zinc-100 font-medium text-sm text-zinc-900">Notificaciones</div>
         {notifications.length === 0 ? (
           <div className="p-4 text-center text-sm text-zinc-500">Sin notificaciones</div>
         ) : (
