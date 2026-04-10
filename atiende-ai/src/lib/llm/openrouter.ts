@@ -161,24 +161,6 @@ export async function generateStructured<T>(opts: {
   maxTokens?: number;
   temperature?: number;
 }): Promise<StructuredGenerationResult<T>> {
-  const jsonSchema = z.toJSONSchema(opts.schema, {
-    target: 'draft-7',
-  }) as Record<string, unknown>;
-
-  // OpenRouter/OpenAI JSON-schema mode requires `additionalProperties: false`
-  // on all object schemas. Zod v4 sometimes omits that flag; inject it.
-  const ensureStrict = (node: unknown): void => {
-    if (!node || typeof node !== 'object') return;
-    const obj = node as Record<string, unknown>;
-    if (obj.type === 'object' && obj.additionalProperties === undefined) {
-      obj.additionalProperties = false;
-    }
-    for (const v of Object.values(obj)) {
-      if (Array.isArray(v)) v.forEach(ensureStrict);
-      else if (typeof v === 'object') ensureStrict(v);
-    }
-  };
-  ensureStrict(jsonSchema);
 
   const attempt = async (
     model: string,
@@ -188,9 +170,9 @@ export async function generateStructured<T>(opts: {
       ? `${opts.system}\n\n${extraSystemNote}`
       : opts.system;
 
-    // OpenAI SDK typing is permissive here; we use `any` narrowly for
-    // response_format because the SDK's union typing doesn't statically
-    // accept our derived JSON schema object without friction.
+    // Use json_object mode (widely supported) instead of json_schema
+    // (which many models on OpenRouter don't support). The system prompt
+    // already specifies the exact JSON shape; Zod validates after.
     const response = await getOpenRouter().chat.completions.create({
       model,
       messages: [
@@ -199,15 +181,7 @@ export async function generateStructured<T>(opts: {
       ],
       max_tokens: opts.maxTokens || 600,
       temperature: opts.temperature ?? 0.3,
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: opts.jsonSchemaName,
-          strict: true,
-          schema: jsonSchema,
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any,
+      response_format: { type: 'json_object' },
     });
 
     const raw = response.choices[0]?.message?.content || '';
