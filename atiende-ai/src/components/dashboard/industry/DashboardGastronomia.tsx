@@ -28,9 +28,9 @@ export function DashboardGastronomia({ roi, todayData, monthData, conversations 
           <Card key={k.l} className="p-4 border-zinc-200/60 shadow-sm"><div className="flex items-center gap-2 mb-2"><k.I className="w-4 h-4 text-zinc-400"/><span className="text-[11px] text-zinc-400 uppercase tracking-wider">{k.l}</span></div><p className="text-2xl font-bold text-zinc-900 tabular-nums">{k.v}</p></Card>
         ))}
       </div>
-      <Card className="border-zinc-200/60 shadow-sm p-4"><h3 className="text-sm font-medium text-zinc-900 flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-zinc-400"/>Conversaciones recientes</h3>
+      <Card className="border-zinc-200/60 shadow-sm p-4"><h3 className="text-sm font-medium text-zinc-900 flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-zinc-400"/>WhatsApp recientes</h3>
         {conversations.slice(0,8).map((c:Record<string,unknown>)=>(<Link key={c.id as string} href={`/conversations/${c.id}`} className="block p-2 rounded-lg hover:bg-zinc-50 transition-colors"><p className="text-sm font-medium text-zinc-900 truncate">{(c.customer_name as string)||(c.customer_phone as string)}</p><p className="text-xs text-zinc-400 truncate">{((c.messages as Record<string,unknown>[])?.[((c.messages as Record<string,unknown>[])?.length??1)-1]?.content as string)?.substring(0,50)||'Sin msgs'}</p></Link>))}
-        {conversations.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin conversaciones aun</p>}
+        {conversations.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin chats aun</p>}
       </Card>
     </div>
   );

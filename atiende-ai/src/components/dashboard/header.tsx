@@ -1,17 +1,16 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { LogOut, ChevronRight } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { NotificationCenter } from '@/components/dashboard/notification-center';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
 import { getPlanLimit } from '@/lib/analytics/roi';
-import Link from 'next/link';
 
 const PAGE_NAMES: Record<string, string> = {
   '/': 'Dashboard',
   '/home': 'Dashboard',
-  '/conversations': 'Conversaciones',
+  '/conversations': 'WhatsApp',
   '/appointments': 'Citas',
   '/orders': 'Pedidos',
   '/leads': 'Leads',
@@ -68,23 +67,10 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
 
   return (
     <header className="h-14 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 flex items-center justify-between px-6 pl-14 md:pl-6">
-      {/* Breadcrumb */}
+      {/* Page title + status */}
       <div>
-        <div className="text-sm flex items-center">
-          <Link
-            href="/home"
-            className="text-zinc-400 hover:text-zinc-600 transition-colors"
-          >
-            Dashboard
-          </Link>
-          {!isHome && (
-            <>
-              <ChevronRight className="w-3 h-3 text-zinc-300 mx-1.5" />
-              <span className="text-zinc-900 font-medium">{currentPage}</span>
-            </>
-          )}
-        </div>
-        <p className="text-[11px] text-zinc-400 mt-0.5 tracking-wide">
+        <p className="text-sm font-medium text-zinc-900">{currentPage}</p>
+        <p className="text-[11px] text-zinc-400 tracking-wide">
           {tenant.status === 'active' ? 'Agente activo' : tenant.status}
         </p>
       </div>

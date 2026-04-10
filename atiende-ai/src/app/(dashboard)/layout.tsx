@@ -63,7 +63,7 @@ function getModules(type: string, hasVoice: boolean) {
     nutritionist:[...base,'appointments'], psychologist:[...base,'appointments'],
     dermatologist:[...base,'appointments'], gynecologist:[...base,'appointments'],
     pediatrician:[...base,'appointments'], ophthalmologist:[...base,'appointments'],
-    restaurant:[...base,'orders','appointments'], taqueria:[...base,'orders'],
+    restaurant:[...base,'orders'], taqueria:[...base,'orders'],
     cafe:[...base,'orders'], hotel:[...base,'appointments'],
     real_estate:[...base,'leads','appointments'], salon:[...base,'appointments'],
     barbershop:[...base,'appointments'], spa:[...base,'appointments'],

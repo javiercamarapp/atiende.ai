@@ -28,7 +28,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
-  conversations: 'Conversaciones',
+  conversations: 'WhatsApp',
   appointments: 'Citas',
   orders: 'Pedidos',
   leads: 'Leads',

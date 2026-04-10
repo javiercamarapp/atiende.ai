@@ -31,9 +31,9 @@ export function DashboardHospedaje({ roi, todayData, monthData, appointments, co
           {appointments.slice(0,6).map((a:Record<string,unknown>)=>(<div key={a.id as string} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 transition-colors"><Clock className="w-3 h-3 text-zinc-300 shrink-0"/><div><p className="text-sm text-zinc-900">{(a.customer_name as string)||(a.customer_phone as string)}</p><p className="text-xs text-zinc-400">{new Date(a.datetime as string).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</p></div></div>))}
           {appointments.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin reservaciones hoy</p>}
         </Card>
-        <Card className="border-zinc-200/60 shadow-sm p-4"><h3 className="text-sm font-medium text-zinc-900 flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-zinc-400"/>Conversaciones recientes</h3>
+        <Card className="border-zinc-200/60 shadow-sm p-4"><h3 className="text-sm font-medium text-zinc-900 flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-zinc-400"/>WhatsApp recientes</h3>
           {conversations.slice(0,5).map((c:Record<string,unknown>)=>(<Link key={c.id as string} href={`/conversations/${c.id}`} className="block p-2 rounded-lg hover:bg-zinc-50 transition-colors"><p className="text-sm font-medium text-zinc-900 truncate">{(c.customer_name as string)||(c.customer_phone as string)}</p><p className="text-xs text-zinc-400 truncate">{((c.messages as Record<string,unknown>[])?.[((c.messages as Record<string,unknown>[])?.length??1)-1]?.content as string)?.substring(0,50)||'Sin msgs'}</p></Link>))}
-          {conversations.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin conversaciones aun</p>}
+          {conversations.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin chats aun</p>}
         </Card>
       </div>
     </div>
