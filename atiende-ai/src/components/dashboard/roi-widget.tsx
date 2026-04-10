@@ -2,8 +2,12 @@
 import { TrendingUp, MessageSquare, Clock, DollarSign, Zap } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
-function fmt(n:number) {
-  return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(n);
+function fmt(n: number) {
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    maximumFractionDigits: 0,
+  }).format(n);
 }
 
 interface ROIData {
@@ -16,38 +20,60 @@ interface ROIData {
 
 export function ROIWidget({ roi }: { roi: ROIData }) {
   return (
-    <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200">
+    <Card className="border-zinc-200/60 shadow-sm">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-emerald-800">
-          <TrendingUp className="w-5 h-5" />Tu retorno de inversión este mes
+        <CardTitle className="flex items-center gap-2 text-zinc-900 text-base">
+          <TrendingUp className="w-4 h-4 text-zinc-400" />
+          Retorno de inversion
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div className="text-center">
-            <MessageSquare className="w-4 h-4 text-blue-600 mx-auto mb-1" />
-            <p className="text-xl font-bold">{roi.messagesSaved.toLocaleString()}</p>
-            <p className="text-xs text-gray-500">Msgs contestados</p>
+            <MessageSquare className="w-4 h-4 text-zinc-300 mx-auto mb-1.5" />
+            <p className="text-2xl font-bold text-zinc-900 tabular-nums">
+              {roi.messagesSaved.toLocaleString()}
+            </p>
+            <p className="text-[11px] text-zinc-400 uppercase tracking-wider mt-0.5">
+              Msgs contestados
+            </p>
           </div>
           <div className="text-center">
-            <Clock className="w-4 h-4 text-teal-600 mx-auto mb-1" />
-            <p className="text-xl font-bold">{roi.hoursSaved}h</p>
-            <p className="text-xs text-gray-500">Horas ahorradas</p>
+            <Clock className="w-4 h-4 text-zinc-300 mx-auto mb-1.5" />
+            <p className="text-2xl font-bold text-zinc-900 tabular-nums">
+              {roi.hoursSaved}h
+            </p>
+            <p className="text-[11px] text-zinc-400 uppercase tracking-wider mt-0.5">
+              Horas ahorradas
+            </p>
           </div>
           <div className="text-center">
-            <DollarSign className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
-            <p className="text-xl font-bold">{fmt(roi.totalSavingsMXN)}</p>
-            <p className="text-xs text-gray-500">Ahorro estimado</p>
+            <DollarSign className="w-4 h-4 text-zinc-300 mx-auto mb-1.5" />
+            <p className="text-2xl font-bold text-zinc-900 tabular-nums">
+              {fmt(roi.totalSavingsMXN)}
+            </p>
+            <p className="text-[11px] text-zinc-400 uppercase tracking-wider mt-0.5">
+              Ahorro estimado
+            </p>
           </div>
           <div className="text-center">
-            <Zap className="w-4 h-4 text-amber-600 mx-auto mb-1" />
-            <p className={`text-xl font-bold ${roi.roiPercent>100?'text-emerald-600':'text-gray-800'}`}>{roi.roiPercent}%</p>
-            <p className="text-xs text-gray-500">ROI</p>
+            <Zap className="w-4 h-4 text-zinc-300 mx-auto mb-1.5" />
+            <p
+              className={`text-2xl font-bold tabular-nums ${
+                roi.roiPercent > 100 ? 'text-emerald-600' : 'text-zinc-900'
+              }`}
+            >
+              {roi.roiPercent}%
+            </p>
+            <p className="text-[11px] text-zinc-400 uppercase tracking-wider mt-0.5">
+              ROI
+            </p>
           </div>
         </div>
       </CardContent>
-      <CardFooter className="text-sm text-emerald-700 border-t border-emerald-200 pt-3">
-        Inversión: {fmt(roi.monthlyCostMXN)}/mes — Ahorro: {fmt(roi.totalSavingsMXN)}/mes
+      <CardFooter className="text-sm text-zinc-500 border-t border-zinc-100 pt-3">
+        Inversion: {fmt(roi.monthlyCostMXN)}/mes — Ahorro:{' '}
+        {fmt(roi.totalSavingsMXN)}/mes
       </CardFooter>
     </Card>
   );
