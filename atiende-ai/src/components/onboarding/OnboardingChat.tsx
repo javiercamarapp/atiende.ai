@@ -84,10 +84,22 @@ export function OnboardingChat() {
   const hydratedRef = useRef(false);
   const isProcessingRef = useRef(false);
   const pendingQueueRef = useRef<{ text: string; files: File[] }[]>([]);
+  // Refs that always hold the latest values — used by handleGenerationComplete
+  // to avoid stale closures when the callback fires after the animation delay.
+  const verticalRef = useRef<VerticalEnum | null>(null);
+  const capturedFieldsRef = useRef<Record<string, string>>({});
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
+
+  // Keep refs in sync with state so async callbacks always read latest.
+  useEffect(() => {
+    verticalRef.current = vertical;
+  }, [vertical]);
+  useEffect(() => {
+    capturedFieldsRef.current = capturedFields;
+  }, [capturedFields]);
 
   useEffect(() => {
     scrollToBottom();
@@ -295,12 +307,17 @@ export function OnboardingChat() {
       // If the processing loop is already running, it will pick this up.
       if (isProcessingRef.current) return;
 
-      // Start the drain loop.
+      // Start the drain loop — wrapped in try/catch so no unhandled rejection
+      // escapes to Next.js's root error boundary.
       isProcessingRef.current = true;
       (async () => {
-        while (pendingQueueRef.current.length > 0) {
-          const next = pendingQueueRef.current.shift()!;
-          await processOneItem(next);
+        try {
+          while (pendingQueueRef.current.length > 0) {
+            const next = pendingQueueRef.current.shift()!;
+            await processOneItem(next);
+          }
+        } catch (err) {
+          console.error('[onboarding] queue drain error:', err);
         }
         isProcessingRef.current = false;
       })();
@@ -369,20 +386,23 @@ export function OnboardingChat() {
   const handleGenerationComplete = useCallback(async () => {
     setGenerateError(null);
     try {
+      // Read from refs (always latest) instead of closure state to avoid
+      // stale data after the 6.5s generation animation delay.
+      const currentVertical = verticalRef.current;
+      const currentFields = capturedFieldsRef.current;
+      const bName = currentFields.q1 || currentVertical || 'Mi negocio';
+
       const res = await fetch('/api/onboarding/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          vertical,
-          answers: capturedFields,
-          businessName: capturedFields.q1 ?? '',
+          vertical: currentVertical,
+          answers: currentFields,
+          businessName: bName,
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        // Surface the error to the user instead of silently landing on the
-        // "done" screen — a failed generate means nothing got saved to the
-        // DB and the dashboard redirect will bounce back to /onboarding.
         setGenerateError(
           body.error === 'Unauthorized'
             ? 'Parece que tu sesión expiró. Inicia sesión de nuevo e intenta otra vez.'
@@ -390,7 +410,8 @@ export function OnboardingChat() {
         );
         return;
       }
-    } catch {
+    } catch (err) {
+      console.error('[onboarding] generate failed:', err);
       setGenerateError(
         'Error de red al guardar tu configuración. Revisa tu conexión e intenta de nuevo.',
       );
@@ -398,7 +419,7 @@ export function OnboardingChat() {
     }
     clearPersistedState();
     setPhase('done');
-  }, [vertical, capturedFields]);
+  }, []); // no deps — reads from refs, not closure state
 
   const retryGeneration = useCallback(() => {
     setGenerateError(null);
