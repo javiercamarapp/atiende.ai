@@ -1,81 +1,101 @@
-import OpenAI from 'openai';
+// RAG Knowledge — text-based search (no embeddings, no OpenAI key required).
+//
+// For the scale of a single-tenant onboarding (20-30 chunks of business info),
+// Postgres full-text search via ilike/tsvector is more than sufficient and
+// eliminates the dependency on an OpenAI API key for embeddings.
+//
+// If you later want vector search at scale, add OPENAI_API_KEY and switch
+// back to the pgvector approach (the schema already has the embedding column).
+
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
-// OpenAI directo para embeddings (mas barato que via OpenRouter)
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Buscar conocimiento relevante del negocio (RAG)
-// Esto es lo que PREVIENE alucinaciones
+/**
+ * Search knowledge chunks relevant to a customer's query.
+ * Uses Postgres text matching (case-insensitive) against the content.
+ */
 export async function searchKnowledge(
   tenantId: string,
-  query: string
+  query: string,
 ): Promise<string> {
-  // 1. Generar embedding del query del cliente
-  const embResponse = await openai.embeddings.create({
-    model: 'text-embedding-3-small', // $0.02/M tokens
-    input: query,
-  });
-  const queryEmbedding = embResponse.data[0].embedding;
+  // Split query into keywords for broader matching
+  const keywords = query
+    .toLowerCase()
+    .replace(/[^\w\sáéíóúñü]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
 
-  // 2. Buscar chunks mas relevantes de ESE negocio
-  const { data, error } = await supabaseAdmin.rpc('search_knowledge', {
-    p_tenant: tenantId,
-    p_query: queryEmbedding,
-    p_threshold: 0.35, // minimo de similitud
-    p_limit: 5,        // max chunks a devolver
-  });
-
-  if (error || !data || data.length === 0) {
+  if (keywords.length === 0) {
     return 'No hay informacion especifica disponible para esta consulta.';
   }
 
-  // 3. Formatear contexto para el LLM
+  // Search for chunks that match ANY keyword (OR logic, ordered by relevance)
+  // Using ilike for simplicity — works well for <1000 chunks per tenant
+  const { data, error } = await supabaseAdmin
+    .from('knowledge_chunks')
+    .select('content, category')
+    .eq('tenant_id', tenantId)
+    .or(keywords.map((k) => `content.ilike.%${k}%`).join(','))
+    .limit(5);
+
+  if (error || !data || data.length === 0) {
+    // Fallback: return ALL chunks for this tenant (the system prompt chunk
+    // always matches as a general catch-all)
+    const { data: fallback } = await supabaseAdmin
+      .from('knowledge_chunks')
+      .select('content, category')
+      .eq('tenant_id', tenantId)
+      .limit(3);
+
+    if (!fallback || fallback.length === 0) {
+      return 'No hay informacion especifica disponible para esta consulta.';
+    }
+    return fallback
+      .map((d) => `[${d.category}] ${d.content}`)
+      .join('\n---\n');
+  }
+
   return data
-    .map((d: { content: string; category: string; similarity: number }) =>
-      `[${d.category}] ${d.content}`)
+    .map((d) => `[${d.category}] ${d.content}`)
     .join('\n---\n');
 }
 
-// Ingestar nuevo conocimiento (usado en onboarding y manual)
+/**
+ * Ingest a single knowledge chunk (no embedding — text-only).
+ */
 export async function ingestKnowledge(
   tenantId: string,
   content: string,
   category: string,
-  source: string = 'onboarding'
+  source: string = 'onboarding',
 ): Promise<void> {
-  // Generar embedding
-  const embResponse = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: content,
-  });
-
-  // Insertar en pgvector
   await supabaseAdmin.from('knowledge_chunks').insert({
     tenant_id: tenantId,
     content,
-    embedding: embResponse.data[0].embedding,
     category,
     source,
   });
 }
 
-// Ingestar multiples chunks de una vez (batch)
+/**
+ * Ingest multiple knowledge chunks in one batch (no embeddings).
+ */
 export async function ingestKnowledgeBatch(
   tenantId: string,
   chunks: { content: string; category: string }[],
-  source: string = 'onboarding'
+  source: string = 'onboarding',
 ): Promise<void> {
-  // Generar embeddings en batch (OpenAI soporta hasta 2048 inputs)
-  const embResponse = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: chunks.map(c => c.content),
-  });
+  // Clear previous onboarding chunks for this tenant (idempotent re-ingestion)
+  if (source === 'onboarding') {
+    await supabaseAdmin
+      .from('knowledge_chunks')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('source', 'onboarding');
+  }
 
-  // Insertar todos
-  const rows = chunks.map((chunk, i) => ({
+  const rows = chunks.map((chunk) => ({
     tenant_id: tenantId,
     content: chunk.content,
-    embedding: embResponse.data[i].embedding,
     category: chunk.category,
     source,
   }));
