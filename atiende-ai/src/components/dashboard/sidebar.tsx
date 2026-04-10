@@ -58,9 +58,9 @@ function SidebarContent({
         <Image
           src="/Add a heading.png"
           alt="atiende.ai"
-          width={120}
-          height={32}
-          className="h-7 w-auto"
+          width={240}
+          height={64}
+          className="h-14 w-auto"
           priority
         />
         <p className="text-[11px] text-zinc-400 mt-2 truncate tracking-wide">
