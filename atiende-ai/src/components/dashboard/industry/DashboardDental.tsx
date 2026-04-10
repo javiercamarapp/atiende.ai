@@ -1,190 +1,39 @@
 'use client';
-
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import {
-  Calendar,
-  UserX,
-  UserPlus,
-  Zap,
-  MessageSquare,
-} from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Clock, Calendar, Zap, MessageSquare, TrendingDown } from 'lucide-react';
 import Link from 'next/link';
 
 interface IndustryDashProps {
   tenant: Record<string, unknown>;
-  roi: {
-    messagesSaved: number;
-    hoursSaved: number;
-    totalSavingsMXN: number;
-    roiPercent: number;
-    monthlyCostMXN: number;
-  };
+  roi: { messagesSaved: number; hoursSaved: number; totalSavingsMXN: number; roiPercent: number; monthlyCostMXN: number };
   todayData: Record<string, number> | null;
   monthData: Record<string, number>[];
   appointments: Record<string, unknown>[];
   conversations: Record<string, unknown>[];
 }
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    maximumFractionDigits: 0,
-  }).format(n);
-
-/* ---------- tiny KPI card ---------- */
-function KPI({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <Card className="border-zinc-200/60 shadow-sm">
-      <div className="p-4">
-        <Icon className="w-4 h-4 text-zinc-400 mb-2" />
-        <p className="text-[11px] uppercase tracking-wider text-zinc-400">
-          {label}
-        </p>
-        <p className="text-2xl font-bold text-zinc-900 tabular-nums">
-          {value}
-        </p>
-      </div>
-    </Card>
-  );
-}
-
-/* ---------- main export ---------- */
-export function DashboardDental({
-  roi,
-  todayData,
-  monthData,
-  appointments,
-  conversations,
-}: IndustryDashProps) {
-  /* ---- derived data ---- */
-  const citasHoy = (todayData?.appointments_booked as number) || 0;
-
-  const noShowsMes = monthData.reduce(
-    (acc, d) => acc + ((d.appointments_no_show as number) || 0),
-    0,
-  );
-
-  const pacientesNuevos = monthData.reduce(
-    (acc, d) => acc + ((d.leads_new as number) || 0),
-    0,
-  );
-
-  /* ---- sort today's appointments by time ---- */
-  const todayAppointments = [...appointments].sort((a, b) => {
-    const ta = new Date(a.datetime as string).getTime();
-    const tb = new Date(b.datetime as string).getTime();
-    return ta - tb;
-  });
-
+export function DashboardDental({ roi, todayData, monthData, appointments, conversations }: IndustryDashProps) {
+  const tNoShow = monthData.reduce((s, d) => s + (d.appointments_no_show || 0), 0);
+  const tMsgs = monthData.reduce((s, d) => s + (d.messages_inbound || 0), 0);
   return (
     <div className="space-y-6">
-      {/* ---- FILA 1: KPI cards ---- */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KPI icon={Calendar} label="Citas hoy" value={citasHoy} />
-        <KPI icon={UserX} label="No-shows mes" value={noShowsMes} />
-        <KPI icon={UserPlus} label="Pacientes nuevos" value={pacientesNuevos} />
-        <KPI icon={Zap} label="Msgs ahorrados" value={roi.messagesSaved} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-6 border-zinc-200/60 shadow-sm"><p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-1">Pacientes de hoy</p><p className="text-4xl font-bold text-zinc-900 tabular-nums">{appointments.length}</p><p className="text-xs text-zinc-400 mt-1">citas programadas</p></Card>
+        <Card className="p-6 border-zinc-200/60 shadow-sm"><p className="text-[11px] uppercase tracking-widest text-zinc-400 mb-1">Horas ahorradas</p><p className="text-4xl font-bold text-zinc-900 tabular-nums">{roi.hoursSaved}h</p><p className="text-xs text-zinc-400 mt-1">este mes con tu agente</p></Card>
       </div>
-
-      {/* ---- FILA 2: two-column grid ---- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left column — Citas de hoy timeline */}
-        <Card className="lg:col-span-2 border-zinc-200/60 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-zinc-900">
-              <Calendar className="w-4 h-4 text-zinc-400" />
-              Citas de hoy
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            {todayAppointments.length === 0 ? (
-              <p className="text-xs text-zinc-400 text-center py-8">
-                Sin citas programadas hoy
-              </p>
-            ) : (
-              todayAppointments.map((apt) => {
-                const dt = new Date(apt.datetime as string);
-                const time = dt.toLocaleTimeString('es-MX', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
-                const name =
-                  (apt.customer_name as string) ||
-                  (apt.customer_phone as string) ||
-                  'Paciente';
-                const service =
-                  (apt.services as Record<string, unknown>)?.name as
-                    | string
-                    | undefined;
-
-                return (
-                  <div
-                    key={apt.id as string}
-                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-zinc-50 transition-colors"
-                  >
-                    <span className="text-sm font-bold text-zinc-900 shrink-0 w-12 tabular-nums">
-                      {time}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-zinc-700 truncate">{name}</p>
-                      {service && (
-                        <p className="text-xs text-zinc-400 truncate">
-                          {service}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </CardContent>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[{l:'Mensajes hoy',v:todayData?.messages_inbound||0,I:MessageSquare},{l:'Citas hoy',v:todayData?.appointments_booked||0,I:Calendar},{l:'No-shows mes',v:tNoShow,I:TrendingDown},{l:'Msgs ahorrados',v:tMsgs,I:Zap}].map(k=>(
+          <Card key={k.l} className="p-4 border-zinc-200/60 shadow-sm"><div className="flex items-center gap-2 mb-2"><k.I className="w-4 h-4 text-zinc-400"/><span className="text-[11px] text-zinc-400 uppercase tracking-wider">{k.l}</span></div><p className="text-2xl font-bold text-zinc-900 tabular-nums">{k.v}</p></Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="border-zinc-200/60 shadow-sm p-4"><h3 className="text-sm font-medium text-zinc-900 flex items-center gap-2 mb-3"><Calendar className="w-4 h-4 text-zinc-400"/>Proximas citas</h3>
+          {appointments.slice(0,6).map((a:Record<string,unknown>)=>(<div key={a.id as string} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 transition-colors"><Clock className="w-3 h-3 text-zinc-300 shrink-0"/><div><p className="text-sm text-zinc-900">{(a.customer_name as string)||(a.customer_phone as string)}</p><p className="text-xs text-zinc-400">{new Date(a.datetime as string).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}{(a.services as Record<string,unknown>)?.name?` · ${String((a.services as Record<string,unknown>).name)}`:''}</p></div></div>))}
+          {appointments.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin citas hoy</p>}
         </Card>
-
-        {/* Right column — WhatsApp recientes */}
-        <Card className="border-zinc-200/60 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-zinc-900">
-              <MessageSquare className="w-4 h-4 text-zinc-400" />
-              WhatsApp recientes
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            {conversations.length === 0 ? (
-              <p className="text-xs text-zinc-400 text-center py-8">
-                Sin conversaciones aun
-              </p>
-            ) : (
-              conversations.slice(0, 5).map((c) => (
-                <Link
-                  key={c.id as string}
-                  href={`/conversations/${c.id}`}
-                  className="block p-2 rounded-lg hover:bg-zinc-50 transition-colors"
-                >
-                  <p className="text-sm font-medium text-zinc-900 truncate">
-                    {(c.customer_name as string) ||
-                      (c.customer_phone as string)}
-                  </p>
-                  <p className="text-xs text-zinc-400 truncate">
-                    {(
-                      (c.messages as Record<string, unknown>[])?.[
-                        ((c.messages as Record<string, unknown>[])?.length ??
-                          1) - 1
-                      ]?.content as string
-                    )?.substring(0, 50) || 'Sin msgs'}
-                  </p>
-                </Link>
-              ))
-            )}
-          </CardContent>
+        <Card className="border-zinc-200/60 shadow-sm p-4"><h3 className="text-sm font-medium text-zinc-900 flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-zinc-400"/>WhatsApp recientes</h3>
+          {conversations.slice(0,5).map((c:Record<string,unknown>)=>(<Link key={c.id as string} href={`/conversations/${c.id}`} className="block p-2 rounded-lg hover:bg-zinc-50 transition-colors"><p className="text-sm font-medium text-zinc-900 truncate">{(c.customer_name as string)||(c.customer_phone as string)}</p><p className="text-xs text-zinc-400 truncate">{((c.messages as Record<string,unknown>[])?.[((c.messages as Record<string,unknown>[])?.length??1)-1]?.content as string)?.substring(0,50)||'Sin msgs'}</p></Link>))}
+          {conversations.length===0&&<p className="text-xs text-zinc-400 text-center py-4">Sin chats aun</p>}
         </Card>
       </div>
     </div>
