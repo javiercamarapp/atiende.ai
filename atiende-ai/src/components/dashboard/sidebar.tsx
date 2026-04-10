@@ -54,7 +54,7 @@ function SidebarContent({
   return (
     <div className="flex flex-col h-full">
       {/* Logo + business name */}
-      <div className="px-5 pt-6 pb-4">
+      <div className="px-5 pt-2 pb-4">
         <Image
           src="/Add a heading.png"
           alt="atiende.ai"
