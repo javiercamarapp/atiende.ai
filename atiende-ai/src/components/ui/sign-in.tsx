@@ -118,18 +118,18 @@ export const SignInPage: React.FC<SignInPageProps> = ({
 
       {/* Right: hero video or image + testimonials */}
       {(heroVideoSrc || heroImageSrc) && (
-        <section className="hidden md:block flex-1 relative p-4">
+        <section className="hidden md:flex flex-1 relative p-4 bg-zinc-950 rounded-3xl m-4 overflow-hidden">
           {heroVideoSrc ? (
             <video
               autoPlay
               loop
               muted
               playsInline
-              className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl object-cover w-[calc(100%-2rem)] h-[calc(100%-2rem)]"
+              className="absolute inset-0 w-full h-full object-cover rounded-3xl"
               src={heroVideoSrc}
             />
           ) : (
-            <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
+            <div className="absolute inset-0 rounded-3xl bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
           )}
           {testimonials.length > 0 && (
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 px-8 w-full justify-center">
