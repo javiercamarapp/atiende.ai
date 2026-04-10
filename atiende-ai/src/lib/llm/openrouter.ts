@@ -25,122 +25,58 @@ export function getOpenRouter(): OpenAI {
   return _client;
 }
 
-// ═══ MODELOS ABRIL 2026 — PIVOTE DENTAL + RESTAURANTE ═══
-// Qwen 3.5 Flash como workhorse principal + fallbacks
+// ═══ MODELOS ABRIL 2026 — SOLO 2 MODELOS EN PRODUCCIÓN ═══
 export const MODELS = {
-  // ─── MODELO PRINCIPAL ───
-  // Qwen3 235B A22B — probado, funciona en OpenRouter, buen español
-  PRIMARY: 'qwen/qwen3-235b-a22b-2507',
+  // ─── MODELO PRINCIPAL — Qwen 3.5 Flash ───
+  // $0.065 input / $0.26 output por M tokens
+  // Multimodal (texto + imágenes + PDFs), tool calling, 1M contexto
+  // Non-thinking mode para velocidad
+  PRIMARY: 'qwen/qwen3.5-flash-02-23',
 
-  // ─── CLASIFICAR INTENT ───
-  CLASSIFIER: 'google/gemini-2.5-flash-lite',
+  // ─── MODELO LIGERO — Qwen 3.5 9B ───
+  // $0.05 input / $0.15 output por M tokens
+  // Para: clasificar intents, resumir, analizar sentimiento
+  LIGHT: 'qwen/qwen3.5-9b',
 
-  // ─── ENTERPRISE (restaurante alto volumen) ───
-  ENTERPRISE: 'deepseek/deepseek-v3.2',
-
-  // ─── TEMAS SENSIBLES ───
-  PREMIUM: 'anthropic/claude-sonnet-4-6',
-
-  // ─── FALLBACK ───
+  // ─── FALLBACK — Gemini Flash-Lite (probado en prod) ───
   FALLBACK: 'google/gemini-2.5-flash-lite',
 
-  // ─── ONBOARDING CONVERSACIONAL ───
-  ONBOARDING_AGENT: 'qwen/qwen3-235b-a22b-2507',
-  ONBOARDING_AGENT_FALLBACK: 'google/gemini-2.5-flash-lite',
-
-  // ─── EXTRACCIÓN DE UPLOADS (visión) ───
-  // Gemini 2.5 Flash: multimodal para leer menús/cédulas
-  BALANCED: 'google/gemini-2.5-flash',
-
-  // ─── VOICE AGENT (v1.1) ───
+  // ── Aliases para backward compat ──
+  CLASSIFIER: 'qwen/qwen3.5-9b',
+  STANDARD: 'qwen/qwen3.5-9b',
+  BALANCED: 'qwen/qwen3.5-flash-02-23',
+  PREMIUM: 'qwen/qwen3.5-flash-02-23',
   VOICE: 'google/gemini-2.5-flash-lite',
-
-  // ─── GENERAR PROMPTS (onboarding) ───
-  GENERATOR: 'google/gemini-2.5-flash',
-
-  // ─── Legacy aliases (backward compat) ───
-  STANDARD: 'google/gemini-2.5-flash-lite',
+  GENERATOR: 'qwen/qwen3.5-flash-02-23',
+  ONBOARDING_AGENT: 'qwen/qwen3.5-flash-02-23',
+  ONBOARDING_AGENT_FALLBACK: 'google/gemini-2.5-flash-lite',
+  ENTERPRISE: 'qwen/qwen3.5-flash-02-23',
 } as const;
 
 // Precios por millon de tokens [input, output]
 const MODEL_PRICES: Record<string, [number, number]> = {
-  'qwen/qwen3.5-flash': [0.065, 0.26],
-  'qwen/qwen3.5-9b': [0.02, 0.06],
-  'deepseek/deepseek-v3.2': [0.25, 0.38],
-  'anthropic/claude-sonnet-4-6': [3.00, 15.00],
+  'qwen/qwen3.5-flash-02-23': [0.065, 0.26],
+  'qwen/qwen3.5-9b': [0.05, 0.15],
   'google/gemini-2.5-flash-lite': [0.10, 0.40],
-  'google/gemini-2.5-flash': [0.30, 2.50],
-  'qwen/qwen3-235b-a22b-2507': [0.071, 0.10],
-  'meta-llama/llama-3.3-70b-instruct': [0.12, 0.30],
 };
 
-// ═══ ROUTING POR TIPO DE NEGOCIO + INTENT ═══
-// La logica: negocios de SALUD siempre usan modelo medio
-// (riesgo de alucinacion medica = inaceptable)
-// Negocios de bajo riesgo (taqueria, gym) usan Flash-Lite
-// Temas sensibles SIEMPRE van a Claude (no negociable)
+// ═══ ROUTING — UN SOLO MODELO PARA TODO ═══
+// Qwen 3.5 Flash maneja todas las respuestas al cliente.
+// Sin routing por complejidad/intent — simplifica y reduce latencia.
 export function selectModel(
-  intent: string,
-  businessType: string,
-  plan: string
+  _intent: string,
+  _businessType: string,
+  _plan: string,
 ): string {
-  // ── REGLA 1: Plan premium → siempre balanced ──
-  if (plan === 'premium') return MODELS.BALANCED;
-
-  // ── REGLA 2: Intents sensibles → Claude (no negociable) ──
-  const sensitiveIntents = [
-    'EMERGENCY', 'COMPLAINT', 'HUMAN', 'CRISIS',
-    'MEDICAL_QUESTION', 'LEGAL_QUESTION'
-  ];
-  if (sensitiveIntents.includes(intent)) return MODELS.PREMIUM;
-
-  // ── REGLA 3: Negocios de SALUD → Gemini Flash (balanced) ──
-  // Porque si alucina un precio de cirugia o un medicamento = problema
-  const healthTypes = [
-    'dental', 'medical', 'nutritionist', 'psychologist',
-    'dermatologist', 'gynecologist', 'pediatrician',
-    'ophthalmologist'
-  ];
-  if (healthTypes.includes(businessType)) return MODELS.BALANCED;
-
-  // ── REGLA 4: Inmobiliaria con temas de credito → balanced ──
-  if (businessType === 'real_estate' &&
-      ['APPOINTMENT_NEW', 'PRICE', 'LEGAL_QUESTION'].includes(intent)) {
-    return MODELS.BALANCED;
-  }
-
-  // ── REGLA 5: Veterinaria emergencia → Claude ──
-  if (businessType === 'veterinary' && intent === 'EMERGENCY') {
-    return MODELS.PREMIUM;
-  }
-
-  // ── REGLA 6: Agendamiento/pedidos complejos → balanced ──
-  if (['APPOINTMENT_NEW', 'APPOINTMENT_MODIFY', 'ORDER_NEW',
-       'RESERVATION'].includes(intent)) {
-    return MODELS.BALANCED;
-  }
-
-  // ── REGLA 7: Todo lo demas → Qwen 3.5 Flash (modelo principal) ──
   return MODELS.PRIMARY;
 }
 
-// Selección de modelo por tenant (dental vs restaurante vs enterprise)
-export function getModelForTenant(tenant: {
+export function getModelForTenant(_tenant: {
   business_type: string;
   plan?: string;
   config?: Record<string, unknown>;
 }): string {
-  // Restaurante enterprise con muchos pedidos → DeepSeek V3.2
-  const monthlyOrders =
-    (tenant.config as Record<string, unknown>)?.monthly_orders;
-  if (
-    tenant.business_type === 'restaurant' &&
-    typeof monthlyOrders === 'number' &&
-    monthlyOrders > 3000
-  ) {
-    return MODELS.ENTERPRISE;
-  }
-  // Todo lo demás → Qwen 3.5 Flash
+  // Un solo modelo — Qwen 3.5 Flash para todos
   return MODELS.PRIMARY;
 }
 
