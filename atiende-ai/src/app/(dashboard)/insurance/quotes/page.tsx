@@ -46,8 +46,8 @@ export default async function InsuranceQuotesPage() {
                 </div>
                 <div className="text-right">
                   <span className={`text-xs px-2 py-1 rounded-full ${
-                    q.status === 'complete' ? 'bg-green-50 text-green-700' :
-                    q.status === 'quoting' ? 'bg-blue-50 text-blue-700' :
+                    q.status === 'complete' ? 'bg-zinc-900 text-white' :
+                    q.status === 'quoting' ? 'bg-zinc-100 text-zinc-700' :
                     q.status === 'error' ? 'bg-red-50 text-red-700' :
                     'bg-zinc-100 text-zinc-600'
                   }`}>

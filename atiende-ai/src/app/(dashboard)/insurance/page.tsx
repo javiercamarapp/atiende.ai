@@ -37,21 +37,21 @@ export default async function InsurancePage() {
       value: quotesRes.count ?? 0,
       icon: FileText,
       href: '/insurance/quotes',
-      color: 'text-blue-600 bg-blue-50',
+      color: 'text-zinc-500 bg-zinc-50',
     },
     {
       label: 'Pólizas activas',
       value: policiesRes.count ?? 0,
       icon: Shield,
       href: '/insurance/policies',
-      color: 'text-green-600 bg-green-50',
+      color: 'text-zinc-500 bg-zinc-50',
     },
     {
       label: 'Aseguradoras conectadas',
       value: carriersRes.count ?? 0,
       icon: Building2,
       href: '/insurance/carriers',
-      color: 'text-purple-600 bg-purple-50',
+      color: 'text-zinc-500 bg-zinc-50',
     },
   ]
 

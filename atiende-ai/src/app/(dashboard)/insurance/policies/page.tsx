@@ -52,7 +52,7 @@ export default async function InsurancePoliciesPage() {
                   </div>
                   <div className="text-right">
                     <span className={`text-xs px-2 py-1 rounded-full ${
-                      p.status === 'active' ? 'bg-green-50 text-green-700' :
+                      p.status === 'active' ? 'bg-zinc-900 text-white' :
                       p.status === 'expired' ? 'bg-red-50 text-red-700' :
                       'bg-zinc-100 text-zinc-600'
                     }`}>
@@ -61,7 +61,7 @@ export default async function InsurancePoliciesPage() {
                        p.status === 'pending_payment' ? 'Pago pendiente' : p.status}
                     </span>
                     {daysToRenewal <= 30 && daysToRenewal >= 0 && (
-                      <p className="text-xs text-amber-600 mt-1">
+                      <p className="text-xs text-zinc-400 mt-1">
                         Renueva en {daysToRenewal} días
                       </p>
                     )}

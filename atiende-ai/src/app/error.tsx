@@ -19,7 +19,7 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
             {error?.stack || 'Sin stack trace'}
           </pre>
         </details>
-        <button onClick={reset} className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors">
+        <button onClick={reset} className="bg-zinc-900 text-white px-6 py-2 rounded-lg hover:bg-zinc-800 transition-colors">
           Intentar de nuevo
         </button>
       </div>

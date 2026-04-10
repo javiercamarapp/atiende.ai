@@ -43,7 +43,7 @@ export default async function InsuranceCarriersPage() {
               key={carrier.id}
               className={`p-4 rounded-lg border transition-colors ${
                 isConnected
-                  ? 'border-green-200 bg-green-50/50'
+                  ? 'border-zinc-300 bg-zinc-50/50'
                   : 'border-zinc-200 hover:border-zinc-300'
               }`}
             >
@@ -53,7 +53,7 @@ export default async function InsuranceCarriersPage() {
                   <h3 className="font-medium">{carrier.name}</h3>
                 </div>
                 {isConnected ? (
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <CheckCircle className="w-5 h-5 text-zinc-900" />
                 ) : (
                   <XCircle className="w-5 h-5 text-zinc-300" />
                 )}
@@ -75,8 +75,8 @@ export default async function InsuranceCarriersPage() {
                 <p>
                   Estado:{' '}
                   <span className={`inline-flex items-center ${
-                    carrier.health_status === 'healthy' ? 'text-green-600' :
-                    carrier.health_status === 'degraded' ? 'text-amber-600' :
+                    carrier.health_status === 'healthy' ? 'text-zinc-900' :
+                    carrier.health_status === 'degraded' ? 'text-zinc-400' :
                     'text-red-600'
                   }`}>
                     {carrier.health_status === 'healthy' ? 'Operativo' :
