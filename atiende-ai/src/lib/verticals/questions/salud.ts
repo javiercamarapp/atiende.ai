@@ -41,10 +41,10 @@ export const saludQuestions: Partial<Record<VerticalEnum, VerticalQuestion[]>> =
     },
     {
       number: 6,
-      text: 'Cedula profesional y universidad',
-      why: 'Numero de cedula DGP — los pacientes lo preguntan para verificar',
+      text: 'Cedula profesional y universidad (opcional — ayuda a que los pacientes verifiquen al doctor en el registro DGP, pero puedes omitirla)',
+      why: 'Los pacientes a veces lo preguntan para verificar. Es opcional.',
       inputType: 'text',
-      required: true,
+      required: false,
     },
     {
       number: 7,
