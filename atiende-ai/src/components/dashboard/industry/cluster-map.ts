@@ -1,58 +1,15 @@
-// Maps the 26 DB business_type values to 6 dashboard clusters.
-// Each cluster gets its own dashboard home layout with specialized widgets.
+// Cluster map — PIVOTE: solo dental + restaurante.
+// Maps DB business_type to dashboard component key.
 
-export type DashboardCluster =
-  | 'salud'
-  | 'gastronomia'
-  | 'hospedaje'
-  | 'belleza'
-  | 'retail'
-  | 'servicios';
+export type DashboardCluster = 'dental' | 'restaurante';
 
 export const CLUSTER_MAP: Record<string, DashboardCluster> = {
-  // Salud (10)
-  dental: 'salud',
-  medical: 'salud',
-  nutritionist: 'salud',
-  psychologist: 'salud',
-  dermatologist: 'salud',
-  gynecologist: 'salud',
-  pediatrician: 'salud',
-  ophthalmologist: 'salud',
-  pharmacy: 'salud',
-  veterinary: 'salud',
-  // Gastronomia (4)
-  restaurant: 'gastronomia',
-  taqueria: 'gastronomia',
-  cafe: 'gastronomia',
-  florist: 'gastronomia', // florist orders behave like food orders
-  // Hospedaje (1 DB type, covers 6 verticals)
-  hotel: 'hospedaje',
-  // Belleza (5)
-  salon: 'belleza',
-  barbershop: 'belleza',
-  spa: 'belleza',
-  gym: 'belleza',
-  optics: 'belleza',
-  // Servicios (5)
-  real_estate: 'servicios',
-  insurance: 'servicios',
-  school: 'servicios',
-  mechanic: 'servicios',
-  accountant: 'servicios',
-  // Retail catch-all
-  other: 'retail',
+  dental: 'dental',
+  restaurant: 'restaurante',
+  taqueria: 'restaurante',
+  cafe: 'restaurante',
 };
 
-export function getCluster(businessType: string): DashboardCluster {
-  return CLUSTER_MAP[businessType] ?? 'retail';
+export function getCluster(businessType: string): DashboardCluster | null {
+  return CLUSTER_MAP[businessType] ?? null;
 }
-
-export const CLUSTER_LABELS: Record<DashboardCluster, string> = {
-  salud: 'Salud',
-  gastronomia: 'Gastronomia',
-  hospedaje: 'Hospedaje',
-  belleza: 'Belleza & Lifestyle',
-  retail: 'Comercio',
-  servicios: 'Servicios Profesionales',
-};

@@ -41,7 +41,7 @@ export interface ChatAgentInput {
 }
 
 export interface ChatAgentResult {
-  vertical: VerticalEnum | null;
+  vertical: VerticalEnum | 'waitlist' | null;
   updatedFields: Record<string, string>;
   /**
    * One-to-three sequential messages the client should render as separate
@@ -68,8 +68,15 @@ const MAX_HISTORY_TURNS = 20;
 
 const VerticalEnumSchema = z.enum(ALL_VERTICALS as [VerticalEnum, ...VerticalEnum[]]);
 
+// The agent can also return "waitlist" for unsupported verticals
+const AgentVerticalSchema = z.union([
+  VerticalEnumSchema,
+  z.literal('waitlist'),
+  z.null(),
+]);
+
 const AgentOutputSchema = z.object({
-  vertical: z.union([VerticalEnumSchema, z.null()]),
+  vertical: AgentVerticalSchema,
   updatedFields: z.record(z.string(), z.string()),
   assistantMessages: z.array(z.string().min(1).max(800)).min(1).max(3),
   done: z.boolean(),
@@ -99,8 +106,6 @@ export function buildAgentSystemPrompt(
     ? buildFieldsBlock(vertical, capturedFields)
     : '(cuando detectes el vertical, lista de campos aparecerá en el siguiente turno)';
 
-  const verticalList = ALL_VERTICALS.join(', ');
-
   return `Eres el agente de pre-conversación de atiende.ai. Conoces el negocio del usuario mediante una charla natural, NO un cuestionario. Hablas español mexicano, cálido y breve.
 
 ${header}
@@ -118,8 +123,11 @@ REGLAS DURAS:
 5. Si una respuesta es vaga, evasiva o irrelevante ("no sé", "luego te digo", "lo que tú creas", "cualquier cosa"), NO la aceptes. Haz una re-pregunta amable y específica, marca clarificationOf="qN", y NO incluyas ese campo en updatedFields en este turno. Pero si la respuesta es corta pero CONCRETA (ej: "en semana santa", "sí", "no", "formal"), ACÉPTALA, llena el campo, y avanza al siguiente campo pendiente.
 6. Si el usuario da un dato que cubre varios campos en una sola frase (ej: "lunes a viernes 9 a 19 y cerramos domingos" llena horario + días de cierre), llena TODOS esos campos en updatedFields.
 7. Prefiere siempre el siguiente campo [REQ] pendiente. Los opcionales [ ] los dejas para el final o los omites si el usuario parece con prisa.
-8. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado / archivo subido). Responde el enum exacto en el campo "vertical" del JSON y continúa la conversación asumiendo ese vertical. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
-9. Verticales válidos: ${verticalList}.
+8. PIVOTE — SOLO aceptamos 2 verticales: "dental" y "restaurante".
+   - "dental": dentistas, odontólogos, ortodoncistas, endodoncistas, consultorios dentales, clínicas dentales.
+   - "restaurante": restaurantes, taquerías, cafeterías, fondas, food trucks, pizzerías, mariscos, hamburguesas, cocinas económicas, panaderías, bares, cantinas, cualquier negocio de COMIDA.
+   - Si el usuario describe CUALQUIER OTRO tipo de negocio (gym, veterinaria, hotel, salón, tienda, etc.), responde vertical="waitlist" y un mensaje amable: "¡Gracias por tu interés! Por ahora trabajamos solo con dentistas y restaurantes. Déjame tu correo y te aviso cuando abramos tu tipo de negocio."
+9. Si vertical="todavía no identificado", infiere del mensaje: dental → "dental", comida → "restaurante", otro → "waitlist" (pide email).
 10. Cuando TODOS los [REQ] estén completos, responde done=true con un mensaje de cierre breve ("Listo, con esto armo tu agente"). Este es el ÚNICO caso donde puedes no incluir pregunta.
 11. Nunca inventes datos. Si no sabes algo, pregúntalo. Cuando tengas duda entre "subir un archivo" y "escribirlo a mano", sugiere subir (ej: "¿tienes tu menú en foto? Puedes subirla y la leo").
 12. Nunca pidas datos que ya están en [YA CAPTURADO]. Continúa con el siguiente pendiente.
@@ -221,11 +229,16 @@ export async function runChatAgent(input: ChatAgentInput): Promise<ChatAgentResu
   });
 
   // Determine effective vertical (model may have just inferred it)
-  const effectiveVertical: VerticalEnum | null = result.data.vertical ?? input.vertical;
+  // Handle "waitlist" — unsupported vertical detected by the agent
+  const rawVertical = result.data.vertical;
+  const effectiveVertical: VerticalEnum | 'waitlist' | null =
+    rawVertical === 'waitlist'
+      ? 'waitlist'
+      : (rawVertical as VerticalEnum | null) ?? input.vertical;
 
   // Filter updatedFields to valid keys only
   let filteredFields: Record<string, string> = {};
-  if (effectiveVertical) {
+  if (effectiveVertical && effectiveVertical !== 'waitlist') {
     const validKeys = validKeysForVertical(effectiveVertical);
     for (const [k, v] of Object.entries(result.data.updatedFields)) {
       if (validKeys.has(k) && typeof v === 'string' && v.trim().length > 0) {

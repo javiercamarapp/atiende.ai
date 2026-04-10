@@ -1,20 +1,13 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { calculateROI } from '@/lib/analytics/roi';
 import { getCluster } from '@/components/dashboard/industry/cluster-map';
-import { DashboardSalud } from '@/components/dashboard/industry/DashboardSalud';
-import { DashboardGastronomia } from '@/components/dashboard/industry/DashboardGastronomia';
-import { DashboardHospedaje } from '@/components/dashboard/industry/DashboardHospedaje';
-import { DashboardBelleza } from '@/components/dashboard/industry/DashboardBelleza';
-import { DashboardRetail } from '@/components/dashboard/industry/DashboardRetail';
-import { DashboardServicios } from '@/components/dashboard/industry/DashboardServicios';
+import { DashboardDental } from '@/components/dashboard/industry/DashboardDental';
+import { DashboardRestaurante } from '@/components/dashboard/industry/DashboardRestaurante';
+import { redirect } from 'next/navigation';
 
 const CLUSTER_COMPONENTS = {
-  salud: DashboardSalud,
-  gastronomia: DashboardGastronomia,
-  hospedaje: DashboardHospedaje,
-  belleza: DashboardBelleza,
-  retail: DashboardRetail,
-  servicios: DashboardServicios,
+  dental: DashboardDental,
+  restaurante: DashboardRestaurante,
 } as const;
 
 export default async function DashboardPage() {
@@ -27,7 +20,10 @@ export default async function DashboardPage() {
     .select('*')
     .eq('user_id', user!.id)
     .single();
-  if (!tenant) return <div>No tenant found</div>;
+  if (!tenant) redirect('/onboarding');
+
+  const cluster = getCluster(tenant.business_type);
+  if (!cluster) redirect('/onboarding'); // unsupported vertical → re-onboard
 
   const ago30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -62,10 +58,8 @@ export default async function DashboardPage() {
     .select('*, messages(content,direction,created_at)')
     .eq('tenant_id', tenant.id)
     .order('last_message_at', { ascending: false })
-    .limit(5);
+    .limit(8);
 
-  // Dispatch to the correct industry dashboard based on business_type
-  const cluster = getCluster(tenant.business_type);
   const DashComponent = CLUSTER_COMPONENTS[cluster];
 
   return (

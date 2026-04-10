@@ -25,59 +25,57 @@ export function getOpenRouter(): OpenAI {
   return _client;
 }
 
-// ═══ MODELOS MARZO 2026 — MEJOR CALIDAD-PRECIO ═══
-// Gemini 2.5 Flash como workhorse + Claude para sensible
+// ═══ MODELOS ABRIL 2026 — PIVOTE DENTAL + RESTAURANTE ═══
+// Qwen 3.5 Flash como workhorse principal + fallbacks
 export const MODELS = {
+  // ─── MODELO PRINCIPAL (dental + restaurante) ───
+  // Qwen 3.5 Flash: $0.065/$0.26 por M tokens
+  // Non-thinking mode para velocidad. Buen español mexicano.
+  PRIMARY: 'qwen/qwen3.5-flash',
+
   // ─── CLASIFICAR INTENT (cada mensaje) ───
-  // GPT-5 Nano: $0.05/$0.40 — el MAS barato del mercado
-  // Solo responde 1 palabra. 100K clasificaciones ≈ $4.50/mes
-  CLASSIFIER: 'openai/gpt-5-nano',
+  // Qwen 3.5 9B: ultra barato, solo responde 1 palabra
+  CLASSIFIER: 'qwen/qwen3.5-9b',
 
-  // ─── CHAT CASUAL / FAQ (70% del trafico) ───
-  // Gemini 2.5 Flash-Lite: $0.10/$0.40 — 75% mas barato que GPT-4.1-mini
-  // Ultra baja latencia, buen espanol, 1M contexto
-  // PARA: horarios, ubicacion, precios, info general
-  STANDARD: 'google/gemini-2.5-flash-lite',
+  // ─── ENTERPRISE (restaurante 100+ pedidos/día) ───
+  // DeepSeek V3.2: $0.25/$0.38 — más robusto para volumen alto
+  ENTERPRISE: 'deepseek/deepseek-v3.2',
 
-  // ─── CHAT PROFESIONAL (20% del trafico) ───
-  // Gemini 2.5 Flash: $0.30/$2.50 — workhorse de Google
-  // Razonamiento avanzado, 1M contexto, multilingue excelente
-  // PARA: agendar citas multi-step, pedidos complejos, leads BANT
-  BALANCED: 'google/gemini-2.5-flash',
-
-  // ─── TEMAS SENSIBLES (10% del trafico) ───
-  // Claude Sonnet 4.6: $3.00/$15.00 — maximo safety
-  // Mejor anti-alucinacion. No diagnostica, no receta.
-  // PARA: quejas, emergencias, preguntas medicas, crisis mental,
-  //       temas legales, creditos hipotecarios
+  // ─── TEMAS SENSIBLES (quejas, emergencias) ───
+  // Claude Sonnet 4.6: $3.00/$15.00 — máximo safety
   PREMIUM: 'anthropic/claude-sonnet-4-6',
 
-  // ─── VOICE AGENT ───
-  // Gemini 2.5 Flash-Lite: ultra baja latencia para voz real-time
+  // ─── FALLBACK (si el primario falla) ───
+  // Gemini 2.5 Flash-Lite: modelo anterior, probado y estable
+  FALLBACK: 'google/gemini-2.5-flash-lite',
+
+  // ─── ONBOARDING CONVERSACIONAL ───
+  // Mismo Qwen 3.5 Flash — consistencia con el bot de producción
+  ONBOARDING_AGENT: 'qwen/qwen3.5-flash',
+  ONBOARDING_AGENT_FALLBACK: 'google/gemini-2.5-flash-lite',
+
+  // ─── EXTRACCIÓN DE UPLOADS (visión) ───
+  // Gemini 2.5 Flash: multimodal para leer menús/cédulas
+  BALANCED: 'google/gemini-2.5-flash',
+
+  // ─── VOICE AGENT (v1.1) ───
   VOICE: 'google/gemini-2.5-flash-lite',
 
   // ─── GENERAR PROMPTS (onboarding) ───
-  // Gemini 2.5 Flash: buen seguimiento de instrucciones largas
   GENERATOR: 'google/gemini-2.5-flash',
 
-  // ─── ONBOARDING CONVERSACIONAL (pre-conversacion con scraping) ───
-  // Qwen3 235B A22B Instruct 2507 — open source top, Apache 2.0
-  // $0.071 input / $0.10 output por M tokens. 262K contexto.
-  // Fuerte en espanol (119 idiomas), top IFEval, JSON robusto.
-  // ~$0.0026/sesion (~38k sesiones / $100/mes)
-  ONBOARDING_AGENT: 'qwen/qwen3-235b-a22b-2507',
-
-  // ─── FALLBACK DEL ONBOARDING AGENT ───
-  // Llama 3.3 70B Instruct — $0.12/$0.30, solido como red de seguridad
-  ONBOARDING_AGENT_FALLBACK: 'meta-llama/llama-3.3-70b-instruct',
+  // ─── Legacy aliases (backward compat) ───
+  STANDARD: 'google/gemini-2.5-flash-lite',
 } as const;
 
 // Precios por millon de tokens [input, output]
 const MODEL_PRICES: Record<string, [number, number]> = {
-  'openai/gpt-5-nano': [0.05, 0.40],
+  'qwen/qwen3.5-flash': [0.065, 0.26],
+  'qwen/qwen3.5-9b': [0.02, 0.06],
+  'deepseek/deepseek-v3.2': [0.25, 0.38],
+  'anthropic/claude-sonnet-4-6': [3.00, 15.00],
   'google/gemini-2.5-flash-lite': [0.10, 0.40],
   'google/gemini-2.5-flash': [0.30, 2.50],
-  'anthropic/claude-sonnet-4-6': [3.00, 15.00],
   'qwen/qwen3-235b-a22b-2507': [0.071, 0.10],
   'meta-llama/llama-3.3-70b-instruct': [0.12, 0.30],
 };
@@ -128,9 +126,28 @@ export function selectModel(
     return MODELS.BALANCED;
   }
 
-  // ── REGLA 7: Todo lo demas → Flash-Lite (ultra barato) ──
-  // Horarios, ubicacion, FAQ simples, saludos, despedidas
-  return MODELS.STANDARD;
+  // ── REGLA 7: Todo lo demas → Qwen 3.5 Flash (modelo principal) ──
+  return MODELS.PRIMARY;
+}
+
+// Selección de modelo por tenant (dental vs restaurante vs enterprise)
+export function getModelForTenant(tenant: {
+  business_type: string;
+  plan?: string;
+  config?: Record<string, unknown>;
+}): string {
+  // Restaurante enterprise con muchos pedidos → DeepSeek V3.2
+  const monthlyOrders =
+    (tenant.config as Record<string, unknown>)?.monthly_orders;
+  if (
+    tenant.business_type === 'restaurant' &&
+    typeof monthlyOrders === 'number' &&
+    monthlyOrders > 3000
+  ) {
+    return MODELS.ENTERPRISE;
+  }
+  // Todo lo demás → Qwen 3.5 Flash
+  return MODELS.PRIMARY;
 }
 
 // Calcular costo de una request

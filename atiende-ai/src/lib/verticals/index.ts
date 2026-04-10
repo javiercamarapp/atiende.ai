@@ -1,23 +1,15 @@
-// Master registry of all 43 verticals
-// Source: atiende_guia_definitiva_40_verticales.pdf
+// Master registry — PIVOTE: solo dental + restaurante activos.
+// Los demás verticales están en /standby (no se importan).
 
 import type { VerticalEnum, VerticalCategory, VerticalDefinition } from './types';
 
-// Question imports by category
-import { saludQuestions } from './questions/salud';
-import { gastronomiaQuestions } from './questions/gastronomia';
-import { hospedajeQuestions } from './questions/hospedaje';
-import { bellezaQuestions } from './questions/belleza';
-import { retailQuestions } from './questions/retail';
-import { serviciosQuestions } from './questions/servicios';
+// Question imports — solo las categorías activas
+import { saludQuestions } from './questions/salud'; // contiene dental
+import { gastronomiaQuestions } from './questions/gastronomia'; // contiene restaurante
 
-// Metadata imports by category
+// Metadata imports — solo las categorías activas
 import { saludMetadata } from './metadata/salud';
 import { gastronomiaMetadata } from './metadata/gastronomia';
-import { hospedajeMetadata } from './metadata/hospedaje';
-import { bellezaMetadata } from './metadata/belleza';
-import { retailMetadata } from './metadata/retail';
-import { serviciosMetadata } from './metadata/servicios';
 
 import type { VerticalQuestion, VerticalMetadata } from './types';
 
@@ -71,24 +63,16 @@ export const VERTICAL_NAMES: Record<VerticalEnum, string> = {
   agencia_digital: 'Agencia Digital', fotografo: 'Fotografo',
 };
 
-// All question data combined
+// All question data combined — only active verticals
 const ALL_QUESTIONS: Partial<Record<VerticalEnum, VerticalQuestion[]>> = {
-  ...saludQuestions,
-  ...gastronomiaQuestions,
-  ...hospedajeQuestions,
-  ...bellezaQuestions,
-  ...retailQuestions,
-  ...serviciosQuestions,
+  ...saludQuestions, // dental + other salud (dental is the only active one)
+  ...gastronomiaQuestions, // restaurante, taqueria, cafeteria, etc.
 };
 
-// All metadata combined
+// All metadata combined — only active verticals
 const ALL_METADATA: Partial<Record<VerticalEnum, VerticalMetadata>> = {
   ...saludMetadata,
   ...gastronomiaMetadata,
-  ...hospedajeMetadata,
-  ...bellezaMetadata,
-  ...retailMetadata,
-  ...serviciosMetadata,
 };
 
 // Get questions for a vertical

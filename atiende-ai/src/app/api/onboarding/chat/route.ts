@@ -96,43 +96,63 @@ export async function POST(request: Request) {
       uploadedContent,
     });
 
-    // ── 3. Merge captured fields (only valid keys, filtered by runChatAgent) ──
+    // ── 3. Handle waitlist (unsupported vertical) ──
+    if (agentResult.vertical === 'waitlist') {
+      logger.info('onboarding_chat_waitlist', {
+        userMessage,
+      });
+      return NextResponse.json({
+        vertical: 'waitlist',
+        capturedFields,
+        assistantMessages: agentResult.assistantMessages,
+        done: false,
+        clarificationOf: null,
+        totalRequired: 0,
+        capturedRequired: 0,
+        waitlist: true,
+      });
+    }
+
+    // After this point, safeVertical is guaranteed to NOT be 'waitlist'
+    // (the waitlist case returned early above).
+    const safeVertical = (agentResult.vertical ?? incomingVertical) as VerticalEnum | null;
+
+    // ── 4. Merge captured fields (only valid keys, filtered by runChatAgent) ──
     const mergedFields: Record<string, string> = {
       ...capturedFields,
       ...agentResult.updatedFields,
     };
 
-    // ── 4. Re-validate `done`: only trust if all required fields are present ──
-    const effectiveVertical = agentResult.vertical ?? incomingVertical;
+    // ── 5. Re-validate `done`: only trust if all required fields are present ──
     const doneFinal =
       agentResult.done &&
-      effectiveVertical !== null &&
-      allRequiredFilled(effectiveVertical, mergedFields);
+      safeVertical !== null &&
+      allRequiredFilled(safeVertical, mergedFields);
 
     // ── 4b. Inject industry insight on the turn where the vertical is newly
     // detected. The insight is prepended to the agent's own messages so the
     // user sees: [1] industry stat + value prop, [2] LLM's acknowledge,
     // [3] LLM's next question. Capped at 3 total bubbles.
     const verticalJustDetected =
-      incomingVertical === null && effectiveVertical !== null;
+      incomingVertical === null && safeVertical !== null;
     const finalAssistantMessages: string[] = verticalJustDetected
       ? [
-          getVerticalInsight(effectiveVertical),
+          getVerticalInsight(safeVertical),
           ...agentResult.assistantMessages,
         ].slice(0, 3)
       : agentResult.assistantMessages;
 
     // ── 5. Log telemetry — counts and cost only, never PII ──
     logger.info('onboarding_chat_turn', {
-      vertical: effectiveVertical,
+      vertical: safeVertical,
       model: agentResult.model,
       tokensIn: agentResult.tokensIn,
       tokensOut: agentResult.tokensOut,
       cost: agentResult.cost,
-      capturedRequired: effectiveVertical
-        ? countCapturedRequired(effectiveVertical, mergedFields)
+      capturedRequired: safeVertical
+        ? countCapturedRequired(safeVertical, mergedFields)
         : 0,
-      totalRequired: effectiveVertical ? countRequired(effectiveVertical) : 0,
+      totalRequired: safeVertical ? countRequired(safeVertical) : 0,
       fieldsAddedThisTurn: Object.keys(agentResult.updatedFields).length,
       clarificationOf: agentResult.clarificationOf,
       scrapeSucceeded: scrapedMarkdown !== undefined,
@@ -144,14 +164,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
-      vertical: effectiveVertical,
+      vertical: safeVertical,
       capturedFields: mergedFields,
       assistantMessages: finalAssistantMessages,
       done: doneFinal,
       clarificationOf: agentResult.clarificationOf,
-      totalRequired: effectiveVertical ? countRequired(effectiveVertical) : 0,
-      capturedRequired: effectiveVertical
-        ? countCapturedRequired(effectiveVertical, mergedFields)
+      totalRequired: safeVertical ? countRequired(safeVertical) : 0,
+      capturedRequired: safeVertical
+        ? countCapturedRequired(safeVertical, mergedFields)
         : 0,
       verticalJustDetected,
       scrape: maybeUrl

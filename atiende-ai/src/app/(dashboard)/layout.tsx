@@ -57,23 +57,15 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
 }
 
 function getModules(type: string, hasVoice: boolean) {
-  const base = ['dashboard','conversations','agents','knowledge','analytics','settings'];
-  const m: Record<string,string[]> = {
-    dental:[...base,'appointments'], medical:[...base,'appointments'],
-    nutritionist:[...base,'appointments'], psychologist:[...base,'appointments'],
-    dermatologist:[...base,'appointments'], gynecologist:[...base,'appointments'],
-    pediatrician:[...base,'appointments'], ophthalmologist:[...base,'appointments'],
-    restaurant:[...base,'orders'], taqueria:[...base,'orders'],
-    cafe:[...base,'orders'], hotel:[...base,'appointments'],
-    real_estate:[...base,'leads','appointments'], salon:[...base,'appointments'],
-    barbershop:[...base,'appointments'], spa:[...base,'appointments'],
-    gym:[...base,'appointments'], veterinary:[...base,'appointments'],
-    pharmacy:[...base], school:[...base,'leads'],
-    insurance:[...base,'leads','appointments'], mechanic:[...base,'appointments'],
-    accountant:[...base,'appointments','leads'], florist:[...base,'orders'],
-    optics:[...base,'appointments'], other:[...base,'appointments'],
+  // PIVOTE: solo 2 verticales activas
+  const base = ['dashboard', 'conversations', 'agents', 'knowledge', 'analytics', 'settings'];
+  const m: Record<string, string[]> = {
+    dental: [...base, 'appointments'],
+    restaurant: [...base, 'orders'],
+    taqueria: [...base, 'orders'],
+    cafe: [...base, 'orders'],
   };
-  const mods = m[type] || [...base,'appointments'];
+  const mods = m[type] || base;
   if (hasVoice && !mods.includes('calls')) mods.push('calls');
   return mods;
 }
