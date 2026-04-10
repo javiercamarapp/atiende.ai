@@ -14,6 +14,7 @@ import { logger } from '@/lib/logger';
 import { StructuredGenerationError } from '@/lib/llm/openrouter';
 
 export const runtime = 'nodejs';
+export const maxDuration = 30; // Vercel Pro allows up to 60s; hobby allows 10s
 
 const ChatRequestSchema = z.object({
   vertical: z
@@ -84,17 +85,54 @@ export async function POST(request: Request) {
     }
   }
 
-  // ── 2. Run the agent turn ──
-  try {
-    const agentResult = await runChatAgent({
+  // ── 2. Run the agent turn (with silent server-side retry) ──
+  // The user must NEVER see an error. If the model fails, retry up to 3 times
+  // with increasing delays. The user just sees a slightly slower response.
+  let agentResult: Awaited<ReturnType<typeof runChatAgent>> | null = null;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      agentResult = await runChatAgent({
+        vertical: incomingVertical,
+        capturedFields,
+        history,
+        userMessage,
+        scrapedMarkdown,
+        scrapeError,
+        uploadedContent,
+      });
+      break; // success
+    } catch (err) {
+      lastError = err;
+      logger.warn('onboarding_chat retry', {
+        attempt: attempt + 1,
+        error: (err as Error)?.message?.substring(0, 100),
+        vertical: incomingVertical,
+      });
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 1000));
+      }
+    }
+  }
+
+  if (!agentResult) {
+    logger.error('onboarding_chat all retries failed', lastError as Error, {
+      vertical: incomingVertical,
+    });
+    return NextResponse.json({
       vertical: incomingVertical,
       capturedFields,
-      history,
-      userMessage,
-      scrapedMarkdown,
-      scrapeError,
-      uploadedContent,
+      assistantMessages: [
+        'Tuve un problema procesando eso. ¿Me lo puedes repetir en una oración corta?',
+      ],
+      done: false,
+      clarificationOf: null,
+      totalRequired: 0,
+      capturedRequired: 0,
     });
+  }
+
+  {
 
     // ── 3. Handle waitlist (unsupported vertical) ──
     if (agentResult.vertical === 'waitlist') {
@@ -182,24 +220,5 @@ export async function POST(request: Request) {
           }
         : undefined,
     });
-  } catch (err) {
-    if (err instanceof StructuredGenerationError) {
-      logger.error('onboarding_chat agent failed', err, {
-        vertical: incomingVertical,
-      });
-      return NextResponse.json(
-        {
-          error: 'agent_failed',
-          assistantMessages: [
-            'Se me trabó un segundo, ¿puedes repetirme lo último en una sola oración?',
-          ],
-        },
-        { status: 500 },
-      );
-    }
-    logger.error('onboarding_chat unexpected error', err as Error, {
-      vertical: incomingVertical,
-    });
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
