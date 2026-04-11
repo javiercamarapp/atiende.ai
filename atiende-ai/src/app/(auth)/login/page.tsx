@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { HERO_VIDEO_URL } from '@/lib/supabase/storage';
 import { SignInPage } from '@/components/ui/sign-in';
 import { toast } from 'sonner';
 
@@ -76,7 +75,7 @@ export default function LoginPage() {
       }
       description="Inicia sesión y automatiza tu negocio con inteligencia artificial"
       heroImageSrc="https://images.unsplash.com/photo-1556761175-b413da4baf72?w=1200&q=80"
-      heroVideoSrc={HERO_VIDEO_URL}
+      heroVideoSrc="/hero.mp4"
       testimonials={testimonials}
       onSignIn={handleSignIn}
       onGoogleSignIn={handleGoogleSignIn}

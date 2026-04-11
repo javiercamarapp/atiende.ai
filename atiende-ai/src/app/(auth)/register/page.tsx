@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { HERO_VIDEO_URL } from '@/lib/supabase/storage';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -126,7 +125,7 @@ export default function RegisterPage() {
       <section className="hidden md:block flex-1 relative p-4">
         <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl overflow-hidden">
           <video
-            src={HERO_VIDEO_URL}
+            src="/hero.mp4"
             poster="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1200&q=80"
             autoPlay
             muted
