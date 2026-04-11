@@ -77,6 +77,7 @@ export function OnboardingChat() {
   const [capturedRequired, setCapturedRequired] = useState(0);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [showInput, setShowInput] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [typingDone, setTypingDone] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingTypingResolvers = useRef<Map<string, () => void>>(new Map());
@@ -102,7 +103,7 @@ export function OnboardingChat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [messages, isThinking, scrollToBottom]);
 
   // ── Message helpers ──
   const addAiMessage = useCallback((text: string): Promise<void> => {
@@ -255,6 +256,7 @@ export function OnboardingChat() {
         { role: 'user', content: userText },
       ];
 
+      setIsThinking(true);
       try {
         const res = await fetch('/api/onboarding/chat', {
           method: 'POST',
@@ -269,6 +271,7 @@ export function OnboardingChat() {
         });
 
         if (!res.ok) {
+          setIsThinking(false);
           const errBody = await res.json().catch(() => ({}));
           const fallbackList: string[] = Array.isArray(errBody.assistantMessages)
             ? errBody.assistantMessages
@@ -317,6 +320,7 @@ export function OnboardingChat() {
           done: data.done,
         });
 
+        setIsThinking(false);
         for (let i = 0; i < messagesToRender.length; i++) {
           if (i > 0) await new Promise((r) => setTimeout(r, 450));
           await addAiMessage(messagesToRender[i]);
@@ -330,6 +334,7 @@ export function OnboardingChat() {
           await handleGenerationComplete();
         }
       } catch (err) {
+        setIsThinking(false);
         console.error('[onboarding] processOneItem error:', err);
         await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
       }
@@ -492,6 +497,22 @@ export function OnboardingChat() {
               </div>
             </div>
           ))}
+
+          {/* Thinking indicator — shown while the onboarding AI is processing
+              a user turn (upload + chat API). Cleared as soon as the first
+              assistant message is added to the queue. */}
+          {isThinking && (
+            <div className="flex justify-start">
+              <div className="max-w-lg px-4 py-3 rounded-2xl text-sm bg-zinc-50 text-zinc-500 border border-zinc-100 rounded-bl-md inline-flex items-center gap-2">
+                <span>pensando</span>
+                <span className="inline-flex items-end gap-1">
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Generation loading — simple spinner while the API call runs.
               We call handleGenerationComplete directly from processOneItem
