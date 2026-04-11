@@ -13,6 +13,7 @@ interface SignInPageProps {
   title?: React.ReactNode;
   description?: React.ReactNode;
   heroImageSrc?: string;
+  heroVideoSrc?: string;
   testimonials?: Testimonial[];
   onSignIn?: (event: React.FormEvent<HTMLFormElement>) => void;
   onGoogleSignIn?: () => void;
@@ -41,6 +42,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
   title = <span className="font-light tracking-tighter">Bienvenido</span>,
   description = 'Accede a tu cuenta y automatiza tu negocio con AI',
   heroImageSrc,
+  heroVideoSrc,
   testimonials = [],
   onSignIn,
   onGoogleSignIn,
@@ -114,10 +116,24 @@ export const SignInPage: React.FC<SignInPageProps> = ({
         </div>
       </section>
 
-      {/* Right: hero image + testimonials */}
-      {heroImageSrc && (
+      {/* Right: hero image/video + testimonials */}
+      {(heroImageSrc || heroVideoSrc) && (
         <section className="hidden md:block flex-1 relative p-4">
-          <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
+          <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl overflow-hidden">
+            {heroVideoSrc ? (
+              <video
+                src={heroVideoSrc}
+                poster={heroImageSrc}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
+            )}
+          </div>
           {testimonials.length > 0 && (
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 px-8 w-full justify-center">
               <TestimonialCard testimonial={testimonials[0]} delay="animate-delay-1000" />
