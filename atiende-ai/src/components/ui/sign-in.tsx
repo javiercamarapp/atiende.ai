@@ -122,14 +122,17 @@ export const SignInPage: React.FC<SignInPageProps> = ({
           <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl overflow-hidden">
             {heroVideoSrc ? (
               <video
-                src={heroVideoSrc}
+                key={heroVideoSrc}
                 poster={heroImageSrc}
                 autoPlay
                 muted
                 loop
                 playsInline
+                preload="auto"
                 className="w-full h-full object-cover"
-              />
+              >
+                <source src={heroVideoSrc} type="video/mp4" />
+              </video>
             ) : (
               <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
             )}
