@@ -123,13 +123,12 @@ export const SignInPage: React.FC<SignInPageProps> = ({
             {heroVideoSrc ? (
               <video
                 key={heroVideoSrc}
-                poster={heroImageSrc}
                 autoPlay
                 muted
                 loop
                 playsInline
                 preload="auto"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover bg-zinc-900"
               >
                 <source src={heroVideoSrc} type="video/mp4" />
               </video>
