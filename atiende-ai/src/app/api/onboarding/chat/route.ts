@@ -6,6 +6,7 @@ import {
   allRequiredFilled,
   countCapturedRequired,
   countRequired,
+  getNextPendingRequiredQuestion,
 } from '@/lib/onboarding/vertical-schema-for-agent';
 import { ALL_VERTICALS } from '@/lib/verticals';
 import type { VerticalEnum } from '@/lib/verticals/types';
@@ -115,12 +116,39 @@ export async function POST(request: Request) {
     // [3] LLM's next question. Capped at 3 total bubbles.
     const verticalJustDetected =
       incomingVertical === null && effectiveVertical !== null;
-    const finalAssistantMessages: string[] = verticalJustDetected
+    let finalAssistantMessages: string[] = verticalJustDetected
       ? [
           getVerticalInsight(effectiveVertical),
           ...agentResult.assistantMessages,
         ].slice(0, 3)
       : agentResult.assistantMessages;
+
+    // ── 4c. Dead-end recovery. The agent prompt's most important rule says
+    // "never answer with just an acknowledgement — always include the next
+    // question in the same turn". When the LLM violates it (e.g. "Perfecto,
+    // anotado: Dr. Javier, Cirujano Dentista." with no follow-up), the user
+    // is stranded: the last bubble has no '?' so they have no idea what to
+    // type next. Detect that case and append the next pending required
+    // question from the schema directly. This makes progress deterministic
+    // even when the LLM misbehaves.
+    const lastMsg = finalAssistantMessages[finalAssistantMessages.length - 1] ?? '';
+    const hasQuestion = /[?¿]/.test(lastMsg);
+    if (!doneFinal && !hasQuestion && effectiveVertical) {
+      const next = getNextPendingRequiredQuestion(effectiveVertical, mergedFields);
+      if (next) {
+        finalAssistantMessages = [...finalAssistantMessages, next.text];
+        // Keep the cap at 3 bubbles per turn (trim oldest if we overflowed).
+        if (finalAssistantMessages.length > 3) {
+          finalAssistantMessages = finalAssistantMessages.slice(
+            finalAssistantMessages.length - 3,
+          );
+        }
+        logger.warn('onboarding_chat dead_end_recovery', {
+          vertical: effectiveVertical,
+          injectedFieldKey: next.key,
+        });
+      }
+    }
 
     // ── 5. Log telemetry — counts and cost only, never PII ──
     logger.info('onboarding_chat_turn', {

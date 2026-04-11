@@ -85,6 +85,28 @@ export function allRequiredFilled(
   return true;
 }
 
+/**
+ * Return the next required question that still has no captured value, or
+ * null if all required fields are already filled. Used for deterministic
+ * server-side recovery when the LLM violates the "always include the next
+ * question" prompt rule and leaves the user in a dead end.
+ */
+export function getNextPendingRequiredQuestion(
+  vertical: VerticalEnum,
+  captured: Record<string, string>,
+): { key: string; text: string } | null {
+  const questions = getVerticalQuestions(vertical);
+  for (const q of questions) {
+    if (!q.required) continue;
+    const key = `q${q.number}`;
+    const v = captured[key];
+    if (!v || v.trim().length === 0) {
+      return { key, text: q.text };
+    }
+  }
+  return null;
+}
+
 /** Return the set of valid `qN` keys for the vertical (used to reject spurious fields). */
 export function validKeysForVertical(vertical: VerticalEnum): Set<string> {
   const questions: VerticalQuestion[] = getVerticalQuestions(vertical);
