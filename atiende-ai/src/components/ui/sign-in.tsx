@@ -50,6 +50,8 @@ export const SignInPage: React.FC<SignInPageProps> = ({
   onCreateAccount,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoLoaded, setVideoLoaded] = useState(false);
 
   return (
     <div className="h-[100dvh] flex flex-col md:flex-row w-[100dvw]">
@@ -121,17 +123,49 @@ export const SignInPage: React.FC<SignInPageProps> = ({
         <section className="hidden md:block flex-1 relative p-4">
           <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl overflow-hidden">
             {heroVideoSrc ? (
-              <video
-                key={heroVideoSrc}
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-                className="w-full h-full object-cover bg-zinc-900"
-              >
-                <source src={heroVideoSrc} type="video/mp4" />
-              </video>
+              <>
+                <video
+                  key={heroVideoSrc}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  className="w-full h-full object-cover bg-zinc-900"
+                  onLoadedData={() => setVideoLoaded(true)}
+                  onError={(e) => {
+                    const v = e.currentTarget;
+                    const err = v.error;
+                    const codes: Record<number, string> = {
+                      1: 'MEDIA_ERR_ABORTED',
+                      2: 'MEDIA_ERR_NETWORK',
+                      3: 'MEDIA_ERR_DECODE',
+                      4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+                    };
+                    setVideoError(
+                      `code=${err?.code ?? '?'} (${codes[err?.code ?? 0] ?? 'unknown'}) msg=${err?.message ?? 'none'} src=${v.currentSrc}`,
+                    );
+                  }}
+                >
+                  <source src={heroVideoSrc} type="video/mp4" />
+                </video>
+                {/* Debug overlay: visible until the video reports loadedData.
+                    Helps diagnose why the video stays black in production. */}
+                {!videoLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none">
+                    <div className="bg-black/70 text-white text-xs font-mono rounded-lg px-4 py-3 max-w-full break-words">
+                      {videoError ? (
+                        <>
+                          <div className="font-semibold mb-1 text-red-300">video error</div>
+                          <div>{videoError}</div>
+                        </>
+                      ) : (
+                        <div>loading video… src={heroVideoSrc}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${heroImageSrc})` }} />
             )}
