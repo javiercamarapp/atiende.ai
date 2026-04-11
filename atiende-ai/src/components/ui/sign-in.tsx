@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 export interface Testimonial {
@@ -52,6 +52,29 @@ export const SignInPage: React.FC<SignInPageProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [fetchInfo, setFetchInfo] = useState<string>('checking fetch…');
+
+  // Diagnostic: probe the mp4 URL directly to see what the server returns.
+  useEffect(() => {
+    if (!heroVideoSrc) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(heroVideoSrc, { method: 'GET', cache: 'no-store' });
+        if (cancelled) return;
+        const ct = res.headers.get('content-type') || 'none';
+        const cl = res.headers.get('content-length') || '?';
+        const ar = res.headers.get('accept-ranges') || 'none';
+        setFetchInfo(`fetch: ${res.status} ct=${ct} len=${cl} ranges=${ar}`);
+      } catch (err) {
+        if (cancelled) return;
+        setFetchInfo(`fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [heroVideoSrc]);
 
   return (
     <div className="h-[100dvh] flex flex-col md:flex-row w-[100dvw]">
@@ -126,6 +149,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
               <>
                 <video
                   key={heroVideoSrc}
+                  src={heroVideoSrc}
                   autoPlay
                   muted
                   loop
@@ -143,17 +167,16 @@ export const SignInPage: React.FC<SignInPageProps> = ({
                       4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
                     };
                     setVideoError(
-                      `code=${err?.code ?? '?'} (${codes[err?.code ?? 0] ?? 'unknown'}) msg=${err?.message ?? 'none'} src=${v.currentSrc}`,
+                      `code=${err?.code ?? '?'} (${codes[err?.code ?? 0] ?? 'unknown'}) msg=${err?.message ?? 'none'} net=${v.networkState} ready=${v.readyState} src=${v.currentSrc}`,
                     );
                   }}
-                >
-                  <source src={heroVideoSrc} type="video/mp4" />
-                </video>
+                />
                 {/* Debug overlay: visible until the video reports loadedData.
                     Helps diagnose why the video stays black in production. */}
                 {!videoLoaded && (
                   <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none">
                     <div className="bg-black/70 text-white text-xs font-mono rounded-lg px-4 py-3 max-w-full break-words">
+                      <div className="mb-2 text-emerald-300">{fetchInfo}</div>
                       {videoError ? (
                         <>
                           <div className="font-semibold mb-1 text-red-300">video error</div>
