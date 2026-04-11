@@ -2,6 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
+// Build stamp surfaced in the diagnostic overlay so we can tell at a glance
+// whether the bundle served by the CDN contains the latest changes.
+const BUILD_TAG = 'diag-pr14-buildtag';
+
 export interface Testimonial {
   avatarSrc: string;
   name: string;
@@ -176,6 +180,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
                 {!videoLoaded && (
                   <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none">
                     <div className="bg-black/70 text-white text-xs font-mono rounded-lg px-4 py-3 max-w-full break-words">
+                      <div className="mb-1 text-amber-300">build={BUILD_TAG}</div>
                       <div className="mb-2 text-emerald-300">{fetchInfo}</div>
                       {videoError ? (
                         <>
