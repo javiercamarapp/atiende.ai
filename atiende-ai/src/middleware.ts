@@ -56,6 +56,11 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/webhook).*)',
+    // Skip Next internals, the webhook API, and any public static asset
+    // (anything with a common file extension). Without the extension group,
+    // requests for /public files like /hero.mp4 get intercepted by the auth
+    // middleware and redirected to /login, so the browser receives HTML
+    // instead of the binary file.
+    '/((?!_next/static|_next/image|favicon.ico|api/webhook|.*\\.(?:mp4|webm|mov|m4v|ogg|ogv|png|jpg|jpeg|gif|webp|svg|ico|mp3|wav|pdf|woff|woff2|ttf|eot|otf|txt|xml)).*)',
   ],
 };
