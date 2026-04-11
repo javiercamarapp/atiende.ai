@@ -123,7 +123,19 @@ export default function RegisterPage() {
 
       {/* Right: hero */}
       <section className="hidden md:block flex-1 relative p-4">
-        <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1200&q=80)' }} />
+        <div className="animate-slide-right animate-delay-300 absolute inset-4 rounded-3xl overflow-hidden">
+          <video
+            poster="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=1200&q=80"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            className="w-full h-full object-cover"
+          >
+            <source src="/hero.mp4" type="video/mp4" />
+          </video>
+        </div>
       </section>
     </div>
   );
