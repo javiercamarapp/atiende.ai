@@ -11,6 +11,7 @@ import {
   type OrchestratorContext,
 } from '@/lib/llm/orchestrator';
 import { getToolSchemas } from '@/lib/llm/tool-executor';
+import { selectAgentForTenant } from '@/lib/llm/agents';
 import { getConversationContext } from '@/lib/intelligence/conversation-memory';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -626,30 +627,36 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   //    inyecta en el system prompt — los messages son SOLO la conversación.
   const history = await getConversationContext(conversationId, 20);
 
-  // 3. Determinar sub-agente activo. Phase 1: siempre el agente "base"
-  //    sin tools registradas. Phase 2 introducirá routing por business_type
-  //    o por estado de la conversación.
-  const agentName = 'base';
-  const tools = getToolSchemas(); // todas las registradas (Fase 1 = ninguna)
+  // 3. Determinar sub-agente activo. Phase 2: selectAgentForTenant() devuelve
+  //    appointmentsAgent para todos los tenants con tool_calling=true. El
+  //    agente trae su propio system prompt + lista concreta de toolNames que
+  //    deben estar registradas en el toolRegistry global.
+  const agent = selectAgentForTenant(tenant as unknown as Record<string, unknown>);
+  const agentName = agent.name;
+  const tools = getToolSchemas(agent.toolNames);
 
-  // 4. Construir system prompt. Reaprovechamos `chat_system_prompt` del
-  //    tenant + el RAG context ya pre-construido. Esto garantiza que la
-  //    rama de tool calling tenga al menos la misma información que la
-  //    rama clásica.
-  const tenantPrompt = (tenant.chat_system_prompt as string | undefined)
-    || `Eres el asistente virtual de ${tenant.name}. Hablas español mexicano natural y profesional. Usas "usted" siempre.`;
-  const systemPrompt = [
-    tenantPrompt,
-    '',
-    '═══ CONTEXTO DEL NEGOCIO (usa SOLO esta información para responder) ═══',
+  // 4. Construir system prompt vía el builder del agente. Le pasamos el
+  //    contexto del tenant (nombre, business_type, timezone, RAG context) y
+  //    además el ISO date de hoy en la zona horaria del tenant para que el
+  //    LLM sepa interpretar "mañana", "lunes", etc. correctamente.
+  const tenantTimezone = (tenant.timezone as string) || 'America/Merida';
+  const todayLocal = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tenantTimezone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()); // → "2026-04-15"
+  const todayWeekdayEs = new Intl.DateTimeFormat('es-MX', {
+    timeZone: tenantTimezone, weekday: 'long',
+  }).format(new Date()); // → "lunes"
+
+  const systemPrompt = agent.buildSystemPrompt({
+    name: (tenant.name as string) || 'el negocio',
+    businessType: (tenant.business_type as string) || 'other',
+    timezone: tenantTimezone,
+    city: tenant.city as string | undefined,
+    state: tenant.state as string | undefined,
     ragContext,
-    '',
-    '═══ REGLAS ═══',
-    '- Responde en MAXIMO 3-4 oraciones',
-    '- Si no tienes info: "Permítame verificar con el equipo"',
-    '- NUNCA inventes datos, precios, horarios',
-    '- Español mexicano, "usted" siempre',
-  ].join('\n');
+    todayLocal,
+    todayWeekdayEs,
+  });
 
   // 5. Componer messages para el orquestador: historial + último mensaje
   const orchestratorMessages = [
