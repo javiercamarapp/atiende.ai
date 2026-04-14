@@ -44,18 +44,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         continue;
       }
 
-      const clusters = await clusterSimilarQuestions(
+      const { clusters, stats } = await clusterSimilarQuestions(
         questions.map((q) => q.content),
         { tenantId },
       );
       const suggestions = await generateFAQSuggestions(clusters);
 
-      // Las sugerencias viven en cron_runs.details para que Javier las revise.
+      // Warning si >50% de embeddings fallaron (problema con OPENROUTER_API_KEY)
+      if (stats.fallback_rate > 0.5) {
+        console.warn(
+          `[cron/faq-gaps] ⚠️ Embedding fallback rate ${Math.round(stats.fallback_rate * 100)}% para tenant ${tenantId}. Verificar OPENROUTER_API_KEY.`,
+        );
+      }
+
       summaries.push({
         tenant_id: tenantId,
         questions: questions.length,
         clusters: clusters.length,
         suggestions,
+        embedding_stats: stats,
       });
       processed++;
     } catch (err) {

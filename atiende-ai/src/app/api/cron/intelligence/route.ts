@@ -66,6 +66,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const succeeded = results.filter((r) => !r.error).length;
   const failed = results.length - succeeded;
 
+  if (failed > 0) {
+    const { alertOnCronFailure } = await import('@/lib/cron/alert-on-failure');
+    await alertOnCronFailure(
+      'intelligence',
+      results.length,
+      failed,
+      results.find((r) => r.error)?.error,
+    ).catch(() => {});
+  }
+
   await logCronRun({
     jobName: 'intelligence',
     startedAt: new Date(start),
