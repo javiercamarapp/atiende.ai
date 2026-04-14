@@ -1,4 +1,4 @@
-import type { VerticalEnum, VerticalQuestion } from '../types';
+import type { VerticalEnum, VerticalQuestion } from '@/lib/verticals/types';
 
 export const serviciosQuestions: Partial<Record<VerticalEnum, VerticalQuestion[]>> = {
   // Sprint 1 stubs — full questions coming in future sprints

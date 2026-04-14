@@ -1,4 +1,4 @@
-import type { VerticalEnum, VerticalQuestion } from '../types';
+import type { VerticalEnum, VerticalQuestion } from '@/lib/verticals/types';
 
 export const hospedajeQuestions: Partial<Record<VerticalEnum, VerticalQuestion[]>> = {
   hotel: [
