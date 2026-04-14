@@ -12,6 +12,13 @@ import {
 } from '@/lib/llm/orchestrator';
 import { getToolSchemas } from '@/lib/llm/tool-executor';
 import { getConversationContext } from '@/lib/intelligence/conversation-memory';
+import {
+  buildTenantContext,
+  getSystemPrompt,
+  routeToAgent,
+  handleFAQ,
+} from '@/lib/agents';
+import { AGENT_REGISTRY } from '@/lib/agents/registry';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool calling pipeline (Fase 1) — feature flag
@@ -618,44 +625,110 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     intent,
   } = args;
 
-  // 1. Typing indicator (fire-and-forget) — UX equivalente a la rama clásica
+  // 1. Typing indicator (fire-and-forget)
   sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
 
-  // 2. Cargar historial completo de la conversación (hasta 20 turnos) en el
-  //    formato que el orquestador espera (rol/contenido). El RAG context se
-  //    inyecta en el system prompt — los messages son SOLO la conversación.
+  // 2. Construir tenantCtx (Mexico TZ + fechas + servicios)
+  const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
+
+  // 3. FAST PATH — antes de tocar el LLM, intenta resolver con regex
+  const fastRoute = routeToAgent(content, tenantCtx);
+
+  // 3a. URGENCIA: respuesta inmediata + escalación
+  if (fastRoute === 'urgent') {
+    const emergencyContact =
+      tenantCtx.emergencyPhone || (tenant.phone as string | undefined) || '';
+    const urgentMsg = emergencyContact
+      ? `Entiendo que es urgente. Por favor comuníquese inmediatamente al ${emergencyContact}. Estamos para ayudarle.`
+      : `Entiendo que es urgente. Vamos a contactarle de inmediato. Si necesita ayuda médica, marque al 911.`;
+    await sendTextMessage(phoneNumberId, senderPhone, urgentMsg);
+    await supabaseAdmin.from('messages').insert({
+      conversation_id: conversationId,
+      tenant_id: tenant.id,
+      direction: 'outbound',
+      sender_type: 'bot',
+      content: urgentMsg,
+      message_type: 'text',
+      intent: 'orchestrator.urgent',
+    });
+    // Marcar conversación para handoff humano
+    await supabaseAdmin
+      .from('conversations')
+      .update({
+        status: 'human_handoff',
+        tags: ['urgent', 'fast_path'],
+        last_message_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+    // Notify owner (best effort)
+    try {
+      const { notifyOwner } = await import('@/lib/actions/notifications');
+      await notifyOwner({
+        tenantId: tenant.id,
+        event: 'emergency',
+        details: `Urgencia detectada por fast path:\n${senderPhone}\n"${content.slice(0, 200)}"`,
+      });
+    } catch {
+      /* best effort */
+    }
+    return;
+  }
+
+  // 3b. FAQ: regex pattern → respuesta directa desde Supabase, sin LLM
+  if (fastRoute === 'faq') {
+    const faqAnswer = await handleFAQ(content, tenant.id);
+    if (faqAnswer) {
+      await sendTextMessage(phoneNumberId, senderPhone, faqAnswer);
+      await supabaseAdmin.from('messages').insert({
+        conversation_id: conversationId,
+        tenant_id: tenant.id,
+        direction: 'outbound',
+        sender_type: 'bot',
+        content: faqAnswer,
+        message_type: 'text',
+        intent: 'orchestrator.faq_fast_path',
+      });
+      await runPostResponseEffects(
+        tenant,
+        phoneNumberId,
+        senderPhone,
+        conversationId,
+        contactId,
+        contactName,
+        customerName,
+        intent,
+        content,
+      );
+      await supabaseAdmin
+        .from('conversations')
+        .update({
+          last_message_at: new Date().toISOString(),
+          customer_name: contactName || customerName,
+        })
+        .eq('id', conversationId);
+      return;
+    }
+    // FAQ regex matchó pero handler retornó null (data missing) → cae al LLM
+  }
+
+  // 4. Cargar historial conversacional
   const history = await getConversationContext(conversationId, 20);
 
-  // 3. Determinar sub-agente activo. Phase 2 (en progreso): selectAgentForTenant
-  //    se está reescribiendo en `src/lib/agents/`. Mientras tanto, el orquestador
-  //    corre con tools vacías y el system prompt mínimo del tenant. Esto mantiene
-  //    el doble gate (USE_TOOL_CALLING + features.tool_calling) sin romper el
-  //    build cuando los agentes nuevos están a medio implementar.
-  const agentName = 'base';
-  const tools = getToolSchemas(); // vacío hasta que Phase 2 registre tools
-
-  // 4. System prompt mínimo. Cuando Phase 2 termine, esto será reemplazado por
-  //    `getSystemPrompt(agentName, tenantCtx)` desde `src/lib/agents/index.ts`.
-  const tenantPrompt = (tenant.chat_system_prompt as string | undefined)
-    || `Eres el asistente virtual de ${tenant.name}. Hablas español mexicano natural y profesional. Usas "usted" siempre.`;
-  const systemPrompt = [
-    tenantPrompt,
-    '',
-    '═══ CONTEXTO DEL NEGOCIO (usa SOLO esta información para responder) ═══',
-    ragContext,
-    '',
-    '═══ REGLAS ═══',
-    '- Responde en MAXIMO 3-4 oraciones',
-    '- Si no tienes info: "Permítame verificar con el equipo"',
-    '- NUNCA inventes datos, precios, horarios',
-    '- Español mexicano, "usted" siempre',
-  ].join('\n');
-
-  // 5. Componer messages para el orquestador: historial + último mensaje
+  // 5. Componer messages: history + último mensaje del usuario
   const orchestratorMessages = [
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content },
   ];
+
+  // 6. AGENTE: Phase 2.D usa AGENDA agent para todos los tenants con
+  //    tool_calling activado. Phase 3 ramificará por business_type / intent.
+  //    El orquestador delega directamente a AGENDA — sin paso intermedio
+  //    de "decidir agente" (eso se inferiría con un LLM extra que no aporta
+  //    valor en MVP de salud/estética).
+  const agentName: 'agenda' = 'agenda';
+  const agentConfig = AGENT_REGISTRY[agentName];
+  const tools = getToolSchemas(agentConfig.tools);
+  const systemPrompt = getSystemPrompt(agentName, tenantCtx);
 
   const orchestratorCtx: OrchestratorContext = {
     tenantId: tenant.id,

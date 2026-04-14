@@ -116,6 +116,29 @@ vi.mock('@/lib/supabase/admin', () => ({
 vi.mock('@/lib/llm/openrouter', () => ({
   generateResponse: mockGenerateResponse,
   selectModel: mockSelectModel,
+  // MODELS const referenced transitively via @/lib/agents/registry
+  // (Phase 2.D wired processor.handleWithOrchestrator to the new agent
+  // structure). The mock ONLY needs the keys the registry reads at module
+  // load time — no behavior change to the existing test assertions.
+  MODELS: {
+    CLASSIFIER: 'mock/classifier',
+    STANDARD: 'mock/standard',
+    BALANCED: 'mock/balanced',
+    PREMIUM: 'mock/premium',
+    VOICE: 'mock/voice',
+    GENERATOR: 'mock/generator',
+    ONBOARDING_AGENT: 'mock/onboarding',
+    ONBOARDING_AGENT_FALLBACK: 'mock/onboarding-fallback',
+    ORCHESTRATOR: 'mock/orchestrator',
+    ORCHESTRATOR_FALLBACK: 'mock/orchestrator-fallback',
+  },
+  // Other helpers from openrouter that may be transitively required
+  generateStructured: vi.fn(),
+  generateWithTools: vi.fn(),
+  calculateCost: vi.fn(() => 0),
+  getOpenRouter: vi.fn(),
+  StructuredGenerationError: class extends Error {},
+  LoopGuardError: class extends Error {},
 }));
 
 vi.mock('@/lib/llm/classifier', () => ({
