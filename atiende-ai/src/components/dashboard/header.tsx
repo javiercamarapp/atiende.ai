@@ -58,44 +58,66 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
 
   const percent = usage !== null ? Math.min((usage / limit) * 100, 100) : 0;
   const getColor = () => {
-    if (percent > 90) return 'text-red-600';
-    if (percent >= 70) return 'text-yellow-600';
-    return 'text-green-600';
+    if (percent > 90) return 'text-red-400';
+    if (percent >= 70) return 'text-amber-300';
+    return 'text-emerald-300';
   };
   const getProgressClass = () => {
-    if (percent > 90) return '[&>div]:bg-red-500';
-    if (percent >= 70) return '[&>div]:bg-yellow-500';
-    return '[&>div]:bg-green-500';
+    if (percent > 90) return '[&>div]:bg-red-400';
+    if (percent >= 70) return '[&>div]:bg-amber-300';
+    return '[&>div]:bg-emerald-300';
   };
 
   return (
-    <header className="h-14 bg-white border-b flex items-center justify-between px-6 pl-14 md:pl-6">
+    <header className="h-14 glass-panel border-b flex items-center justify-between px-6 pl-14 md:pl-6">
       <div>
-        <div className="text-sm text-zinc-500 flex items-center">
-          <Link href="/home" className="hover:text-zinc-700 transition-colors">Dashboard</Link>
+        <div className="text-sm flex items-center">
+          <Link
+            href="/home"
+            className="text-white/55 hover:text-white/90 transition-colors"
+          >
+            Dashboard
+          </Link>
           {!isHome && (
             <>
-              <ChevronRight className="w-3 h-3 inline mx-1" />
-              <span className="text-zinc-900 font-medium">{currentPage}</span>
+              <ChevronRight className="w-3 h-3 inline mx-1.5 text-white/30" />
+              <span className="text-white font-medium">{currentPage}</span>
             </>
           )}
         </div>
-        <p className="text-xs text-gray-400">
-          {tenant.status === 'active' ? 'Agente activo' : tenant.status}
+        <p className="text-[11px] text-white/40 mt-0.5">
+          {tenant.status === 'active' ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Agente activo
+            </span>
+          ) : (
+            tenant.status
+          )}
         </p>
       </div>
       <div className="flex items-center gap-4">
         {usage !== null && (
-          <div className="flex items-center gap-2">
-            <Progress value={percent} className={`w-24 h-2 ${getProgressClass()}`} />
-            <span className={`text-xs font-medium ${getColor()}`}>
-              {usage}/{limit === 999999 ? '∞' : limit} mensajes
+          <div className="hidden sm:flex items-center gap-2">
+            <Progress
+              value={percent}
+              className={`w-24 h-1.5 bg-white/10 ${getProgressClass()}`}
+            />
+            <span className={`text-xs font-medium tabular-nums ${getColor()}`}>
+              {usage}/{limit === 999999 ? '∞' : limit}
             </span>
           </div>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <NotificationCenter tenantId={tenant.id} />
-          <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="w-4 h-4" /></Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            className="text-white/60 hover:text-white hover:bg-white/10"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </header>
