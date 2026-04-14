@@ -58,22 +58,28 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
 
 function getModules(type: string, hasVoice: boolean) {
   const base = ['dashboard','conversations','agents','knowledge','analytics','settings'];
+  // Verticales de salud + belleza + servicios recurrentes ven "contacts" (paciente/cliente health scores)
+  const health = ['dental','medical','nutritionist','psychologist','dermatologist',
+    'gynecologist','pediatrician','ophthalmologist','veterinary','optics',
+    'salon','barbershop','spa','gym'];
+  const withContacts = health.includes(type);
   const m: Record<string,string[]> = {
-    dental:[...base,'appointments'], medical:[...base,'appointments'],
-    nutritionist:[...base,'appointments'], psychologist:[...base,'appointments'],
-    dermatologist:[...base,'appointments'], gynecologist:[...base,'appointments'],
-    pediatrician:[...base,'appointments'], ophthalmologist:[...base,'appointments'],
+    dental:[...base,'appointments','contacts'], medical:[...base,'appointments','contacts'],
+    nutritionist:[...base,'appointments','contacts'], psychologist:[...base,'appointments','contacts'],
+    dermatologist:[...base,'appointments','contacts'], gynecologist:[...base,'appointments','contacts'],
+    pediatrician:[...base,'appointments','contacts'], ophthalmologist:[...base,'appointments','contacts'],
     restaurant:[...base,'orders','appointments'], taqueria:[...base,'orders'],
     cafe:[...base,'orders'], hotel:[...base,'appointments'],
-    real_estate:[...base,'leads','appointments'], salon:[...base,'appointments'],
-    barbershop:[...base,'appointments'], spa:[...base,'appointments'],
-    gym:[...base,'appointments'], veterinary:[...base,'appointments'],
+    real_estate:[...base,'leads','appointments'], salon:[...base,'appointments','contacts'],
+    barbershop:[...base,'appointments','contacts'], spa:[...base,'appointments','contacts'],
+    gym:[...base,'appointments','contacts'], veterinary:[...base,'appointments','contacts'],
     pharmacy:[...base], school:[...base,'leads'],
     insurance:[...base,'leads','appointments'], mechanic:[...base,'appointments'],
     accountant:[...base,'appointments','leads'], florist:[...base,'orders'],
-    optics:[...base,'appointments'], other:[...base,'appointments'],
+    optics:[...base,'appointments','contacts'], other:[...base,'appointments'],
   };
   const mods = m[type] || [...base,'appointments'];
   if (hasVoice && !mods.includes('calls')) mods.push('calls');
+  if (withContacts && !mods.includes('contacts')) mods.push('contacts');
   return mods;
 }
