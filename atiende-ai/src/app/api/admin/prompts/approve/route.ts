@@ -1,13 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/admin/prompts/approve
-// Aprueba un prompt de la queue: UPDATE status + reemplaza tenant_prompts.
-// Verifica role=admin en el JWT (app_metadata).
+// POST /api/admin/prompts/approve  { id }
+// Aprueba y DESPLIEGA un prompt de la approval queue.
+// Delega en applyApprovedPrompt() del pipeline de fine-tuning.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerSupabase } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { applyApprovedPrompt } from '@/lib/agents/internal/prompt-fine-tuning';
 
 const ADMIN_EMAILS = ['javier@atiende.ai', 'admin@atiende.ai'];
 const Body = z.object({ id: z.string().uuid() });
@@ -34,53 +34,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 1. Leer la entrada
-  const { data: queueRow, error: readErr } = await supabaseAdmin
-    .from('prompt_approval_queue')
-    .select('id, tenant_id, agent_name, proposed_prompt, status')
-    .eq('id', body.id)
-    .single();
+  const result = await applyApprovedPrompt(body.id);
 
-  if (readErr || !queueRow) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (!result.applied) {
+    const status = result.error === 'not_found' ? 404 : result.error === 'already_rejected' ? 409 : 500;
+    return NextResponse.json({ error: result.error || 'apply_failed' }, { status });
   }
 
-  if (queueRow.status !== 'pending_review') {
-    return NextResponse.json({ error: 'already_processed', status: queueRow.status }, { status: 409 });
-  }
-
-  // 2. UPDATE tenant_prompts (UPSERT) con el proposed_prompt
-  const { error: upsertErr } = await supabaseAdmin
-    .from('tenant_prompts')
-    .upsert(
-      {
-        tenant_id: queueRow.tenant_id,
-        agent_name: queueRow.agent_name,
-        prompt_text: queueRow.proposed_prompt,
-        model_used: 'fine-tuning',
-        is_active: true,
-        generated_at: new Date().toISOString(),
-      },
-      { onConflict: 'tenant_id,agent_name' },
-    );
-
-  if (upsertErr) {
-    return NextResponse.json({ error: 'upsert_failed', message: upsertErr.message }, { status: 500 });
-  }
-
-  // 3. UPDATE queue status
-  const { error: statusErr } = await supabaseAdmin
-    .from('prompt_approval_queue')
-    .update({
-      status: 'deployed',
-      reviewed_at: new Date().toISOString(),
-      deployed_at: new Date().toISOString(),
-    })
-    .eq('id', body.id);
-
-  if (statusErr) {
-    return NextResponse.json({ error: 'status_update_failed', message: statusErr.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ approved: true, id: body.id });
+  return NextResponse.json({
+    approved: true,
+    deployed: true,
+    id: body.id,
+    tenant_id: result.tenant_id,
+    agent_name: result.agent_name,
+  });
 }
