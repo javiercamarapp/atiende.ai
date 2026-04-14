@@ -71,6 +71,10 @@ function makeChainable(terminalValue: () => any) {
   chain.order = vi.fn().mockReturnValue({ limit: vi.fn().mockImplementation(() => messagesHistory) });
   chain.limit = vi.fn().mockReturnValue({ data: [] });
   chain.single = vi.fn().mockImplementation(() => terminalValue());
+  // Added for the wa_message_id idempotency check in handleSingleMessage —
+  // the dedup query ends with .maybeSingle(). Returning { data: null }
+  // means "not seen before" so the test flow proceeds as before.
+  chain.maybeSingle = vi.fn().mockReturnValue({ data: null });
   chain.insert = vi.fn().mockReturnValue({
     select: vi.fn(() => ({ single: vi.fn(() => ({ data: null })) })),
   });

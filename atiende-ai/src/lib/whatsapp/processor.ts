@@ -313,6 +313,23 @@ async function handleSingleMessage(
   const phoneNumberId = metadata.phone_number_id;
   const messageId = msg.id;
 
+  // 0. Idempotency check — Meta reintenta webhooks en timeouts (<5s). Sin
+  //    este chequeo procesamos el mismo mensaje dos veces: 2x LLM calls,
+  //    2x outbound replies al cliente, y (para ORDER_NEW) 2x órdenes
+  //    insertadas. Validamos contra wa_message_id que Meta garantiza único
+  //    por mensaje inbound.
+  if (messageId) {
+    const { data: existing } = await supabaseAdmin
+      .from('messages')
+      .select('id')
+      .eq('wa_message_id', messageId)
+      .maybeSingle();
+    if (existing) {
+      // Already processed — silent skip (don't log as error).
+      return;
+    }
+  }
+
   // 1. Identify tenant
   const { data: tenant } = await supabaseAdmin
     .from('tenants')
