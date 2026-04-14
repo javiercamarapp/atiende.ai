@@ -21,30 +21,51 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   try {
-    // Verify Meta/WhatsApp signature using WA_APP_SECRET
+    // Verify Meta/WhatsApp signature using WA_APP_SECRET — MANDATORY.
+    // If the env var is not configured, reject ALL webhooks with 500 so a
+    // misconfigured deployment can't be used as an unauthenticated entry
+    // point to the message processor.
+    if (!process.env.WA_APP_SECRET) {
+      console.error('[whatsapp-webhook] WA_APP_SECRET not configured — rejecting all webhooks');
+      logWebhook({
+        provider: 'whatsapp',
+        eventType: 'config_error',
+        statusCode: 500,
+        error: 'WA_APP_SECRET not configured',
+        durationMs: Date.now() - startTime,
+      });
+      return new NextResponse('Server misconfiguration', { status: 500 });
+    }
+
     const signature = req.headers.get('x-hub-signature-256');
     const rawBody = await req.text();
 
-    if (process.env.WA_APP_SECRET) {
-      if (!signature) {
-        console.error('Missing x-hub-signature-256 header');
-        logWebhook({ provider: 'whatsapp', eventType: 'auth_failed', statusCode: 401, error: 'Missing signature header', durationMs: Date.now() - startTime });
-        return new NextResponse('Unauthorized', { status: 401 });
-      }
+    if (!signature) {
+      console.error('Missing x-hub-signature-256 header');
+      logWebhook({ provider: 'whatsapp', eventType: 'auth_failed', statusCode: 401, error: 'Missing signature header', durationMs: Date.now() - startTime });
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
 
-      const expectedSig = 'sha256=' + crypto
-        .createHmac('sha256', process.env.WA_APP_SECRET)
-        .update(rawBody)
-        .digest('hex');
+    const expectedSig = 'sha256=' + crypto
+      .createHmac('sha256', process.env.WA_APP_SECRET)
+      .update(rawBody)
+      .digest('hex');
 
-      if (!crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSig)
-      )) {
-        console.error('Invalid webhook signature');
-        logWebhook({ provider: 'whatsapp', eventType: 'auth_failed', statusCode: 401, error: 'Invalid signature', durationMs: Date.now() - startTime });
-        return new NextResponse('Unauthorized', { status: 401 });
+    // Length mismatch = guaranteed invalid; timingSafeEqual throws otherwise.
+    const sigBuf = Buffer.from(signature);
+    const expectedBuf = Buffer.from(expectedSig);
+    let valid = false;
+    if (sigBuf.length === expectedBuf.length) {
+      try {
+        valid = crypto.timingSafeEqual(sigBuf, expectedBuf);
+      } catch {
+        valid = false;
       }
+    }
+    if (!valid) {
+      console.error('Invalid webhook signature');
+      logWebhook({ provider: 'whatsapp', eventType: 'auth_failed', statusCode: 401, error: 'Invalid signature', durationMs: Date.now() - startTime });
+      return new NextResponse('Unauthorized', { status: 401 });
     }
 
     const body = JSON.parse(rawBody);
