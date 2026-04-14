@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, MessageSquare, Calendar, ShoppingBag, Users, Phone, Bot,
-  BookOpen, BarChart3, Settings, TrendingUp, Menu, Shield,
+  BookOpen, BarChart3, Settings, TrendingUp, Menu, Shield, UserCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -13,12 +13,12 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, conversations: MessageSquare, appointments: Calendar,
-  orders: ShoppingBag, leads: Users, calls: Phone, agents: Bot,
+  contacts: UserCircle2, orders: ShoppingBag, leads: Users, calls: Phone, agents: Bot,
   knowledge: BookOpen, analytics: BarChart3, insurance: Shield, settings: Settings,
 };
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard', conversations: 'Conversaciones', appointments: 'Citas',
-  orders: 'Pedidos', leads: 'Leads', calls: 'Llamadas', agents: 'Agents',
+  contacts: 'Pacientes', orders: 'Pedidos', leads: 'Leads', calls: 'Llamadas', agents: 'Agents',
   knowledge: 'Conocimiento', analytics: 'Analytics', insurance: 'Seguros', settings: 'Ajustes',
 };
 

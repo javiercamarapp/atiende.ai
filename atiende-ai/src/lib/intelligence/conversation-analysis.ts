@@ -204,6 +204,16 @@ export async function detectUnsatisfiedPatient(
       maxTokens: 200,
     });
 
+    // Persist flag to DB so dashboard alerts pueden filtrar
+    try {
+      await supabaseAdmin
+        .from('conversations')
+        .update({ unsatisfied: r.data.unsatisfied })
+        .eq('id', conversationId);
+    } catch {
+      /* best effort — columna puede no existir si migración no aplicada */
+    }
+
     if (r.data.unsatisfied && r.data.urgency !== 'low') {
       try {
         const { notifyOwner } = await import('@/lib/actions/notifications');
