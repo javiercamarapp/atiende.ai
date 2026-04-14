@@ -49,6 +49,7 @@ export const VERTICAL_CATEGORY: Record<VerticalEnum, VerticalCategory> = {
   contable_legal: 'SERVICIOS_PROFESIONALES', seguros: 'SERVICIOS_PROFESIONALES',
   taller_mecanico: 'SERVICIOS_PROFESIONALES', escuela: 'SERVICIOS_PROFESIONALES',
   agencia_digital: 'SERVICIOS_PROFESIONALES', fotografo: 'SERVICIOS_PROFESIONALES',
+  condominio: 'SERVICIOS_PROFESIONALES',
 };
 
 // Vertical display names
@@ -69,6 +70,7 @@ export const VERTICAL_NAMES: Record<VerticalEnum, string> = {
   contable_legal: 'Contable / Legal', seguros: 'Agente de Seguros',
   taller_mecanico: 'Taller Mecanico', escuela: 'Escuela Privada',
   agencia_digital: 'Agencia Digital', fotografo: 'Fotografo',
+  condominio: 'Administracion de Condominios',
 };
 
 // All question data combined
