@@ -8,7 +8,11 @@ export type AgentName =
   | 'no-show'
   | 'faq'
   | 'post-consulta'
+  | 'encuesta'
+  | 'medicamento'
+  | 'intake'
   | 'retencion'
+  | 'agenda-gap'
   | 'triaje'
   | 'cobranza'
   | 'reputacion';

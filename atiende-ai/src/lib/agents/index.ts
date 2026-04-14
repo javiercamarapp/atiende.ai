@@ -12,12 +12,20 @@
 // Side effects: registran tools en el toolRegistry global.
 import './agenda';
 import './no-show';
+import './post-consulta';
+import './encuesta';
+import './medicamento';
+import './intake';
 
 import type { AgentName, TenantContext, FastRoute } from './types';
 import { AGENT_REGISTRY } from './registry';
 import { getOrchestratorPrompt } from './orchestrator-prompt';
 import { getAgendaPrompt } from './agenda/prompt';
 import { getNoShowPrompt } from './no-show/prompt';
+import { getPostConsultaPrompt } from './post-consulta/prompt';
+import { getEncuestaPrompt } from './encuesta/prompt';
+import { getMedicamentoPrompt } from './medicamento/prompt';
+import { getIntakePrompt } from './intake/prompt';
 
 export type { AgentName, TenantContext, FastRoute, AgentConfig } from './types';
 export { AGENT_REGISTRY } from './registry';
@@ -97,16 +105,20 @@ export function buildTenantContext(tenant: Record<string, unknown>): TenantConte
 export function getSystemPrompt(agentName: AgentName, ctx: TenantContext): string {
   switch (agentName) {
     case 'orchestrator': return getOrchestratorPrompt(ctx);
-    case 'agenda': return getAgendaPrompt(ctx);
-    case 'no-show': return getNoShowPrompt(ctx);
+    case 'agenda':       return getAgendaPrompt(ctx);
+    case 'no-show':      return getNoShowPrompt(ctx);
+    case 'post-consulta': return getPostConsultaPrompt(ctx);
+    case 'encuesta':     return getEncuestaPrompt(ctx);
+    case 'medicamento':  return getMedicamentoPrompt(ctx);
+    case 'intake':       return getIntakePrompt(ctx);
     case 'faq':
       return '(FAQ no usa LLM — los handlers son funciones directas en src/lib/agents/faq/tools.ts)';
-    case 'post-consulta':
     case 'retencion':
+    case 'agenda-gap':
     case 'triaje':
     case 'cobranza':
     case 'reputacion':
-      return `[Placeholder Phase 3] Agente ${agentName} aún no implementado.`;
+      return `[Placeholder Phase 3.B.2/C] Agente ${agentName} aún no implementado.`;
     default: {
       const _exhaustive: never = agentName;
       return _exhaustive;
