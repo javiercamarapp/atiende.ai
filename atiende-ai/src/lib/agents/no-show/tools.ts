@@ -65,10 +65,12 @@ registerTool('get_appointments_tomorrow', {
 
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
-    // Ventana del día en TZ del tenant → rango UTC
-    const startLocal = new Date(`${args.date}T00:00:00`);
-    const tzOffsetMs = new Date().getTimezoneOffset() * 60_000; // approx, el server está en UTC
-    const dayStartUtc = new Date(startLocal.getTime() - tzOffsetMs);
+    // Ventana del día en TZ del tenant → rango UTC. CRÍTICO: usar buildLocalIso
+    // porque getTimezoneOffset() del server (Vercel=UTC) retorna 0, no el
+    // offset de Mérida. Con el cálculo anterior las citas del 15 entre 6pm-12am
+    // Mérida se perdían porque caían fuera del rango UTC construido.
+    const { buildLocalIso } = await import('@/lib/actions/appointment-helpers');
+    const dayStartUtc = new Date(buildLocalIso(args.date, '00:00', timezone));
     const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60_000);
 
     // Query citas del día pendientes de recordatorio
@@ -283,7 +285,8 @@ registerTool('mark_confirmed', {
       })
       .eq('id', args.appointment_id)
       .eq('tenant_id', ctx.tenantId) // scoped — defense in depth
-      .eq('status', 'scheduled')     // no re-confirmar canceladas ni pasadas
+      .eq('status', 'scheduled')     // no re-confirmar canceladas
+      .gt('datetime', new Date().toISOString()) // no "confirmar" citas que ya pasaron
       .select('id')
       .single();
 
@@ -292,7 +295,7 @@ registerTool('mark_confirmed', {
         success: false,
         error_code: 'NOT_FOUND_OR_NOT_SCHEDULED',
         message:
-          'No encontré una cita scheduled con ese ID para este tenant. Puede estar cancelada o ya confirmada.',
+          'No encontré una cita scheduled futura con ese ID para este tenant. Puede estar cancelada, ya confirmada, o ya pasó.',
       };
     }
 
