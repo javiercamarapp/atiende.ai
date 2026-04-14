@@ -57,7 +57,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
 }
 
 function getModules(type: string, hasVoice: boolean) {
-  const base = ['dashboard','conversations','agents','knowledge','analytics','settings'];
+  const base = ['dashboard','conversations','agents','knowledge','chat-data','marketing','analytics','settings'];
   // Verticales de salud + belleza + servicios recurrentes ven "contacts" (paciente/cliente health scores)
   const health = ['dental','medical','nutritionist','psychologist','dermatologist',
     'gynecologist','pediatrician','ophthalmologist','veterinary','optics',
