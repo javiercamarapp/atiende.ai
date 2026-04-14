@@ -90,6 +90,7 @@ const VERTICAL_TO_DB: Record<VerticalEnum, DbBusinessType> = {
   escuela: 'school',
   agencia_digital: 'other',
   fotografo: 'other',
+  condominio: 'other',
 };
 
 /**
