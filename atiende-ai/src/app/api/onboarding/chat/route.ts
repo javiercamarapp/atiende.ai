@@ -8,9 +8,15 @@ import {
   countRequired,
   getNextPendingRequiredQuestion,
 } from '@/lib/onboarding/vertical-schema-for-agent';
-import { ALL_VERTICALS } from '@/lib/verticals';
+import { ALL_VERTICALS, isActiveVertical } from '@/lib/verticals';
 import type { VerticalEnum } from '@/lib/verticals/types';
 import { getVerticalInsight } from '@/lib/onboarding/vertical-insights';
+
+// Formal rejection message shown when the detected vertical is in standby.
+// Mirrors the prompt rule in chat-agent.ts so the server enforces the same
+// behavior even if the LLM misbehaves.
+const STANDBY_REJECTION_MESSAGE =
+  'Gracias por escribirnos. Por el momento atiende.ai está enfocado exclusivamente en agentes de reservas para los sectores de salud y estética — médicos, dentistas, psicólogos, estilistas, spas, gimnasios y similares. Estaremos habilitando más industrias próximamente. Si gustas, déjame tu nombre, correo o WhatsApp y te avisamos cuando tu sector esté disponible.';
 import { logger } from '@/lib/logger';
 import { StructuredGenerationError } from '@/lib/llm/openrouter';
 
@@ -111,23 +117,47 @@ export async function POST(request: Request) {
 
     // ── 4. Re-validate `done`: only trust if all required fields are present ──
     const effectiveVertical = agentResult.vertical ?? incomingVertical;
-    const doneFinal =
-      agentResult.done &&
-      effectiveVertical !== null &&
-      allRequiredFilled(effectiveVertical, mergedFields);
 
-    // ── 4b. Inject industry insight on the turn where the vertical is newly
-    // detected. The insight is prepended to the agent's own messages so the
-    // user sees: [1] industry stat + value prop, [2] LLM's acknowledge,
-    // [3] LLM's next question. Capped at 3 total bubbles.
     const verticalJustDetected =
       incomingVertical === null && effectiveVertical !== null;
-    let finalAssistantMessages: string[] = verticalJustDetected
-      ? [
-          getVerticalInsight(effectiveVertical),
-          ...agentResult.assistantMessages,
-        ].slice(0, 3)
-      : agentResult.assistantMessages;
+
+    // ── 4a. STANDBY GATE — If the agent detected a vertical that's not in
+    // ACTIVE_VERTICALS (e.g. restaurante, abarrotes, condominio), override
+    // the entire response with the formal rejection. This prevents:
+    //   (1) leaking insight copy for industries we don't support yet
+    //   (2) the LLM hallucinating a vertical when scrape fails and then the
+    //       server showing an unrelated insight as bubble 1
+    const detectedStandbyVertical =
+      effectiveVertical !== null && !isActiveVertical(effectiveVertical);
+
+    let doneFinal: boolean;
+    let finalAssistantMessages: string[];
+    let rejectedCapturedFields = mergedFields;
+
+    if (detectedStandbyVertical) {
+      finalAssistantMessages = [STANDBY_REJECTION_MESSAGE];
+      doneFinal = true;
+      rejectedCapturedFields = {}; // don't leak partial data
+      logger.info('onboarding_chat standby_rejection', {
+        detected_vertical: effectiveVertical,
+      });
+    } else {
+      doneFinal =
+        agentResult.done &&
+        effectiveVertical !== null &&
+        allRequiredFilled(effectiveVertical, mergedFields);
+
+      // ── 4b. Inject industry insight on the turn where the vertical is newly
+      // detected. The insight is prepended to the agent's own messages so the
+      // user sees: [1] industry stat + value prop, [2] LLM's acknowledge,
+      // [3] LLM's next question. Capped at 3 total bubbles.
+      finalAssistantMessages = verticalJustDetected
+        ? [
+            getVerticalInsight(effectiveVertical!),
+            ...agentResult.assistantMessages,
+          ].slice(0, 3)
+        : agentResult.assistantMessages;
+    }
 
     // ── 4c. Dead-end recovery. The agent prompt's most important rule says
     // "never answer with just an acknowledgement — always include the next
@@ -136,10 +166,11 @@ export async function POST(request: Request) {
     // is stranded: the last bubble has no '?' so they have no idea what to
     // type next. Detect that case and append the next pending required
     // question from the schema directly. This makes progress deterministic
-    // even when the LLM misbehaves.
+    // even when the LLM misbehaves. Skipped for standby rejections because
+    // those intentionally end without a question.
     const lastMsg = finalAssistantMessages[finalAssistantMessages.length - 1] ?? '';
     const hasQuestion = /[?¿]/.test(lastMsg);
-    if (!doneFinal && !hasQuestion && effectiveVertical) {
+    if (!detectedStandbyVertical && !doneFinal && !hasQuestion && effectiveVertical) {
       const next = getNextPendingRequiredQuestion(effectiveVertical, mergedFields);
       if (next) {
         finalAssistantMessages = [...finalAssistantMessages, next.text];
@@ -179,14 +210,18 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       vertical: effectiveVertical,
-      capturedFields: mergedFields,
+      capturedFields: rejectedCapturedFields,
       assistantMessages: finalAssistantMessages,
       done: doneFinal,
-      clarificationOf: agentResult.clarificationOf,
-      totalRequired: effectiveVertical ? countRequired(effectiveVertical) : 0,
-      capturedRequired: effectiveVertical
-        ? countCapturedRequired(effectiveVertical, mergedFields)
-        : 0,
+      clarificationOf: detectedStandbyVertical ? null : agentResult.clarificationOf,
+      totalRequired:
+        effectiveVertical && !detectedStandbyVertical
+          ? countRequired(effectiveVertical)
+          : 0,
+      capturedRequired:
+        effectiveVertical && !detectedStandbyVertical
+          ? countCapturedRequired(effectiveVertical, rejectedCapturedFields)
+          : 0,
       verticalJustDetected,
       scrape: maybeUrl
         ? {

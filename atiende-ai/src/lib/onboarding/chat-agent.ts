@@ -141,6 +141,11 @@ REGLAS DURAS:
 6. Si el usuario da un dato que cubre varios campos en una sola frase (ej: "lunes a viernes 9 a 19 y cerramos domingos" llena horario + días de cierre), llena TODOS esos campos en updatedFields.
 7. Prefiere siempre el siguiente campo [REQ] pendiente. Los opcionales [ ] los dejas para el final o los omites si el usuario parece con prisa.
 8. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado / archivo subido). Responde el enum exacto en el campo "vertical" del JSON. Si el vertical detectado está EN STANDBY (no es activo), aplica la REGLA DE RECHAZO FORMAL de arriba. Si es activo, continúa la conversación normal. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
+8b. REGLA DE CONFIANZA EN VERTICAL — NO adivines: Solo devuelve un vertical concreto cuando tengas EVIDENCIA CLARA:
+    • El usuario lo menciona explícitamente ("soy dentista", "tengo un spa", "clínica veterinaria").
+    • Hay contenido REAL scrapeado del sitio (menú, servicios listados, cédula profesional) en el bloque "CONTENIDO DEL SITIO WEB".
+    • Hay contenido REAL de un archivo subido en un bloque "ARCHIVO SUBIDO POR EL USUARIO".
+    Si el scrape FALLÓ (hay una "nota interna" diciendo que falló) y el mensaje del usuario NO menciona su giro, responde vertical=null y pide en 1 oración que describa su negocio en una frase. NUNCA infieras el vertical solo por el dominio o el slug de una URL (ej: "facebook.com/XXX" NO es evidencia del giro del negocio).
 9. Verticales VÁLIDOS para enum: usa cualquier valor de la lista de ACTIVOS (${activeVerticalList}) o STANDBY (${futureVerticalList}). Solo los ACTIVOS continúan con captura de campos.
 10. Cuando TODOS los [REQ] estén completos, responde done=true con un mensaje de cierre breve ("Listo, con esto armo tu agente"). Este es el ÚNICO caso donde puedes no incluir pregunta.
 11. Nunca inventes datos. Si no sabes algo, pregúntalo. Cuando tengas duda entre "subir un archivo" y "escribirlo a mano", sugiere subir (ej: "¿tienes tu menú en foto? Puedes subirla y la leo").
@@ -194,7 +199,15 @@ function buildMessagesForAgent(input: ChatAgentInput): {
   if (input.scrapedMarkdown) {
     finalUserContent += `\n\n--- CONTENIDO DEL SITIO WEB DEL USUARIO (scraping automático) ---\n${input.scrapedMarkdown}\n--- FIN DEL CONTENIDO ---`;
   } else if (input.scrapeError) {
-    finalUserContent += `\n\n(nota interna: intentamos abrir el link que pegó el usuario pero falló: ${input.scrapeError}. Pídele los datos a mano.)`;
+    // Special-case social-media blocks so the agent gives actionable guidance
+    // ("compárteme tu sitio web o una foto") instead of a generic "no pude
+    // acceder al link". The ScrapeError code prefix is preserved by the
+    // route handler when it passes `scrapeError` here.
+    if (input.scrapeError.startsWith('SOCIAL_MEDIA_BLOCKED')) {
+      finalUserContent += `\n\n(nota interna: el usuario compartió un link de red social (Facebook / Instagram / TikTok / X / LinkedIn) que no podemos leer por sus restricciones anti-bots. Dile con calidez que esos links no se pueden leer directamente, y pídele UNA de estas opciones: (a) describir su negocio en una frase, (b) compartir su sitio web propio si tiene, o (c) subir una foto de su letrero, tarjeta o cédula. NO inferir el vertical solo por el dominio de la URL.)`;
+    } else {
+      finalUserContent += `\n\n(nota interna: intentamos abrir el link que pegó el usuario pero falló: ${input.scrapeError}. Pídele los datos a mano.)`;
+    }
   }
 
   if (input.uploadedContent && input.uploadedContent.length > 0) {
