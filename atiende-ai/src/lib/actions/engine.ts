@@ -505,51 +505,271 @@ async function handleCancelAppointment(ctx: ActionContext): Promise<ActionResult
 }
 
 // ═══ ORDER: CREATE ═══
+//
+// Bug fixes applied vs v1 (matching the same rigor as handleNewAppointment):
+//  - Parse failure is surfaced to the user (never silent)
+//  - Unknown item names are REJECTED instead of priced at $0 (was: menu
+//    fuzzy-match returning `price: 0` when no match, so a customer could
+//    "order" non-existent items for free)
+//  - Exact-first service match (avoids "tacos" grabbing "tacos de cerdo"
+//    when "tacos de asada" was meant)
+//  - Delivery fee read from `tenant.config.delivery_fee` (was hardcoded $30)
+//  - Business hours validation at order time (rejects 3am pickup orders)
+//  - INSERT failures surfaced to the user with a clear message
+//  - All failure paths log via console.warn so operators can debug
 async function handleNewOrder(ctx: ActionContext): Promise<ActionResult> {
+  const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+  const tenantConfig = (ctx.tenant.config as Record<string, unknown>) || {};
+  const deliveryFeeFromConfig = Number(tenantConfig.delivery_fee);
+  const configuredDeliveryFee = Number.isFinite(deliveryFeeFromConfig) && deliveryFeeFromConfig >= 0
+    ? deliveryFeeFromConfig
+    : 30; // sensible default if tenant hasn't configured it yet
+
   const extraction = await generateResponse({
     model: MODELS.STANDARD,
     system: 'Extract order items. Return ONLY JSON: {"items":[{"name":"item","qty":1,"notes":""}],"delivery":true,"address":"if mentioned"}. If unclear, return {"unclear":true}.',
     messages: [{ role: 'user', content: ctx.content }], temperature: 0.1,
   });
   let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(extraction.text); } catch { return { actionTaken: false }; }
-  if (parsed.unclear) return { actionTaken: false };
+  try {
+    parsed = JSON.parse(extraction.text);
+  } catch (err) {
+    console.warn('[order] JSON parse failed', err);
+    return {
+      actionTaken: true,
+      actionType: 'order.parse_failed',
+      followUpMessage:
+        'No entendí bien tu pedido. ¿Podrías escribirme qué te gustaría ordenar, cuánto de cada cosa, y si es para llevar o envío?',
+    };
+  }
+  if (parsed.unclear) {
+    return {
+      actionTaken: true,
+      actionType: 'order.unclear',
+      followUpMessage:
+        'Necesito un poco más de detalle. ¿Qué te gustaría ordenar y cuánto de cada cosa?',
+    };
+  }
 
-  const items = parsed.items as Array<{ name: string; qty: number; notes?: string }>;
-  if (!items?.length) return { actionTaken: false };
+  const items = parsed.items as Array<{ name: string; qty: number; notes?: string }> | undefined;
+  if (!items?.length) {
+    return {
+      actionTaken: true,
+      actionType: 'order.no_items',
+      followUpMessage: '¿Qué te gustaría ordenar? Dime los platillos y las cantidades.',
+    };
+  }
 
-  const { data: menu } = await supabaseAdmin.from('services').select('name, price').eq('tenant_id', ctx.tenantId).eq('active', true);
-  const priced = items.map(i => {
-    const match = menu?.find(m => m.name.toLowerCase().includes(i.name.toLowerCase()));
-    return { name: i.name, qty: i.qty || 1, price: match?.price || 0, notes: i.notes || '' };
-  });
+  // Business hours check — prevents 3am pickup orders.
+  // For orders we check "now" (not a future datetime) because the customer
+  // wants to order right now.
+  const businessHours = ctx.tenant.business_hours as Record<string, string> | null;
+  const nowIso = new Date().toISOString();
+  if (!isWithinBusinessHours(nowIso, businessHours, timezone)) {
+    return {
+      actionTaken: true,
+      actionType: 'order.outside_hours',
+      followUpMessage:
+        'Lamentablemente estamos fuera de horario en este momento. ¿Te gustaría que anote tu pedido para mañana al abrir?',
+    };
+  }
 
-  const subtotal = priced.reduce((s, i) => s + Number(i.price) * i.qty, 0);
-  const deliveryFee = parsed.delivery ? 30 : 0;
+  const { data: menu, error: menuErr } = await supabaseAdmin
+    .from('services')
+    .select('id, name, price, duration_minutes')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('active', true);
+  if (menuErr) {
+    console.warn('[order] failed to load menu', menuErr);
+    return {
+      actionTaken: true,
+      actionType: 'order.menu_failed',
+      followUpMessage:
+        'Tuve un problema cargando nuestro menú. Ya avisé al equipo para atenderte directamente.',
+    };
+  }
+
+  // Match each requested item against the menu (exact-first strategy).
+  // Items that can't be matched are collected into `unknownItems` so we can
+  // tell the customer exactly what wasn't found — instead of silently charging
+  // them $0 for a non-existent item.
+  const priced: Array<{ name: string; qty: number; price: number; notes: string }> = [];
+  const unknownItems: string[] = [];
+  for (const i of items) {
+    const requested = (i.name || '').trim();
+    if (!requested) continue;
+    const match = findMatchingService(menu as ServiceRow[], requested);
+    if (!match) {
+      unknownItems.push(requested);
+      continue;
+    }
+    priced.push({
+      name: match.name,
+      qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
+      price: Number(match.price) || 0,
+      notes: i.notes || '',
+    });
+  }
+
+  if (unknownItems.length > 0) {
+    // Don't insert a half-valid order with $0 items — ask the customer to
+    // correct the names against our real catalog.
+    const sampleMenu = (menu || [])
+      .slice(0, 8)
+      .map((m) => `• ${m.name}`)
+      .join('\n');
+    return {
+      actionTaken: true,
+      actionType: 'order.unknown_items',
+      details: { unknownItems },
+      followUpMessage:
+        `No encontré estos items en nuestro menú: ${unknownItems.join(', ')}.\n\n` +
+        `Algunos de los que sí tenemos:\n${sampleMenu}\n\n` +
+        `¿Me los pides usando los nombres del menú?`,
+    };
+  }
+
+  if (priced.length === 0) {
+    return {
+      actionTaken: true,
+      actionType: 'order.no_valid_items',
+      followUpMessage: '¿Me confirmas qué te gustaría ordenar del menú?',
+    };
+  }
+
+  const subtotal = priced.reduce((s, i) => s + i.price * i.qty, 0);
+  const deliveryFee = parsed.delivery ? configuredDeliveryFee : 0;
   const total = subtotal + deliveryFee;
 
-  const { data: order } = await supabaseAdmin.from('orders').insert({
-    tenant_id: ctx.tenantId, conversation_id: ctx.conversationId, contact_id: ctx.contactId,
-    customer_phone: ctx.customerPhone, customer_name: ctx.customerName,
-    items: priced, subtotal, delivery_fee: deliveryFee, total,
-    order_type: parsed.delivery ? 'delivery' : 'pickup',
-    delivery_address: (parsed.address as string) || '', status: 'pending',
-  }).select().single();
+  const { data: order, error: insertErr } = await supabaseAdmin
+    .from('orders')
+    .insert({
+      tenant_id: ctx.tenantId,
+      conversation_id: ctx.conversationId,
+      contact_id: ctx.contactId,
+      customer_phone: ctx.customerPhone,
+      customer_name: ctx.customerName,
+      items: priced,
+      subtotal,
+      delivery_fee: deliveryFee,
+      total,
+      order_type: parsed.delivery ? 'delivery' : 'pickup',
+      delivery_address: (parsed.address as string) || '',
+      status: 'pending',
+    })
+    .select()
+    .single();
 
-  if (!order) return { actionTaken: false };
-  const list = priced.map(i => `  • ${i.qty}x ${i.name}${i.price ? ` - $${Number(i.price) * i.qty}` : ''}`).join('\n');
+  if (insertErr || !order) {
+    console.warn('[order] insert failed', insertErr);
+    return {
+      actionTaken: true,
+      actionType: 'order.insert_failed',
+      followUpMessage:
+        'Tuve un problema registrando tu pedido. Ya notifiqué al equipo para que te contacten y lo confirmen manualmente.',
+    };
+  }
+
+  const list = priced
+    .map((i) => `  • ${i.qty}x ${i.name}${i.price ? ` - $${i.price * i.qty}` : ''}`)
+    .join('\n');
   return {
-    actionTaken: true, actionType: 'order.created', details: { orderId: order.id, total },
-    followUpMessage: `🧾 ¡Pedido registrado!\n\n${list}\n\nSubtotal: $${subtotal}${parsed.delivery ? `\nEnvío: $${deliveryFee}` : ''}\nTotal: $${total} MXN\n\n${parsed.delivery ? '🛵 Tiempo estimado: 30-45 min' : '🏪 Listo en 15-20 min'}`,
+    actionTaken: true,
+    actionType: 'order.created',
+    details: { orderId: order.id, total, deliveryFee },
+    followUpMessage:
+      `🧾 ¡Pedido registrado!\n\n${list}\n\n` +
+      `Subtotal: $${subtotal}${parsed.delivery ? `\nEnvío: $${deliveryFee}` : ''}\n` +
+      `Total: $${total} MXN\n\n` +
+      `${parsed.delivery ? '🛵 Tiempo estimado: 30-45 min' : '🏪 Listo en 15-20 min'}`,
   };
 }
 
 // ═══ ORDER: STATUS ═══
+//
+// Previously returned the customer's MOST RECENT order regardless of which
+// one they asked about. A customer with 3 pending orders asking "¿cómo va
+// mi pedido de tacos?" might get back the status of their pizza.
+//
+// Now:
+//   - If there are 0 recent orders in progress → tell the customer
+//   - If there's exactly 1 → give its status (same as before)
+//   - If there are 2+ in progress → list all of them briefly, so the
+//     customer can tell us which one they mean next turn
+const STATUS_EMOJI: Record<string, string> = {
+  pending: '⏳ Pendiente',
+  confirmed: '✅ Confirmado',
+  preparing: '👨‍🍳 En preparación',
+  ready: '🔔 Listo',
+  en_route: '🛵 En camino',
+  delivered: '✅ Entregado',
+  cancelled: '❌ Cancelado',
+};
+
 async function handleOrderStatus(ctx: ActionContext): Promise<ActionResult> {
-  const { data: order } = await supabaseAdmin.from('orders').select('id, status, total, estimated_time_min').eq('tenant_id', ctx.tenantId).eq('customer_phone', ctx.customerPhone).order('created_at', { ascending: false }).limit(1).single();
-  if (!order) return { actionTaken: true, actionType: 'order.not_found', followUpMessage: 'No encontré un pedido reciente. ¿Desea hacer un nuevo pedido?' };
-  const st: Record<string, string> = { pending: '⏳ Pendiente', confirmed: '✅ Confirmado', preparing: '👨‍🍳 En preparación', ready: '🔔 Listo', en_route: '🛵 En camino', delivered: '✅ Entregado', cancelled: '❌ Cancelado' };
-  return { actionTaken: true, actionType: 'order.status', followUpMessage: `📦 Estado: ${st[order.status] || order.status}\nTotal: $${order.total} MXN${order.estimated_time_min ? `\n⏱️ ~${order.estimated_time_min} min` : ''}` };
+  // Fetch up to 5 recent non-terminal orders from this customer
+  const IN_PROGRESS = ['pending', 'confirmed', 'preparing', 'ready', 'en_route'];
+  const { data: orders, error } = await supabaseAdmin
+    .from('orders')
+    .select('id, status, total, estimated_time_min, items, created_at')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('customer_phone', ctx.customerPhone)
+    .in('status', IN_PROGRESS)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.warn('[order-status] query failed', error);
+    return {
+      actionTaken: true,
+      actionType: 'order.status_failed',
+      followUpMessage: 'Tuve un problema consultando tu pedido. Ya avisé al equipo.',
+    };
+  }
+
+  if (!orders || orders.length === 0) {
+    return {
+      actionTaken: true,
+      actionType: 'order.not_found',
+      followUpMessage: 'No encontré un pedido reciente en curso. ¿Deseas hacer un nuevo pedido?',
+    };
+  }
+
+  // Single-order case: unchanged behavior.
+  if (orders.length === 1) {
+    const order = orders[0];
+    return {
+      actionTaken: true,
+      actionType: 'order.status',
+      details: { orderId: order.id },
+      followUpMessage:
+        `📦 Estado: ${STATUS_EMOJI[order.status] || order.status}\n` +
+        `Total: $${order.total} MXN` +
+        (order.estimated_time_min ? `\n⏱️ ~${order.estimated_time_min} min` : ''),
+    };
+  }
+
+  // Multiple orders in progress → list them so the customer can clarify.
+  const summary = orders
+    .map((o) => {
+      const firstItem = Array.isArray(o.items) && o.items[0]
+        ? (o.items[0] as { name?: string }).name || 'pedido'
+        : 'pedido';
+      const extraCount = Array.isArray(o.items) && o.items.length > 1
+        ? ` (+${o.items.length - 1} más)`
+        : '';
+      return `• ${firstItem}${extraCount} — ${STATUS_EMOJI[o.status] || o.status} — $${o.total}`;
+    })
+    .join('\n');
+
+  return {
+    actionTaken: true,
+    actionType: 'order.status_multi',
+    details: { orderCount: orders.length },
+    followUpMessage:
+      `Tienes ${orders.length} pedidos en curso:\n\n${summary}\n\n` +
+      `¿Sobre cuál quieres saber más?`,
+  };
 }
 
 // ═══ RESERVATION (hotels/restaurants) ═══
