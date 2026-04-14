@@ -1,0 +1,167 @@
+// ═════════════════════════════════════════════════════════════════════════════
+// AGENTS BARREL — entry point del sistema multi-agente
+//
+// Importar este archivo:
+//   1. Carga los registros de tools de AGENDA y NO-SHOW (side effect).
+//   2. Expone helpers: buildTenantContext, getSystemPrompt, getAgentTools,
+//      routeToAgent.
+//
+// El processor.ts importa de aquí cuando termine la fase de wiring.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Side effects: registran tools en el toolRegistry global.
+import './agenda';
+import './no-show';
+
+import type { AgentName, TenantContext, FastRoute } from './types';
+import { AGENT_REGISTRY } from './registry';
+import { getOrchestratorPrompt } from './orchestrator-prompt';
+import { getAgendaPrompt } from './agenda/prompt';
+import { getNoShowPrompt } from './no-show/prompt';
+
+export type { AgentName, TenantContext, FastRoute, AgentConfig } from './types';
+export { AGENT_REGISTRY } from './registry';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildTenantContext — construye el TenantContext desde el row del tenant
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_TZ = 'America/Merida';
+
+function getDateInTz(timezone: string, offsetDays: number): string {
+  const d = new Date(Date.now() + offsetDays * 86_400_000);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d); // → "YYYY-MM-DD"
+}
+
+function nextMondayInTz(timezone: string): string {
+  const todayInTz = new Date(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric',
+    }).format(new Date()),
+  );
+  const dow = todayInTz.getDay(); // 0=Sun, 1=Mon
+  const daysUntilMonday = (8 - dow) % 7 || 7;
+  return getDateInTz(timezone, daysUntilMonday);
+}
+
+function parseHoursWindow(s: string | undefined): { open: string; close: string } | null {
+  if (!s || s === 'cerrado' || !s.includes('-')) return null;
+  const [open, close] = s.split('-');
+  return open && close ? { open, close } : null;
+}
+
+export function buildTenantContext(tenant: Record<string, unknown>): TenantContext {
+  const timezone = (tenant.timezone as string) || DEFAULT_TZ;
+  const rawHours = (tenant.business_hours as Record<string, string>) || {};
+  const businessHours: Record<string, { open: string; close: string }> = {};
+  for (const [day, str] of Object.entries(rawHours)) {
+    const w = parseHoursWindow(str);
+    if (w) businessHours[day] = w;
+  }
+
+  const services = ((tenant.services as Array<Record<string, unknown>>) || []).map((s) => ({
+    name: (s.name as string) || '',
+    price: Number(s.price ?? 0),
+    duration: Number(s.duration_minutes ?? s.duration ?? 30),
+  }));
+
+  const currentDatetime = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date()).replace(',', '');
+
+  return {
+    tenantId: (tenant.id as string) || '',
+    businessName: (tenant.name as string) || 'el negocio',
+    businessType: (tenant.business_type as string) || 'other',
+    businessCity: (tenant.city as string) || '',
+    businessHours,
+    timezone,
+    services,
+    doctorName: (tenant.doctor_name as string) || undefined,
+    emergencyPhone: (tenant.emergency_phone as string) || (tenant.phone as string) || undefined,
+    currentDatetime,
+    tomorrowDate: getDateInTz(timezone, 1),
+    dayAfterTomorrow: getDateInTz(timezone, 2),
+    nextWeekStart: nextMondayInTz(timezone),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getSystemPrompt — switch sobre agentName → prompt builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function getSystemPrompt(agentName: AgentName, ctx: TenantContext): string {
+  switch (agentName) {
+    case 'orchestrator': return getOrchestratorPrompt(ctx);
+    case 'agenda': return getAgendaPrompt(ctx);
+    case 'no-show': return getNoShowPrompt(ctx);
+    case 'faq':
+      return '(FAQ no usa LLM — los handlers son funciones directas en src/lib/agents/faq/tools.ts)';
+    case 'post-consulta':
+    case 'retencion':
+    case 'triaje':
+    case 'cobranza':
+    case 'reputacion':
+      return `[Placeholder Phase 3] Agente ${agentName} aún no implementado.`;
+    default: {
+      const _exhaustive: never = agentName;
+      return _exhaustive;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getAgentTools — lista de tool names del agente según AGENT_REGISTRY
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function getAgentTools(agentName: AgentName): string[] {
+  return AGENT_REGISTRY[agentName].tools;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// routeToAgent — fast path antes de tocar el LLM
+// ─────────────────────────────────────────────────────────────────────────────
+
+const URGENCY_KEYWORDS = [
+  'dolor severo', 'no puedo respirar', 'emergencia', 'accidente',
+  'sangrado', 'auxilio', 'urgente', 'muy mal', 'desmayo',
+  'inconsciente', 'crisis', 'me muero',
+];
+
+const FAQ_KEYWORDS = [
+  'horario', 'hora', 'atienden', 'abierto', 'que dias', 'que días',
+  'direccion', 'dirección', 'donde estan', 'donde están', 'ubicacion', 'ubicación',
+  'precio', 'precios', 'costo', 'cuanto cuesta', 'cuánto cuesta', 'cobran', 'tarifa',
+  'seguro', 'aseguradora', 'insurance', 'issste', 'imss',
+  'estacionamiento', 'parking', 'maps',
+];
+
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * Fast path: revisa el mensaje contra patterns de urgencia y FAQ ANTES de
+ * llamar al LLM. Retorna 'urgent' o 'faq' si hay match, null si el LLM debe
+ * decidir.
+ */
+export function routeToAgent(message: string, _ctx: TenantContext): FastRoute {
+  const norm = normalizeForMatch(message);
+
+  if (URGENCY_KEYWORDS.some((kw) => norm.includes(normalizeForMatch(kw)))) {
+    return 'urgent';
+  }
+
+  if (FAQ_KEYWORDS.some((kw) => norm.includes(normalizeForMatch(kw)))) {
+    return 'faq';
+  }
+
+  return null;
+}
+
+// Re-export del FAQ handler para que processor lo importe del barrel.
+export { handleFAQ } from './faq';
