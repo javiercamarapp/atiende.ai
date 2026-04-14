@@ -44,7 +44,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         continue;
       }
 
-      const clusters = clusterSimilarQuestions(questions.map((q) => q.content));
+      const clusters = await clusterSimilarQuestions(
+        questions.map((q) => q.content),
+        { tenantId },
+      );
       const suggestions = await generateFAQSuggestions(clusters);
 
       // Las sugerencias viven en cron_runs.details para que Javier las revise.
