@@ -13,11 +13,6 @@ import { formatDateTimeMx } from '@/lib/actions/appointment-helpers';
 import { sendTemplate } from '@/lib/whatsapp/send';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
-const NOT_IMPLEMENTED = {
-  unimplemented: true,
-  message: 'Tool handler pending next sub-phase.',
-};
-
 // ─── Tool 1: get_appointments_tomorrow ───────────────────────────────────────
 const GetApptsTomorrowArgs = z
   .object({
@@ -408,18 +403,29 @@ registerTool('mark_no_show', {
   },
 });
 
+// ─── Tool 5: notify_risk ─────────────────────────────────────────────────────
+const NotifyRiskArgs = z
+  .object({
+    appointment_id: z.string().uuid(),
+    patient_name: z.string().min(1).max(200),
+    appointment_time: z.string().min(1).max(100),
+    risk_level: z.enum(['high', 'medium']),
+  })
+  .strict();
+
 registerTool('notify_risk', {
   schema: {
     type: 'function',
     function: {
       name: 'notify_risk',
-      description: 'Avisa al dueño cuando un paciente con alto risk_score no ha confirmado.',
+      description:
+        'Envía alerta al dueño del tenant sobre un paciente con alto riesgo de no-show que aún no ha confirmado. Úsalo cuando risk_score >= 70 y no_show_reminded=true pero confirmed_at es null.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
+          appointment_id: { type: 'string', description: 'UUID de la cita.' },
           patient_name: { type: 'string' },
-          appointment_time: { type: 'string' },
+          appointment_time: { type: 'string', description: 'Hora formateada, ej "10:00 am".' },
           risk_level: { type: 'string', enum: ['high', 'medium'] },
         },
         required: ['appointment_id', 'patient_name', 'appointment_time', 'risk_level'],
@@ -427,5 +433,50 @@ registerTool('notify_risk', {
       },
     },
   },
-  handler: async (_args: unknown, _ctx: ToolContext) => NOT_IMPLEMENTED,
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = NotifyRiskArgs.parse(rawArgs);
+
+    const emoji = args.risk_level === 'high' ? '⚠️🔴' : '⚠️';
+    const label = args.risk_level === 'high' ? 'ALTO' : 'MEDIO';
+    const details = `${emoji} Riesgo ${label} de no-show\nPaciente: ${args.patient_name}\nHora mañana: ${args.appointment_time}\nNo ha respondido al recordatorio.`;
+
+    try {
+      const { notifyOwner } = await import('@/lib/actions/notifications');
+      await notifyOwner({
+        tenantId: ctx.tenantId,
+        event: 'lead_hot', // reuse — más cercano al "necesita atención proactiva"
+        details,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error_code: 'NOTIFY_FAILED',
+        message: msg,
+      };
+    }
+
+    // Audit log
+    try {
+      await supabaseAdmin.from('audit_log').insert({
+        tenant_id: ctx.tenantId,
+        action: 'no_show.risk_notified',
+        entity_type: 'appointment',
+        entity_id: args.appointment_id,
+        details: {
+          patient_name: args.patient_name,
+          risk_level: args.risk_level,
+        },
+      });
+    } catch {
+      /* best effort */
+    }
+
+    return {
+      success: true,
+      appointment_id: args.appointment_id,
+      risk_level: args.risk_level,
+      owner_notified: true,
+    };
+  },
 });
