@@ -18,12 +18,37 @@ export default async function DashboardPage() {
   const { data:todayApts } = await supabase.from('appointments').select('*, staff(name), services(name)').eq('tenant_id',tenant.id).gte('datetime',`${today}T00:00:00`).lte('datetime',`${today}T23:59:59`).order('datetime');
   const { data:recentConvs } = await supabase.from('conversations').select('*, messages(content,direction,created_at)').eq('tenant_id',tenant.id).order('last_message_at',{ascending:false}).limit(5);
   return (
-    <div className="space-y-6">
-      <ROIWidget roi={roi} />
-      <KPICards tenant={tenant} today={todayData} monthData={analytics||[]} />
+    <div className="space-y-8">
+      {/* Hero greeting */}
+      <header className="animate-element">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+          Panel
+        </p>
+        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">
+          {tenant.name}
+        </h1>
+        <p className="mt-1.5 text-sm text-white/50">
+          Tu agente está escuchando en WhatsApp 24/7.
+        </p>
+      </header>
+
+      <div className="animate-element animate-delay-200">
+        <ROIWidget roi={roi} />
+      </div>
+
+      <KPICards tenant={tenant} today={todayData} monthData={analytics || []} />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2"><DashCharts tenant={tenant} data={analytics||[]} /></div>
-        <RecentActivity conversations={recentConvs||[]} appointments={todayApts||[]} tenant={tenant} />
+        <div className="lg:col-span-2 stagger-item glass-card p-5">
+          <DashCharts tenant={tenant} data={analytics || []} />
+        </div>
+        <div className="stagger-item glass-card p-5">
+          <RecentActivity
+            conversations={recentConvs || []}
+            appointments={todayApts || []}
+            tenant={tenant}
+          />
+        </div>
       </div>
     </div>
   );

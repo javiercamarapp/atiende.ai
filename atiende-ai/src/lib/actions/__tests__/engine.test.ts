@@ -574,17 +574,36 @@ describe('executeAction', () => {
       expect(result.followUpMessage).toContain('Hamburguesa');
     });
 
-    it('returns actionTaken=false when extraction is unclear', async () => {
+    it('asks for clarification when extraction is unclear (was: silently returned actionTaken=false)', async () => {
+      // Bug fix: previously, an unclear LLM extraction caused a silent failure
+      // where the customer thought they'd ordered but nothing was registered.
+      // Now we surface a clarification question so the customer can retry.
       mockGenerateResponse.mockResolvedValue({
         text: JSON.stringify({ unclear: true }),
       });
       setupSupabase();
 
       const result = await executeAction(
-        makeCtx({ intent: 'ORDER_NEW', content: 'quiero pedir algo' })
+        makeCtx({
+          intent: 'ORDER_NEW',
+          content: 'quiero pedir algo',
+          tenant: {
+            name: 'Mi Negocio',
+            address: 'Calle 1',
+            phone: '5551234567',
+            timezone: 'America/Merida',
+            business_hours: {
+              lun: '09:00-23:00', mar: '09:00-23:00', mie: '09:00-23:00',
+              jue: '09:00-23:00', vie: '09:00-23:00', sab: '09:00-23:00',
+              dom: '09:00-23:00',
+            },
+          },
+        })
       );
 
-      expect(result.actionTaken).toBe(false);
+      expect(result.actionTaken).toBe(true);
+      expect(result.actionType).toBe('order.unclear');
+      expect(result.followUpMessage).toBeTruthy();
     });
   });
 
@@ -592,21 +611,28 @@ describe('executeAction', () => {
 
   describe('ORDER_STATUS intent', () => {
     it('returns status of existing order', async () => {
+      // New handler fetches up to 5 IN_PROGRESS orders: select().eq().eq().in().order().limit()
+      // Single-order case returns the same shape as before (actionType 'order.status').
       mockFrom.mockImplementation((table: string) => {
         if (table === 'orders') {
           return {
             select: vi.fn(() => ({
               eq: vi.fn(() => ({
                 eq: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    limit: vi.fn(() => ({
-                      single: vi.fn(() => ({
-                        data: {
-                          id: 'order-1',
-                          status: 'preparing',
-                          total: 275,
-                          estimated_time_min: 20,
-                        },
+                  in: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      limit: vi.fn(() => Promise.resolve({
+                        data: [
+                          {
+                            id: 'order-1',
+                            status: 'preparing',
+                            total: 275,
+                            estimated_time_min: 20,
+                            items: [{ name: 'Pizza' }],
+                            created_at: '2026-04-14T12:00:00Z',
+                          },
+                        ],
+                        error: null,
                       })),
                     })),
                   })),

@@ -4,10 +4,15 @@ import { sendTextMessage } from '@/lib/whatsapp/send';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+// Security fix: previously accepted `phoneNumberId` and `to` from the request
+// body. Since `sendTextMessage` uses a shared `WA_SYSTEM_TOKEN` with
+// permissions on all tenants' phone numbers, a malicious tenant could spoof
+// messages from ANOTHER tenant's WhatsApp number. Now we:
+//   1. Derive `phoneNumberId` server-side from the authenticated tenant.
+//   2. Derive `to` from the conversation record (the actual customer phone).
+// The client only needs to tell us WHICH conversation to reply in + the text.
 const SendSchema = z.object({
   conversationId: z.string().uuid(),
-  phoneNumberId: z.string().min(1),
-  to: z.string().min(1),
   text: z.string().min(1).max(4096),
 });
 
@@ -25,12 +30,18 @@ export async function POST(req: NextRequest) {
 
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('id')
+      .select('id, wa_phone_number_id')
       .eq('user_id', user.id)
       .single();
 
     if (!tenant) {
       return NextResponse.json({ error: 'No tenant found' }, { status: 403 });
+    }
+    if (!tenant.wa_phone_number_id) {
+      return NextResponse.json(
+        { error: 'WhatsApp phone number not configured for this tenant' },
+        { status: 400 },
+      );
     }
 
     const tenantId = tenant.id;
@@ -39,12 +50,13 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 });
     }
-    const { conversationId, phoneNumberId, to, text } = parsed.data;
+    const { conversationId, text } = parsed.data;
 
-    // Verify conversation belongs to the authenticated tenant
+    // Look up conversation to get both (a) tenant ownership check and
+    // (b) the customer_phone that must be the recipient of the outbound msg.
     const { data: conversation } = await supabaseAdmin
       .from('conversations')
-      .select('id')
+      .select('id, customer_phone')
       .eq('id', conversationId)
       .eq('tenant_id', tenantId)
       .single();
@@ -53,7 +65,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    await sendTextMessage(phoneNumberId, to, text);
+    // Both `from` and `to` are now server-derived — the client can't influence
+    // which WA number sends or which number receives.
+    await sendTextMessage(
+      tenant.wa_phone_number_id as string,
+      conversation.customer_phone as string,
+      text,
+    );
     await supabaseAdmin.from('messages').insert({
       conversation_id: conversationId,
       tenant_id: tenantId,

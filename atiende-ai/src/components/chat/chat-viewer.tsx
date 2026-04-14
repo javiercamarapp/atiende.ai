@@ -60,14 +60,13 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }:{
     if (!reply.trim() || sending) return;
     setSending(true);
     try {
+      // Server derives `phoneNumberId` and `to` from the authenticated
+      // tenant + conversation record (security: prevents spoofing).
       const res = await fetch('/api/conversations/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId: conversation.id,
-          tenantId,
-          phoneNumberId,
-          to: conversation.customer_phone,
           text: reply,
         }),
       });
