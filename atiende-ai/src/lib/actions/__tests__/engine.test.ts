@@ -611,21 +611,28 @@ describe('executeAction', () => {
 
   describe('ORDER_STATUS intent', () => {
     it('returns status of existing order', async () => {
+      // New handler fetches up to 5 IN_PROGRESS orders: select().eq().eq().in().order().limit()
+      // Single-order case returns the same shape as before (actionType 'order.status').
       mockFrom.mockImplementation((table: string) => {
         if (table === 'orders') {
           return {
             select: vi.fn(() => ({
               eq: vi.fn(() => ({
                 eq: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    limit: vi.fn(() => ({
-                      single: vi.fn(() => ({
-                        data: {
-                          id: 'order-1',
-                          status: 'preparing',
-                          total: 275,
-                          estimated_time_min: 20,
-                        },
+                  in: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      limit: vi.fn(() => Promise.resolve({
+                        data: [
+                          {
+                            id: 'order-1',
+                            status: 'preparing',
+                            total: 275,
+                            estimated_time_min: 20,
+                            items: [{ name: 'Pizza' }],
+                            created_at: '2026-04-14T12:00:00Z',
+                          },
+                        ],
+                        error: null,
                       })),
                     })),
                   })),

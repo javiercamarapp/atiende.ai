@@ -175,6 +175,12 @@ CREATE INDEX idx_msg_created ON messages(tenant_id, created_at DESC);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS wa_status TEXT DEFAULT 'sent';
 -- sent, delivered, read
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;
+-- Idempotency: Meta retries webhooks on timeout. Without uniqueness on
+-- wa_message_id, duplicate deliveries cause duplicate LLM calls, duplicate
+-- outbound replies, and (for ORDER_NEW) duplicate charges. Partial index so
+-- it only applies when the field is present (outbound-without-id rows exist).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wa_unique
+  ON messages(wa_message_id) WHERE wa_message_id IS NOT NULL;
 -- 10. CITAS
 CREATE TABLE appointments (
 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

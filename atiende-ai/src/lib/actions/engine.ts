@@ -686,11 +686,90 @@ async function handleNewOrder(ctx: ActionContext): Promise<ActionResult> {
 }
 
 // ═══ ORDER: STATUS ═══
+//
+// Previously returned the customer's MOST RECENT order regardless of which
+// one they asked about. A customer with 3 pending orders asking "¿cómo va
+// mi pedido de tacos?" might get back the status of their pizza.
+//
+// Now:
+//   - If there are 0 recent orders in progress → tell the customer
+//   - If there's exactly 1 → give its status (same as before)
+//   - If there are 2+ in progress → list all of them briefly, so the
+//     customer can tell us which one they mean next turn
+const STATUS_EMOJI: Record<string, string> = {
+  pending: '⏳ Pendiente',
+  confirmed: '✅ Confirmado',
+  preparing: '👨‍🍳 En preparación',
+  ready: '🔔 Listo',
+  en_route: '🛵 En camino',
+  delivered: '✅ Entregado',
+  cancelled: '❌ Cancelado',
+};
+
 async function handleOrderStatus(ctx: ActionContext): Promise<ActionResult> {
-  const { data: order } = await supabaseAdmin.from('orders').select('id, status, total, estimated_time_min').eq('tenant_id', ctx.tenantId).eq('customer_phone', ctx.customerPhone).order('created_at', { ascending: false }).limit(1).single();
-  if (!order) return { actionTaken: true, actionType: 'order.not_found', followUpMessage: 'No encontré un pedido reciente. ¿Desea hacer un nuevo pedido?' };
-  const st: Record<string, string> = { pending: '⏳ Pendiente', confirmed: '✅ Confirmado', preparing: '👨‍🍳 En preparación', ready: '🔔 Listo', en_route: '🛵 En camino', delivered: '✅ Entregado', cancelled: '❌ Cancelado' };
-  return { actionTaken: true, actionType: 'order.status', followUpMessage: `📦 Estado: ${st[order.status] || order.status}\nTotal: $${order.total} MXN${order.estimated_time_min ? `\n⏱️ ~${order.estimated_time_min} min` : ''}` };
+  // Fetch up to 5 recent non-terminal orders from this customer
+  const IN_PROGRESS = ['pending', 'confirmed', 'preparing', 'ready', 'en_route'];
+  const { data: orders, error } = await supabaseAdmin
+    .from('orders')
+    .select('id, status, total, estimated_time_min, items, created_at')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('customer_phone', ctx.customerPhone)
+    .in('status', IN_PROGRESS)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.warn('[order-status] query failed', error);
+    return {
+      actionTaken: true,
+      actionType: 'order.status_failed',
+      followUpMessage: 'Tuve un problema consultando tu pedido. Ya avisé al equipo.',
+    };
+  }
+
+  if (!orders || orders.length === 0) {
+    return {
+      actionTaken: true,
+      actionType: 'order.not_found',
+      followUpMessage: 'No encontré un pedido reciente en curso. ¿Deseas hacer un nuevo pedido?',
+    };
+  }
+
+  // Single-order case: unchanged behavior.
+  if (orders.length === 1) {
+    const order = orders[0];
+    return {
+      actionTaken: true,
+      actionType: 'order.status',
+      details: { orderId: order.id },
+      followUpMessage:
+        `📦 Estado: ${STATUS_EMOJI[order.status] || order.status}\n` +
+        `Total: $${order.total} MXN` +
+        (order.estimated_time_min ? `\n⏱️ ~${order.estimated_time_min} min` : ''),
+    };
+  }
+
+  // Multiple orders in progress → list them so the customer can clarify.
+  const summary = orders
+    .map((o) => {
+      const firstItem = Array.isArray(o.items) && o.items[0]
+        ? (o.items[0] as { name?: string }).name || 'pedido'
+        : 'pedido';
+      const extraCount = Array.isArray(o.items) && o.items.length > 1
+        ? ` (+${o.items.length - 1} más)`
+        : '';
+      return `• ${firstItem}${extraCount} — ${STATUS_EMOJI[o.status] || o.status} — $${o.total}`;
+    })
+    .join('\n');
+
+  return {
+    actionTaken: true,
+    actionType: 'order.status_multi',
+    details: { orderCount: orders.length },
+    followUpMessage:
+      `Tienes ${orders.length} pedidos en curso:\n\n${summary}\n\n` +
+      `¿Sobre cuál quieres saber más?`,
+  };
 }
 
 // ═══ RESERVATION (hotels/restaurants) ═══
