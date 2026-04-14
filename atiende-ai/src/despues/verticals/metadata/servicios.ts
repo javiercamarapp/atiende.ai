@@ -1,4 +1,4 @@
-import type { VerticalEnum, VerticalMetadata } from '../types';
+import type { VerticalEnum, VerticalMetadata } from '@/lib/verticals/types';
 
 const fallbackPhrase = 'Permitame verificar esa informacion. Un momento por favor.';
 

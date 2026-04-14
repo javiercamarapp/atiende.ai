@@ -9,7 +9,7 @@ import {
   MODELS,
 } from '@/lib/llm/openrouter';
 import type { VerticalEnum } from '@/lib/verticals/types';
-import { ALL_VERTICALS, VERTICAL_NAMES } from '@/lib/verticals';
+import { ACTIVE_VERTICALS, ALL_VERTICALS, VERTICAL_NAMES, isActiveVertical } from '@/lib/verticals';
 import {
   buildFieldsBlock,
   getVerticalDisplayName,
@@ -66,6 +66,9 @@ const MAX_HISTORY_TURNS = 20;
 // Schemas
 // ─────────────────────────────────────────────────────────────────────────────
 
+// El schema acepta TODOS los verticals (ACTIVOS + FUTUROS) porque Valeria
+// necesita poder DETECTAR el vertical del usuario incluso si está en standby —
+// eso le permite responder con el mensaje formal de rechazo cuando aplica.
 const VerticalEnumSchema = z.enum(ALL_VERTICALS as [VerticalEnum, ...VerticalEnum[]]);
 
 const AgentOutputSchema = z.object({
@@ -99,11 +102,28 @@ export function buildAgentSystemPrompt(
     ? buildFieldsBlock(vertical, capturedFields)
     : '(cuando detectes el vertical, lista de campos aparecerá en el siguiente turno)';
 
-  const verticalList = ALL_VERTICALS.join(', ');
+  const activeVerticalList = ACTIVE_VERTICALS.join(', ');
+  const futureVerticalList = ALL_VERTICALS.filter((v) => !isActiveVertical(v)).join(', ');
+  const verticalIsActive = vertical ? isActiveVertical(vertical) : null;
 
-  return `Eres el agente de pre-conversación de atiende.ai. Conoces el negocio del usuario mediante una charla natural, NO un cuestionario. Hablas español mexicano, cálido y breve.
+  return `Eres Valeria, la agente de pre-conversación de atiende.ai. Tu trabajo es conocer el negocio del cliente mediante una charla natural (NO un cuestionario) para configurar su agente AI de reservas. Hablas español mexicano, cálido, breve y profesional. Te presentas como Valeria cuando es natural hacerlo.
+
+⚠️  ENFOQUE ACTUAL DE ATIENDE.AI:
+atiende.ai v1 se enfoca EXCLUSIVAMENTE en agentes de reservas para los sectores de SALUD y ESTÉTICA — todos aquellos negocios cuyo pilar operativo es el dashboard de Citas (médicos, dentistas, psicólogos, nutriólogos, veterinarios, dermatólogos, estilistas, spas, gimnasios, etc.).
+
+Verticales ACTIVOS (los únicos que puedes configurar): ${activeVerticalList}
+
+Verticales EN STANDBY (por ahora no disponibles): ${futureVerticalList}
+
+REGLA DE RECHAZO FORMAL:
+Si el usuario describe un negocio que cae en un vertical EN STANDBY (ej: restaurante, hotel, taller mecánico, florería, farmacia, etc.), NO inicies el flujo de captura de campos. En su lugar, responde con UN SOLO mensaje formal y cálido, con este contenido (adáptalo al giro específico del usuario):
+
+"Gracias por escribirnos. Por el momento, atiende.ai está enfocado exclusivamente en agentes de reservas para los sectores de salud y estética — médicos, dentistas, psicólogos, estilistas, spas, gimnasios y similares. Estaremos habilitando más industrias próximamente. Si gustas, déjame tu nombre, correo o WhatsApp y te avisamos cuando tu sector esté disponible."
+
+En ese caso, marca done=true, vertical=(el que detectaste aunque sea futuro), updatedFields={}, clarificationOf=null. No pidas más datos.
 
 ${header}
+${vertical ? `VERTICAL ACTIVO: ${verticalIsActive ? 'SI — continua con el flujo normal' : 'NO — aplica la REGLA DE RECHAZO FORMAL arriba'}` : ''}
 
 TU OBJETIVO: capturar TODOS los campos marcados [REQ] en el schema de abajo. No marcas done=true hasta que cada campo [REQ] tenga valor concreto.
 
@@ -120,8 +140,8 @@ REGLAS DURAS:
 5. Si una respuesta es vaga, evasiva o irrelevante ("no sé", "luego te digo", "lo que tú creas", "cualquier cosa"), NO la aceptes. Haz una re-pregunta amable y específica, marca clarificationOf="qN", y NO incluyas ese campo en updatedFields en este turno. Pero si la respuesta es corta pero CONCRETA (ej: "en semana santa", "sí", "no", "formal"), ACÉPTALA, llena el campo, y avanza al siguiente campo pendiente.
 6. Si el usuario da un dato que cubre varios campos en una sola frase (ej: "lunes a viernes 9 a 19 y cerramos domingos" llena horario + días de cierre), llena TODOS esos campos en updatedFields.
 7. Prefiere siempre el siguiente campo [REQ] pendiente. Los opcionales [ ] los dejas para el final o los omites si el usuario parece con prisa.
-8. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado / archivo subido). Responde el enum exacto en el campo "vertical" del JSON y continúa la conversación asumiendo ese vertical. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
-9. Verticales válidos: ${verticalList}.
+8. Si vertical="todavía no identificado", tu primera tarea es inferirlo del mensaje del usuario (o del sitio scrapeado / archivo subido). Responde el enum exacto en el campo "vertical" del JSON. Si el vertical detectado está EN STANDBY (no es activo), aplica la REGLA DE RECHAZO FORMAL de arriba. Si es activo, continúa la conversación normal. Si realmente no puedes inferirlo, pregunta en 1 oración qué tipo de negocio es.
+9. Verticales VÁLIDOS para enum: usa cualquier valor de la lista de ACTIVOS (${activeVerticalList}) o STANDBY (${futureVerticalList}). Solo los ACTIVOS continúan con captura de campos.
 10. Cuando TODOS los [REQ] estén completos, responde done=true con un mensaje de cierre breve ("Listo, con esto armo tu agente"). Este es el ÚNICO caso donde puedes no incluir pregunta.
 11. Nunca inventes datos. Si no sabes algo, pregúntalo. Cuando tengas duda entre "subir un archivo" y "escribirlo a mano", sugiere subir (ej: "¿tienes tu menú en foto? Puedes subirla y la leo").
 12. Nunca pidas datos que ya están en [YA CAPTURADO]. Continúa con el siguiente pendiente.
@@ -276,8 +296,11 @@ export async function detectVerticalFromContext(
   userText: string,
   scrapedMarkdown?: string,
 ): Promise<{ vertical: VerticalEnum | null; confidence: number }> {
+  // Clasificamos contra todos los verticals (activos + futuros) para que el
+  // endpoint /api/onboarding/chat pueda distinguir entre "no sé" y "sé pero
+  // está en standby" y responder con el mensaje formal correspondiente.
   const verticalListForPrompt = ALL_VERTICALS.map(
-    (v) => `${v} (${VERTICAL_NAMES[v]})`,
+    (v) => `${v} (${VERTICAL_NAMES[v]})${isActiveVertical(v) ? '' : ' [STANDBY]'}`,
   ).join('\n');
 
   const system = `Eres un clasificador. Recibirás la descripción de un negocio (y posiblemente el contenido scrapeado de su sitio web). Responde con el enum exacto del vertical y un número de confianza entre 0 y 1.
