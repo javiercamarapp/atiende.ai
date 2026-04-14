@@ -238,10 +238,74 @@ REGLAS PARA EL PROMPT:
       }).eq('id', tenant.id);
     }
 
-    // 7. INSERTAR DASHBOARD CONFIG (si no existe)
+    // 7. GENERAR SYSTEM PROMPTS POR AGENTE (fire-and-forget)
+    // Corre async para no bloquear el response al cliente. Los prompts
+    // personalizados quedarán en tenant_prompts en ~30-60s. Mientras tanto
+    // los agentes usan el prompt base de src/lib/agents/<agent>/prompt.ts.
+    (async () => {
+      try {
+        const { generateAndSaveAllAgentPrompts } = await import(
+          '@/lib/agents/internal/onboarding-prompt-generator'
+        );
+
+        // Parse business_hours de answers si está; si no, default 9-18 L-V, 9-14 sab
+        const hoursFromAnswers = typeof answers.business_hours === 'object'
+          ? (answers.business_hours as Record<string, { open: string; close: string }>)
+          : {
+              mon: { open: '09:00', close: '18:00' },
+              tue: { open: '09:00', close: '18:00' },
+              wed: { open: '09:00', close: '18:00' },
+              thu: { open: '09:00', close: '18:00' },
+              fri: { open: '09:00', close: '18:00' },
+              sat: { open: '09:00', close: '14:00' },
+            };
+
+        // Parse services
+        const services: Array<{ name: string; price: number; duration: number }> = [];
+        if (typeof answers.services_prices === 'string') {
+          for (const line of answers.services_prices.split('\n')) {
+            const m = line.match(/(.+?)\s*[-:$]\s*\$?(\d+)/);
+            if (m) services.push({ name: m[1].trim(), price: Number(m[2]), duration: 30 });
+          }
+        }
+
+        // Tono desde answers
+        const toneRaw = String(answers.tone || 'friendly').toLowerCase();
+        const tone: 'formal' | 'casual' | 'friendly' =
+          toneRaw === 'formal' ? 'formal' :
+          toneRaw === 'casual' || toneRaw === 'cercano' ? 'casual' :
+          'friendly';
+
+        // FAQs relevantes
+        const faqs: Record<string, string> = {};
+        if (answers.cancellation) faqs['Política de cancelación'] = String(answers.cancellation);
+        if (answers.payment_methods) faqs['Formas de pago'] = Array.isArray(answers.payment_methods)
+          ? answers.payment_methods.join(', ')
+          : String(answers.payment_methods);
+        if (answers.insurances) faqs['Seguros aceptados'] = String(answers.insurances);
+        if (answers.parking) faqs['Estacionamiento'] = String(answers.parking);
+        if (answers.first_visit) faqs['Primera cita'] = String(answers.first_visit);
+
+        await generateAndSaveAllAgentPrompts({
+          tenantId: tenant.id,
+          business_name: businessInfo.name,
+          business_type: businessType,
+          city: businessInfo.city || 'Merida',
+          doctor_name: String(answers.doctor_name || answers.doctors || ''),
+          services,
+          business_hours: hoursFromAnswers,
+          tone,
+          faqs,
+        });
+      } catch (err) {
+        console.error('[create-agent] generateAndSaveAllAgentPrompts background failed:', err);
+      }
+    })().catch(console.error);
+
+    // 8. INSERTAR DASHBOARD CONFIG (si no existe)
     // Los dashboard configs se pre-insertan via SQL seed
 
-    // 8. ENVIAR EMAIL DE BIENVENIDA
+    // 9. ENVIAR EMAIL DE BIENVENIDA
     try {
       const { sendEmail } = await import('@/lib/email/send');
       const { welcomeEmail } = await import('@/lib/email/templates');
