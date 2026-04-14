@@ -5,6 +5,31 @@ import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
 import { resolveIntent } from '@/lib/whatsapp/classifier';
 import { buildRagContext } from '@/lib/whatsapp/rag-context';
 import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
+import {
+  runOrchestrator,
+  OrchestratorBothFailedError,
+  type OrchestratorContext,
+} from '@/lib/llm/orchestrator';
+import { getToolSchemas } from '@/lib/llm/tool-executor';
+import { getConversationContext } from '@/lib/intelligence/conversation-memory';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool calling pipeline (Fase 1) — feature flag
+//
+// Lee la misma env var que la route file. Cuando es false (default en
+// producción), el pipeline tradicional corre intacto.
+// ─────────────────────────────────────────────────────────────────────────────
+const USE_TOOL_CALLING = process.env.USE_TOOL_CALLING === 'true';
+
+/**
+ * Decide si este tenant tiene activado el tool-calling pipeline. Aún con la
+ * env var global encendida, solo activamos por tenant para hacer rollout
+ * gradual sin redeploy.
+ */
+function tenantHasToolCallingEnabled(tenant: Record<string, unknown>): boolean {
+  const features = tenant.features as Record<string, unknown> | undefined;
+  return features?.tool_calling === true;
+}
 
 function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
@@ -453,6 +478,35 @@ async function handleSingleMessage(
   // 10. Build RAG context + history in parallel
   const { ragContext, history } = await buildRagContext(tenant.id as string, content, conv!.id);
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // 10b. PIPELINE FORK — tool calling vs. classifier (Fase 1)
+  //
+  // Si la env var global y el feature por-tenant están habilitados, el nuevo
+  // orquestador toma el control desde aquí (envía la respuesta + persiste
+  // mensajes + corre side effects). En cualquier otro caso seguimos con el
+  // pipeline tradicional EXACTAMENTE como antes — esa rama no cambió.
+  //
+  // El ragContext ya construido se reaprovecha como contexto del system
+  // prompt del orquestador para no perder el trabajo. El `intent` clasificado
+  // por LLM no se usa en el orquestador (Fase 2 lo reemplazará por tool
+  // routing nativo).
+  // ───────────────────────────────────────────────────────────────────────────
+  if (USE_TOOL_CALLING && tenantHasToolCallingEnabled(tenant)) {
+    await handleWithOrchestrator({
+      tenant: tenant as TenantRecord,
+      conversationId: conv!.id,
+      contactId: (contact?.id as string) || '',
+      contactName: (contact?.name as string) || '',
+      customerName: (conv?.customer_name as string) || (contact?.name as string) || '',
+      phoneNumberId,
+      senderPhone,
+      ragContext,
+      content,
+      intent,
+    });
+    return;
+  }
+
   // 11. Typing indicator (fire-and-forget)
   sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
 
@@ -521,4 +575,201 @@ async function handleSingleMessage(
       customer_name: contact?.name || conv?.customer_name,
     })
     .eq('id', conv!.id);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handleWithOrchestrator — nuevo pipeline (Fase 1)
+//
+// Reemplaza los pasos 11–16 del pipeline tradicional cuando el feature flag
+// está activo para el tenant. Estructura intencionalmente simétrica a la
+// rama clásica (typing → generar → enviar → side effects → guardar) para
+// que sea trivial comparar comportamiento.
+//
+// En Fase 1 el registry de tools está vacío — el orquestador termina en 1
+// LLM call sin tool execution. Esto valida el plumbing end-to-end sin
+// cambiar el comportamiento aparente para el usuario más allá de "responde
+// con grok en vez de gemini-flash".
+// ─────────────────────────────────────────────────────────────────────────────
+interface OrchestratorBranchArgs {
+  tenant: TenantRecord;
+  conversationId: string;
+  contactId: string;
+  contactName: string;
+  customerName: string;
+  phoneNumberId: string;
+  senderPhone: string;
+  ragContext: string;
+  content: string;
+  /** Intent del classifier — solo se pasa para post-response side effects. */
+  intent: string;
+}
+
+async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<void> {
+  const {
+    tenant,
+    conversationId,
+    contactId,
+    contactName,
+    customerName,
+    phoneNumberId,
+    senderPhone,
+    ragContext,
+    content,
+    intent,
+  } = args;
+
+  // 1. Typing indicator (fire-and-forget) — UX equivalente a la rama clásica
+  sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
+
+  // 2. Cargar historial completo de la conversación (hasta 20 turnos) en el
+  //    formato que el orquestador espera (rol/contenido). El RAG context se
+  //    inyecta en el system prompt — los messages son SOLO la conversación.
+  const history = await getConversationContext(conversationId, 20);
+
+  // 3. Determinar sub-agente activo. Phase 1: siempre el agente "base"
+  //    sin tools registradas. Phase 2 introducirá routing por business_type
+  //    o por estado de la conversación.
+  const agentName = 'base';
+  const tools = getToolSchemas(); // todas las registradas (Fase 1 = ninguna)
+
+  // 4. Construir system prompt. Reaprovechamos `chat_system_prompt` del
+  //    tenant + el RAG context ya pre-construido. Esto garantiza que la
+  //    rama de tool calling tenga al menos la misma información que la
+  //    rama clásica.
+  const tenantPrompt = (tenant.chat_system_prompt as string | undefined)
+    || `Eres el asistente virtual de ${tenant.name}. Hablas español mexicano natural y profesional. Usas "usted" siempre.`;
+  const systemPrompt = [
+    tenantPrompt,
+    '',
+    '═══ CONTEXTO DEL NEGOCIO (usa SOLO esta información para responder) ═══',
+    ragContext,
+    '',
+    '═══ REGLAS ═══',
+    '- Responde en MAXIMO 3-4 oraciones',
+    '- Si no tienes info: "Permítame verificar con el equipo"',
+    '- NUNCA inventes datos, precios, horarios',
+    '- Español mexicano, "usted" siempre',
+  ].join('\n');
+
+  // 5. Componer messages para el orquestador: historial + último mensaje
+  const orchestratorMessages = [
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content },
+  ];
+
+  const orchestratorCtx: OrchestratorContext = {
+    tenantId: tenant.id,
+    contactId,
+    conversationId,
+    customerPhone: senderPhone,
+    customerName,
+    tenant: tenant as unknown as Record<string, unknown>,
+    businessType: (tenant.business_type as string) || 'other',
+    messages: orchestratorMessages,
+    tools,
+    systemPrompt,
+    agentName,
+  };
+
+  // 6. Correr el orquestador. Si AMBOS modelos fallan, mostramos un mensaje
+  //    fallback al cliente — nunca dejamos al usuario sin respuesta.
+  const startMs = Date.now();
+  let responseText: string;
+  let modelUsed = 'orchestrator-failed';
+  let fallbackUsed = false;
+  let toolCallsExecuted: Awaited<ReturnType<typeof runOrchestrator>>['toolCallsExecuted'] = [];
+  let costUsd = 0;
+  let tokensIn = 0;
+  let tokensOut = 0;
+
+  try {
+    const result = await runOrchestrator(orchestratorCtx);
+    responseText = result.responseText
+      || 'Permítame un momento, le respondo enseguida.';
+    modelUsed = result.modelUsed;
+    fallbackUsed = result.fallbackUsed;
+    toolCallsExecuted = result.toolCallsExecuted;
+    costUsd = result.costUsd;
+    tokensIn = result.tokensIn;
+    tokensOut = result.tokensOut;
+  } catch (err) {
+    if (err instanceof OrchestratorBothFailedError) {
+      console.error('[orchestrator] both models failed:', err.message);
+    } else {
+      console.error('[orchestrator] unexpected error:', err);
+    }
+    responseText =
+      'Tuvimos un problema técnico momentáneo. Ya avisé al equipo y lo contactarán en breve.';
+  }
+
+  const responseTimeMs = Date.now() - startMs;
+
+  // 7. Enviar la respuesta al cliente vía WhatsApp
+  await sendTextMessage(phoneNumberId, senderPhone, responseText);
+
+  // 8. Persistir el mensaje outbound + métricas (mismo schema que la rama clásica)
+  await supabaseAdmin.from('messages').insert({
+    conversation_id: conversationId,
+    tenant_id: tenant.id,
+    direction: 'outbound',
+    sender_type: 'bot',
+    content: responseText,
+    message_type: 'text',
+    intent: `orchestrator.${agentName}`,
+    model_used: modelUsed,
+    tokens_in: tokensIn,
+    tokens_out: tokensOut,
+    cost_usd: costUsd,
+    response_time_ms: responseTimeMs,
+    confidence: fallbackUsed ? 0.7 : 0.9,
+  });
+
+  // 9. Registrar tool calls ejecutadas (Fase 1: típicamente 0 calls, pero la
+  //    instrumentación queda lista para Fase 2). Best-effort — un fallo en
+  //    auditoría no debe afectar al cliente.
+  if (toolCallsExecuted.length > 0) {
+    try {
+      await supabaseAdmin.from('tool_call_logs').insert(
+        toolCallsExecuted.map((tc) => ({
+          tenant_id: tenant.id,
+          conversation_id: conversationId,
+          agent_name: agentName,
+          tool_name: tc.toolName,
+          args: tc.args,
+          result: tc.result,
+          success: !tc.error,
+          error_message: tc.error || null,
+          duration_ms: tc.durationMs,
+          model_used: modelUsed,
+          fallback_used: fallbackUsed,
+        })),
+      );
+    } catch (logErr) {
+      console.warn('[orchestrator] tool_call_logs insert failed:', logErr);
+    }
+  }
+
+  // 10. Side effects post-respuesta — mismo runPostResponseEffects que la
+  //     rama clásica. Esto mantiene lead-scoring, industry-actions, hot lead
+  //     routing, owner notifications. Phase 2 podrá moverlos como tools.
+  await runPostResponseEffects(
+    tenant,
+    phoneNumberId,
+    senderPhone,
+    conversationId,
+    contactId,
+    contactName,
+    customerName,
+    intent,
+    content,
+  );
+
+  // 11. Update conversation timestamp (idéntico a la rama clásica)
+  await supabaseAdmin
+    .from('conversations')
+    .update({
+      last_message_at: new Date().toISOString(),
+      customer_name: contactName || customerName,
+    })
+    .eq('id', conversationId);
 }
