@@ -14,7 +14,11 @@
 
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { formatDateTimeMx } from '@/lib/actions/appointment-helpers';
+import {
+  buildLocalIso,
+  formatDateTimeMx,
+  isWithinBusinessHours,
+} from '@/lib/actions/appointment-helpers';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
 const NOT_IMPLEMENTED = {
@@ -23,27 +27,291 @@ const NOT_IMPLEMENTED = {
 };
 
 // ─── Tool 1: check_availability ──────────────────────────────────────────────
+const CheckAvailArgs = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date debe ser YYYY-MM-DD'),
+    service_type: z.string().min(1).max(120).optional(),
+    staff_id: z.string().uuid().optional(),
+    duration_minutes: z.number().int().min(15).max(240).optional().default(30),
+  })
+  .strict();
+
+/** Slot buffer entre citas (min). Evita encimar citas que terminan "justito". */
+const SLOT_BUFFER_MINUTES = 15;
+/** Máximo slots que devolvemos al LLM para no saturar el prompt. */
+const MAX_SLOTS_RETURNED = 8;
+
+interface Slot {
+  time: string;
+  end_time: string;
+  staff_id: string;
+  staff_name: string;
+}
+
+interface StaffSlim {
+  id: string;
+  name: string;
+  default_duration: number | null;
+}
+
+function todayIsoInTz(timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+function dayKeyFromDate(dateIso: string, timezone: string): string {
+  // dateIso = YYYY-MM-DD ; queremos el key 'lun' | 'mar' | ... en la TZ del tenant.
+  // Construimos mediodía para evitar edge cases de TZ en los límites del día.
+  const midday = buildLocalIso(dateIso, '12:00', timezone);
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+  }).format(new Date(midday)).toLowerCase();
+  const map: Record<string, string> = {
+    sun: 'dom', mon: 'lun', tue: 'mar', wed: 'mie', thu: 'jue', fri: 'vie', sat: 'sab',
+  };
+  return map[weekday] || 'lun';
+}
+
+function parseHoursWindow(raw: string | undefined):
+  | { openMin: number; closeMin: number }
+  | null {
+  if (!raw || raw === 'cerrado' || !raw.includes('-')) return null;
+  const [open, close] = raw.split('-');
+  if (!open || !close) return null;
+  const [oh, om] = open.split(':').map(Number);
+  const [ch, cm] = close.split(':').map(Number);
+  if ([oh, om, ch, cm].some((n) => Number.isNaN(n))) return null;
+  return { openMin: oh * 60 + om, closeMin: ch * 60 + cm };
+}
+
+/** Busca la siguiente fecha con ≥1 slot libre, hasta 14 días adelante. */
+async function findNextAvailableDate(opts: {
+  tenantId: string;
+  startDate: string; // YYYY-MM-DD
+  timezone: string;
+  businessHours: Record<string, string>;
+  durationMinutes: number;
+  staffList: StaffSlim[];
+}): Promise<string | null> {
+  const start = new Date(opts.startDate + 'T00:00:00Z');
+  for (let i = 1; i <= 14; i++) {
+    const d = new Date(start.getTime() + i * 86_400_000);
+    const iso = d.toISOString().slice(0, 10);
+    const dayKey = dayKeyFromDate(iso, opts.timezone);
+    const win = parseHoursWindow(opts.businessHours[dayKey]);
+    if (!win) continue;
+
+    // Sondeo barato: 1 slot al open + duración; si no hay conflicto para algún
+    // staff → esa fecha tiene al menos 1 hueco.
+    const firstOpen = `${String(Math.floor(win.openMin / 60)).padStart(2, '0')}:${String(win.openMin % 60).padStart(2, '0')}`;
+    const dtIso = buildLocalIso(iso, firstOpen, opts.timezone);
+    const endIso = new Date(
+      new Date(dtIso).getTime() + opts.durationMinutes * 60_000,
+    ).toISOString();
+
+    // ¿Hay al menos un staff libre en ese primer slot?
+    for (const staff of opts.staffList) {
+      const { count } = await supabaseAdmin
+        .from('appointments')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', opts.tenantId)
+        .eq('staff_id', staff.id)
+        .in('status', ['scheduled', 'confirmed'])
+        .lt('datetime', endIso)
+        .gt('end_datetime', dtIso);
+      if ((count ?? 0) === 0) return iso;
+    }
+  }
+  return null;
+}
+
 registerTool('check_availability', {
   schema: {
     type: 'function',
     function: {
       name: 'check_availability',
       description:
-        'Consulta horarios disponibles para agendar una cita. Llamar ANTES de book_appointment. Resolver fechas relativas (mañana, lunes, etc.) a YYYY-MM-DD antes de invocar.',
+        'Consulta horarios disponibles para agendar una cita. Llamar ANTES de book_appointment. Resolver fechas relativas (mañana, lunes, etc.) a YYYY-MM-DD antes de invocar. Retorna slots libres o un next_available_date si la fecha pedida está llena/cerrada.',
       parameters: {
         type: 'object',
         properties: {
           date: { type: 'string', description: 'YYYY-MM-DD' },
           service_type: { type: 'string', description: 'Opcional' },
-          staff_id: { type: 'string', description: 'Opcional' },
-          duration_minutes: { type: 'number', description: 'Default 30' },
+          staff_id: { type: 'string', description: 'UUID opcional' },
+          duration_minutes: { type: 'number', description: 'Default 30, entre 15 y 240' },
         },
         required: ['date'],
         additionalProperties: false,
       },
     },
   },
-  handler: async (_args: unknown, _ctx: ToolContext) => NOT_IMPLEMENTED,
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = CheckAvailArgs.parse(rawArgs);
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const durationMinutes = args.duration_minutes ?? 30;
+
+    // 1. Fecha no puede ser pasada (en TZ del tenant)
+    const today = todayIsoInTz(timezone);
+    if (args.date < today) {
+      return {
+        available: false,
+        reason: 'PAST_DATE',
+        message: 'La fecha solicitada ya pasó. Pide al paciente otra fecha.',
+      };
+    }
+
+    // 2. ¿Es día laboral según business_hours?
+    const businessHours =
+      (ctx.tenant.business_hours as Record<string, string>) || {};
+    const dayKey = dayKeyFromDate(args.date, timezone);
+    const window = parseHoursWindow(businessHours[dayKey]);
+    if (!window) {
+      // Cerrado ese día → buscar próximo día laboral con disponibilidad
+      const { data: staffList } = await supabaseAdmin
+        .from('staff')
+        .select('id, name, default_duration')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('active', true);
+
+      const nextAvailable = staffList && staffList.length > 0
+        ? await findNextAvailableDate({
+            tenantId: ctx.tenantId,
+            startDate: args.date,
+            timezone,
+            businessHours,
+            durationMinutes,
+            staffList: staffList as StaffSlim[],
+          })
+        : null;
+
+      return {
+        available: false,
+        reason: 'CLOSED',
+        message: 'El consultorio no atiende ese día.',
+        next_available_date: nextAvailable,
+      };
+    }
+
+    // 3. Cargar staff activo (filtrado opcional por staff_id)
+    let staffQuery = supabaseAdmin
+      .from('staff')
+      .select('id, name, default_duration')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+    if (args.staff_id) staffQuery = staffQuery.eq('id', args.staff_id);
+    const { data: staffRows } = await staffQuery;
+    const staffList = (staffRows || []) as StaffSlim[];
+
+    if (staffList.length === 0) {
+      return {
+        available: false,
+        reason: 'NO_STAFF',
+        message: args.staff_id
+          ? 'El profesional solicitado no está disponible.'
+          : 'No hay profesionales activos para agendar en línea.',
+      };
+    }
+
+    // 4. Cargar citas ocupadas del día (de TODO el staff activo, filtrar per-staff después)
+    //    Ventana del día completa en TZ del tenant → UTC.
+    const dayStartIso = buildLocalIso(args.date, '00:00', timezone);
+    const dayEndIso = new Date(
+      new Date(dayStartIso).getTime() + 24 * 60 * 60_000,
+    ).toISOString();
+
+    const { data: bookings } = await supabaseAdmin
+      .from('appointments')
+      .select('staff_id, datetime, end_datetime')
+      .eq('tenant_id', ctx.tenantId)
+      .in('status', ['scheduled', 'confirmed'])
+      .gte('datetime', dayStartIso)
+      .lt('datetime', dayEndIso);
+
+    const byStaff: Record<string, Array<{ start: number; end: number }>> = {};
+    for (const b of bookings || []) {
+      const sid = (b.staff_id as string) || 'unassigned';
+      if (!byStaff[sid]) byStaff[sid] = [];
+      const start = new Date(b.datetime as string).getTime();
+      const end = b.end_datetime
+        ? new Date(b.end_datetime as string).getTime()
+        : start + durationMinutes * 60_000;
+      byStaff[sid].push({ start, end });
+    }
+
+    // 5. Generar candidatos cada `durationMinutes` minutos desde openMin hasta
+    //    (closeMin - durationMinutes). Para cada candidato, buscar al menos
+    //    un staff libre (con buffer). Saltar candidatos en el pasado (hoy).
+    const nowMs = Date.now();
+    const stepMinutes = durationMinutes;
+    const slots: Slot[] = [];
+
+    for (
+      let minuteOfDay = window.openMin;
+      minuteOfDay + durationMinutes <= window.closeMin;
+      minuteOfDay += stepMinutes
+    ) {
+      const hh = String(Math.floor(minuteOfDay / 60)).padStart(2, '0');
+      const mm = String(minuteOfDay % 60).padStart(2, '0');
+      const startIso = buildLocalIso(args.date, `${hh}:${mm}`, timezone);
+      const startMs = new Date(startIso).getTime();
+      const endMs = startMs + durationMinutes * 60_000;
+
+      if (startMs < nowMs) continue; // no sugerir slots que ya pasaron
+
+      // Confirmar que el slot cae dentro de business_hours (defense in depth)
+      if (!isWithinBusinessHours(startIso, businessHours, timezone)) continue;
+
+      // Buscar un staff libre para este slot (respetando buffer)
+      const bufferMs = SLOT_BUFFER_MINUTES * 60_000;
+      const freeStaff = staffList.find((staff) => {
+        const occupied = byStaff[staff.id] || [];
+        return !occupied.some((o) => o.start - bufferMs < endMs && o.end + bufferMs > startMs);
+      });
+
+      if (freeStaff) {
+        const endHH = String(Math.floor((minuteOfDay + durationMinutes) / 60)).padStart(2, '0');
+        const endMM = String((minuteOfDay + durationMinutes) % 60).padStart(2, '0');
+        slots.push({
+          time: `${hh}:${mm}`,
+          end_time: `${endHH}:${endMM}`,
+          staff_id: freeStaff.id,
+          staff_name: freeStaff.name,
+        });
+        if (slots.length >= MAX_SLOTS_RETURNED) break;
+      }
+    }
+
+    if (slots.length === 0) {
+      const nextAvailable = await findNextAvailableDate({
+        tenantId: ctx.tenantId,
+        startDate: args.date,
+        timezone,
+        businessHours,
+        durationMinutes,
+        staffList,
+      });
+      return {
+        available: false,
+        reason: 'FULL',
+        message: 'No hay horarios disponibles ese día.',
+        next_available_date: nextAvailable,
+      };
+    }
+
+    const { dateFmt } = formatDateTimeMx(buildLocalIso(args.date, '12:00', timezone), timezone);
+    return {
+      available: true,
+      date: args.date,
+      date_human: dateFmt,
+      duration_minutes: durationMinutes,
+      slots,
+      total_available: slots.length,
+      more_slots_exist: slots.length === MAX_SLOTS_RETURNED,
+    };
+  },
 });
 
 // ─── Tool 2: book_appointment ────────────────────────────────────────────────
