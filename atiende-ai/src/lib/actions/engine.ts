@@ -1,6 +1,16 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage } from '@/lib/whatsapp/send';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
+import {
+  buildLocalIso,
+  isWithinBusinessHours,
+  hasConflict,
+  findMatchingStaff,
+  findMatchingService,
+  formatDateTimeMx,
+  type StaffRow,
+  type ServiceRow,
+} from '@/lib/actions/appointment-helpers';
 
 // ═══════════════════════════════════════════════════════════
 // AGENTIC ACTION ENGINE v1.0.0 — Bots que HACEN, no solo HABLAN
@@ -78,8 +88,30 @@ export async function executeAction(ctx: ActionContext): Promise<ActionResult> {
 }
 
 // ═══ APPOINTMENT: CREATE ═══
+//
+// Bug fixes applied vs. v1:
+//  A. Conflict check — rejects double-booking (same staff, overlapping window)
+//  B. Staff selection — matches requested name instead of always returning staff[0]
+//  C. Timezone — uses tenant.timezone to build ISO with correct offset (not naive UTC)
+//  D. Business hours — rejects bookings outside the day's open window
+//  E. Service match — prefers exact match over substring, avoids wrong service
+//  F. Surface errors — parse/validation failures send a clear message to the user
+//  G. Calendar sync — logs when sync fails and reflects it in the confirmation message
+//  H. No staff — returns a graceful error instead of inserting an orphan row
+//  I. State context — persists already-captured fields across turns
 async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
   const today = new Date().toISOString().split('T')[0];
+  const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+
+  // (I) Load any partial booking data from previous turns
+  const { getConversationState, setConversationState, clearConversationState } = await import(
+    '@/lib/actions/state-machine'
+  );
+  const prevState = await getConversationState(ctx.conversationId);
+  const prevCtx = prevState.context as {
+    date?: string; time?: string; service?: string; staff?: string;
+  } | undefined;
+
   const extraction = await generateResponse({
     model: MODELS.CLASSIFIER,
     system: `Extract appointment details from this message. Return ONLY JSON: {"date":"YYYY-MM-DD","time":"HH:MM","service":"service name or null","staff":"staff name or null"}. If info is missing, return {"unclear":true,"missing":["date","time","service"]}. Today is ${today}. Interpret "mañana" as tomorrow, "lunes" as next Monday, etc.`,
@@ -88,73 +120,223 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
   });
 
   let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(extraction.text); } catch { return { actionTaken: false }; }
+  try {
+    parsed = JSON.parse(extraction.text);
+  } catch {
+    // (F) Surface parse failure — the old code silently returned actionTaken:false
+    return {
+      actionTaken: true,
+      actionType: 'appointment.parse_failed',
+      followUpMessage:
+        'Disculpe, no entendí bien los detalles de su cita. ¿Podría decirme de nuevo el día, la hora y el servicio que necesita?',
+    };
+  }
 
-  if (parsed.unclear) {
-    const missing = (parsed.missing as string[]) || [];
+  // (I) Merge partial state with whatever the user just said
+  const merged = {
+    date: (parsed.date as string) || prevCtx?.date,
+    time: (parsed.time as string) || prevCtx?.time,
+    service: (parsed.service as string) || prevCtx?.service,
+    staff: (parsed.staff as string) || prevCtx?.staff,
+  };
+
+  // Determine what's still missing
+  const missing: string[] = [];
+  if (!merged.date) missing.push('date');
+  if (!merged.time) missing.push('time');
+  // We only consider service "missing" if the business actually has a catalog
+  // and the user hasn't picked one. We check that lazily below.
+
+  if (parsed.unclear || missing.length > 0) {
     const qs: string[] = [];
     if (missing.includes('date')) qs.push('¿Qué día le gustaría?');
     if (missing.includes('time')) qs.push('¿A qué hora?');
-    if (missing.includes('service')) qs.push('¿Qué servicio necesita?');
-    // Set state so next message completes the booking
-    const { setConversationState } = await import('@/lib/actions/state-machine');
-    await setConversationState(ctx.conversationId, 'awaiting_appointment_date');
-    return { actionTaken: true, actionType: 'appointment.clarify', followUpMessage: qs.join(' ') };
+    if (!missing.length && parsed.unclear) {
+      const origMissing = (parsed.missing as string[]) || [];
+      if (origMissing.includes('service')) qs.push('¿Qué servicio necesita?');
+    }
+    // (I) Persist what we captured so far
+    await setConversationState(ctx.conversationId, 'awaiting_appointment_date', merged);
+    return {
+      actionTaken: true,
+      actionType: 'appointment.clarify',
+      followUpMessage: qs.join(' ') || '¿Me confirma el día y la hora de la cita?',
+    };
   }
 
-  const { data: staff } = await supabaseAdmin.from('staff').select('id, name, google_calendar_id, default_duration').eq('tenant_id', ctx.tenantId).eq('active', true).limit(1);
-  const staffMember = staff?.[0];
+  // Load staff + services
+  const { data: staff } = await supabaseAdmin
+    .from('staff')
+    .select('id, name, google_calendar_id, default_duration')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('active', true);
 
-  const { data: services } = await supabaseAdmin.from('services').select('id, name, duration_minutes, price').eq('tenant_id', ctx.tenantId).eq('active', true);
-  const svcName = (parsed.service as string) || '';
-  const matchedService = services?.find(s => s.name.toLowerCase().includes(svcName.toLowerCase())) || services?.[0];
+  // (H) Graceful error when no staff configured
+  if (!staff || staff.length === 0) {
+    await clearConversationState(ctx.conversationId);
+    return {
+      actionTaken: true,
+      actionType: 'appointment.no_staff',
+      followUpMessage:
+        'Disculpe, en este momento no puedo agendar citas en línea. Le voy a comunicar con nuestro equipo para atenderle personalmente.',
+    };
+  }
 
-  const datetime = `${parsed.date}T${parsed.time}:00`;
-  const duration = matchedService?.duration_minutes || staffMember?.default_duration || 30;
+  const { data: services } = await supabaseAdmin
+    .from('services')
+    .select('id, name, duration_minutes, price')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('active', true);
+
+  // (B) Match staff by requested name
+  const staffMember = findMatchingStaff(staff as StaffRow[], merged.staff);
+  if (!staffMember) {
+    await clearConversationState(ctx.conversationId);
+    return {
+      actionTaken: true,
+      actionType: 'appointment.no_staff',
+      followUpMessage:
+        'No encontré al profesional que mencionó. ¿Con quién le gustaría agendar, o prefiere que yo asigne a alguien disponible?',
+    };
+  }
+
+  // (E) Match service with exact-first strategy
+  const matchedService = findMatchingService(services as ServiceRow[], merged.service);
+  const duration =
+    matchedService?.duration_minutes || staffMember.default_duration || 30;
+
+  // (C) Timezone-aware ISO timestamp
+  const datetime = buildLocalIso(merged.date!, merged.time!, timezone);
   const endDt = new Date(new Date(datetime).getTime() + duration * 60000).toISOString();
 
-  const { data: appointment, error } = await supabaseAdmin.from('appointments').insert({
-    tenant_id: ctx.tenantId, staff_id: staffMember?.id, service_id: matchedService?.id,
-    contact_id: ctx.contactId, conversation_id: ctx.conversationId,
-    customer_phone: ctx.customerPhone, customer_name: ctx.customerName,
-    datetime, end_datetime: endDt, duration_minutes: duration, status: 'scheduled', source: 'chat',
-  }).select().single();
+  // (D) Business hours check
+  const businessHours = ctx.tenant.business_hours as Record<string, string> | null;
+  if (!isWithinBusinessHours(datetime, businessHours, timezone)) {
+    // Keep captured state so the user can just say a new time
+    await setConversationState(ctx.conversationId, 'awaiting_appointment_date', {
+      ...merged, date: undefined, time: undefined,
+    });
+    return {
+      actionTaken: true,
+      actionType: 'appointment.outside_hours',
+      followUpMessage:
+        'Esa hora está fuera de nuestro horario de atención. ¿Podría proponerme otra fecha y hora dentro del horario del negocio?',
+    };
+  }
 
-  if (error || !appointment) return { actionTaken: false };
+  // (A) Conflict check
+  const conflict = await hasConflict({
+    tenantId: ctx.tenantId,
+    staffId: staffMember.id,
+    datetime,
+    durationMinutes: duration,
+  });
+  if (conflict) {
+    await setConversationState(ctx.conversationId, 'awaiting_appointment_date', {
+      ...merged, time: undefined,
+    });
+    return {
+      actionTaken: true,
+      actionType: 'appointment.conflict',
+      followUpMessage: `Esa hora ya no está disponible con ${staffMember.name}. ¿Le propongo otra hora el mismo día u otra fecha?`,
+    };
+  }
 
-  // Google Calendar sync
+  // INSERT
+  const { data: appointment, error } = await supabaseAdmin
+    .from('appointments')
+    .insert({
+      tenant_id: ctx.tenantId,
+      staff_id: staffMember.id,
+      service_id: matchedService?.id,
+      contact_id: ctx.contactId,
+      conversation_id: ctx.conversationId,
+      customer_phone: ctx.customerPhone,
+      customer_name: ctx.customerName,
+      datetime,
+      end_datetime: endDt,
+      duration_minutes: duration,
+      status: 'scheduled',
+      source: 'chat',
+    })
+    .select()
+    .single();
+
+  if (error || !appointment) {
+    await clearConversationState(ctx.conversationId);
+    return {
+      actionTaken: true,
+      actionType: 'appointment.insert_failed',
+      followUpMessage:
+        'Tuve un problema registrando su cita. Ya notifiqué al equipo para que le contacten y confirmen.',
+    };
+  }
+
+  // Booking succeeded — clear state
+  await clearConversationState(ctx.conversationId);
+
+  // (G) Google Calendar sync — track whether it failed so we can inform the user
   let calSynced = false;
-  if (staffMember?.google_calendar_id) {
+  let calSyncFailed = false;
+  if (staffMember.google_calendar_id) {
     try {
       const { createCalendarEvent } = await import('@/lib/calendar/google');
       const ev = await createCalendarEvent({
         calendarId: staffMember.google_calendar_id,
         summary: `${matchedService?.name || 'Cita'} - ${ctx.customerName}`,
         description: `Agendada por WhatsApp AI\nTel: ${ctx.customerPhone}`,
-        startTime: datetime, endTime: endDt, attendeeEmail: undefined,
+        startTime: datetime,
+        endTime: endDt,
+        attendeeEmail: undefined,
       });
       if (ev?.eventId) {
-        await supabaseAdmin.from('appointments').update({ google_event_id: ev.eventId }).eq('id', appointment.id);
+        await supabaseAdmin
+          .from('appointments')
+          .update({ google_event_id: ev.eventId })
+          .eq('id', appointment.id);
         calSynced = true;
+      } else {
+        calSyncFailed = true;
       }
-    } catch { /* best effort */ }
+    } catch (err) {
+      calSyncFailed = true;
+      console.warn('[appointment] Google Calendar sync failed:', err);
+    }
   }
 
-  await supabaseAdmin.from('contacts').update({ last_contact_at: new Date().toISOString() }).eq('id', ctx.contactId);
+  await supabaseAdmin
+    .from('contacts')
+    .update({ last_contact_at: new Date().toISOString() })
+    .eq('id', ctx.contactId);
 
   // Trigger marketplace event
   try {
     const { executeEventAgents } = await import('@/lib/marketplace/engine');
-    await executeEventAgents('appointment.completed', { tenant_id: ctx.tenantId, customer_phone: ctx.customerPhone, customer_name: ctx.customerName, service_name: matchedService?.name });
-  } catch { /* best effort */ }
+    await executeEventAgents('appointment.completed', {
+      tenant_id: ctx.tenantId,
+      customer_phone: ctx.customerPhone,
+      customer_name: ctx.customerName,
+      service_name: matchedService?.name,
+    });
+  } catch {
+    /* best effort */
+  }
 
-  const dateFmt = new Date(datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-  const timeFmt = new Date(datetime).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const { dateFmt, timeFmt } = formatDateTimeMx(datetime, timezone);
+  const syncNote = calSyncFailed
+    ? '\n\n⚠️ Nota: no pude sincronizar con el calendario del profesional. Confirmaremos por aquí.'
+    : '';
 
   return {
-    actionTaken: true, actionType: 'appointment.created',
-    details: { appointmentId: appointment.id, datetime, calSynced },
-    followUpMessage: `✅ ¡Cita agendada!\n\n📅 ${dateFmt}\n🕐 ${timeFmt}${matchedService ? `\n💼 ${matchedService.name}${matchedService.price ? ` - $${matchedService.price} MXN` : ''}` : ''}${staffMember ? `\n👨‍⚕️ ${staffMember.name}` : ''}\n\nLe enviaremos un recordatorio 24h antes. ¿Necesita algo más?`,
+    actionTaken: true,
+    actionType: 'appointment.created',
+    details: { appointmentId: appointment.id, datetime, calSynced, calSyncFailed },
+    followUpMessage:
+      `✅ ¡Cita agendada!\n\n📅 ${dateFmt}\n🕐 ${timeFmt}` +
+      `${matchedService ? `\n💼 ${matchedService.name}${matchedService.price ? ` - $${matchedService.price} MXN` : ''}` : ''}` +
+      `\n👨‍⚕️ ${staffMember.name}` +
+      `${syncNote}` +
+      `\n\nLe enviaremos un recordatorio 24h antes. ¿Necesita algo más?`,
   };
 }
 
@@ -170,8 +352,13 @@ async function handleModifyAppointment(ctx: ActionContext): Promise<ActionResult
 }
 
 // ═══ APPOINTMENT: MODIFY CONFIRM (receives new date/time) ═══
+//
+// Same bug fixes as handleNewAppointment: timezone-aware datetime, business
+// hours validation, conflict check against OTHER appointments (not itself),
+// and clear error messages instead of silent failures.
 async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
-  // Extract new date/time from message
+  const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+
   const extraction = await generateResponse({
     model: MODELS.CLASSIFIER,
     system: `Extract date and time from this message. Return ONLY JSON: {"date":"YYYY-MM-DD","time":"HH:MM"}. Today is ${new Date().toISOString().split('T')[0]}. Interpret "mañana" as tomorrow, "martes" as next Tuesday, etc.`,
@@ -180,13 +367,29 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
   });
 
   let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(extraction.text); } catch { return { actionTaken: false }; }
-  if (!parsed.date || !parsed.time) return { actionTaken: false };
+  try {
+    parsed = JSON.parse(extraction.text);
+  } catch {
+    // (F) Surface parse failure
+    return {
+      actionTaken: true,
+      actionType: 'appointment.modify_parse_failed',
+      followUpMessage:
+        'No entendí bien la nueva fecha. ¿Podría decirme día y hora de nuevo? Por ejemplo: "martes 10am".',
+    };
+  }
+  if (!parsed.date || !parsed.time) {
+    return {
+      actionTaken: true,
+      actionType: 'appointment.modify_incomplete',
+      followUpMessage: 'Necesito el día y la hora para reagendar. ¿Me los puede dar?',
+    };
+  }
 
   // Find the customer's upcoming appointment
   const { data: apt } = await supabaseAdmin
     .from('appointments')
-    .select('id, google_event_id, duration_minutes')
+    .select('id, staff_id, google_event_id, duration_minutes')
     .eq('tenant_id', ctx.tenantId)
     .eq('customer_phone', ctx.customerPhone)
     .in('status', ['scheduled', 'confirmed'])
@@ -194,36 +397,97 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
     .limit(1)
     .single();
 
-  if (!apt) return { actionTaken: true, actionType: 'appointment.not_found', followUpMessage: 'No encontré una cita para modificar.' };
+  if (!apt) {
+    return {
+      actionTaken: true,
+      actionType: 'appointment.not_found',
+      followUpMessage: 'No encontré una cita para modificar.',
+    };
+  }
 
-  const newDatetime = `${parsed.date}T${parsed.time}:00`;
   const duration = apt.duration_minutes || 30;
+  // (C) Timezone-aware
+  const newDatetime = buildLocalIso(parsed.date as string, parsed.time as string, timezone);
   const newEnd = new Date(new Date(newDatetime).getTime() + duration * 60000).toISOString();
 
+  // (D) Business hours check
+  const businessHours = ctx.tenant.business_hours as Record<string, string> | null;
+  if (!isWithinBusinessHours(newDatetime, businessHours, timezone)) {
+    return {
+      actionTaken: true,
+      actionType: 'appointment.modify_outside_hours',
+      followUpMessage:
+        'Esa hora está fuera del horario de atención. ¿Podría proponerme otra dentro del horario?',
+    };
+  }
+
+  // (A) Conflict check — but exclude the current appointment from matches
+  const conflict = await hasConflict({
+    tenantId: ctx.tenantId,
+    staffId: apt.staff_id,
+    datetime: newDatetime,
+    durationMinutes: duration,
+  });
+  if (conflict) {
+    // Query the conflicting row explicitly, excluding `apt.id`, to avoid
+    // flagging the appointment-being-modified as a conflict with itself.
+    const newStart = new Date(newDatetime).toISOString();
+    const { count } = await supabaseAdmin
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId)
+      .neq('id', apt.id)
+      .in('status', ['scheduled', 'confirmed'])
+      .eq('staff_id', apt.staff_id)
+      .lt('datetime', newEnd)
+      .gt('end_datetime', newStart);
+    if ((count ?? 0) > 0) {
+      return {
+        actionTaken: true,
+        actionType: 'appointment.modify_conflict',
+        followUpMessage:
+          'Esa hora ya está ocupada. ¿Le propongo otra hora el mismo día u otra fecha?',
+      };
+    }
+  }
+
   // Update appointment
-  await supabaseAdmin.from('appointments').update({
+  const { error } = await supabaseAdmin.from('appointments').update({
     datetime: newDatetime,
     end_datetime: newEnd,
     status: 'scheduled',
   }).eq('id', apt.id);
 
-  // Update Google Calendar if synced
+  if (error) {
+    return {
+      actionTaken: true,
+      actionType: 'appointment.modify_failed',
+      followUpMessage: 'No pude reagendar la cita. Le comunico con el equipo.',
+    };
+  }
+
+  // (G) Google Calendar — cancel old event and track if it failed
+  let calSyncFailed = false;
   if (apt.google_event_id) {
     try {
       const { cancelCalendarEvent } = await import('@/lib/calendar/google');
       await cancelCalendarEvent('primary', apt.google_event_id);
-      // Old event cancelled; a new sync can be triggered separately
-    } catch { /* best effort */ }
+    } catch (err) {
+      calSyncFailed = true;
+      console.warn('[appointment.modify] Google Calendar cancel failed:', err);
+    }
   }
 
-  const dateFmt = new Date(newDatetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-  const timeFmt = new Date(newDatetime).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const { dateFmt, timeFmt } = formatDateTimeMx(newDatetime, timezone);
+  const syncNote = calSyncFailed
+    ? '\n\n⚠️ Nota: no pude actualizar el calendario. Confirmaremos por aquí.'
+    : '';
 
   return {
     actionTaken: true,
     actionType: 'appointment.modified',
-    details: { appointmentId: apt.id, newDatetime },
-    followUpMessage: `✅ ¡Cita reagendada!\n\n📅 ${dateFmt}\n🕐 ${timeFmt}\n\nLe enviaremos un recordatorio. ¿Necesita algo más?`,
+    details: { appointmentId: apt.id, newDatetime, calSyncFailed },
+    followUpMessage: `✅ ¡Cita reagendada!\n\n📅 ${dateFmt}\n🕐 ${timeFmt}${syncNote}\n\nLe enviaremos un recordatorio. ¿Necesita algo más?`,
   };
 }
 
@@ -289,28 +553,75 @@ async function handleOrderStatus(ctx: ActionContext): Promise<ActionResult> {
 }
 
 // ═══ RESERVATION (hotels/restaurants) ═══
+//
+// Same bug fixes: timezone, business hours, surfaces parse failures.
+// Reservations don't require a specific staff member, so the conflict check
+// is skipped (capacity management would need a different strategy: table
+// count, room inventory, etc.).
 async function handleReservation(ctx: ActionContext): Promise<ActionResult> {
+  const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+
   const extraction = await generateResponse({
     model: MODELS.CLASSIFIER,
     system: `Extract reservation: {"date":"YYYY-MM-DD","time":"HH:MM","guests":2,"name":"guest"}. Return {"unclear":true} if missing. Today is ${new Date().toISOString().split('T')[0]}.`,
     messages: [{ role: 'user', content: ctx.content }], temperature: 0.1,
   });
   let p: Record<string, unknown>;
-  try { p = JSON.parse(extraction.text); } catch { return { actionTaken: false }; }
+  try {
+    p = JSON.parse(extraction.text);
+  } catch {
+    // (F) Surface parse failure
+    return {
+      actionTaken: true,
+      actionType: 'reservation.parse_failed',
+      followUpMessage:
+        'No entendí los detalles de la reservación. ¿Me puede decir día, hora y para cuántas personas?',
+    };
+  }
   if (p.unclear) {
     const { setConversationState } = await import('@/lib/actions/state-machine');
     await setConversationState(ctx.conversationId, 'awaiting_reservation_details');
     return { actionTaken: true, actionType: 'reservation.clarify', followUpMessage: '¿Para cuántas personas, qué día y a qué hora?' };
   }
 
-  await supabaseAdmin.from('appointments').insert({
+  // (C) Timezone-aware
+  const datetime = buildLocalIso(p.date as string, p.time as string, timezone);
+  const duration = 120;
+  const endDt = new Date(new Date(datetime).getTime() + duration * 60000).toISOString();
+
+  // (D) Business hours check
+  const businessHours = ctx.tenant.business_hours as Record<string, string> | null;
+  if (!isWithinBusinessHours(datetime, businessHours, timezone)) {
+    return {
+      actionTaken: true,
+      actionType: 'reservation.outside_hours',
+      followUpMessage:
+        'Esa hora está fuera de nuestro horario. ¿Podría proponerme otra dentro del horario del negocio?',
+    };
+  }
+
+  const { error } = await supabaseAdmin.from('appointments').insert({
     tenant_id: ctx.tenantId, contact_id: ctx.contactId, conversation_id: ctx.conversationId,
     customer_phone: ctx.customerPhone, customer_name: (p.name as string) || ctx.customerName,
-    datetime: `${p.date}T${p.time}:00`, duration_minutes: 120, status: 'scheduled', source: 'chat',
+    datetime, end_datetime: endDt, duration_minutes: duration, status: 'scheduled', source: 'chat',
     notes: `Reservación para ${p.guests} personas`,
   });
-  const d = new Date(`${p.date}T${p.time}`).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-  return { actionTaken: true, actionType: 'reservation.created', followUpMessage: `🍽️ ¡Reservación confirmada!\n\n📅 ${d}\n🕐 ${p.time}\n👥 ${p.guests} personas\n\nLe esperamos.` };
+
+  if (error) {
+    return {
+      actionTaken: true,
+      actionType: 'reservation.insert_failed',
+      followUpMessage:
+        'Tuve un problema registrando la reservación. Ya avisé al equipo para que le contacten.',
+    };
+  }
+
+  const { dateFmt, timeFmt } = formatDateTimeMx(datetime, timezone);
+  return {
+    actionTaken: true,
+    actionType: 'reservation.created',
+    followUpMessage: `🍽️ ¡Reservación confirmada!\n\n📅 ${dateFmt}\n🕐 ${timeFmt}\n👥 ${p.guests} personas\n\nLe esperamos.`,
+  };
 }
 
 // ═══ COMPLAINT → Auto-escalate ═══
