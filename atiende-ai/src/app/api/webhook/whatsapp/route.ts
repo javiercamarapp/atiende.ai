@@ -4,6 +4,21 @@ import { logWebhook } from '@/lib/webhook-logger';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import crypto from 'crypto';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature flag — Tool calling pipeline (Fase 1 de la migración)
+//
+// Cuando `USE_TOOL_CALLING=true` en el entorno, el `processor.ts` decide caso
+// por caso si usar el nuevo orquestador (basado en
+// `tenants.features.tool_calling`). Cuando `false`, el sistema se comporta
+// IDÉNTICO al pipeline tradicional (classifier + dispatch + handlers).
+//
+// Mantén `USE_TOOL_CALLING=false` en producción hasta validar el nuevo
+// pipeline en staging. El processor lee la misma env var por su cuenta —
+// no importamos esta constante para no acoplar lib/* a un route file.
+// ─────────────────────────────────────────────────────────────────────────────
+const USE_TOOL_CALLING = process.env.USE_TOOL_CALLING === 'true';
+void USE_TOOL_CALLING; // referenced for documentation; processor reads env directly
+
 // GET: Verificacion del webhook (Meta lo llama UNA VEZ al configurar)
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;

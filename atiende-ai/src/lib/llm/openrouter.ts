@@ -70,6 +70,19 @@ export const MODELS = {
   // ─── FALLBACK DEL ONBOARDING AGENT ───
   // Llama 3.3 70B Instruct — $0.12/$0.30, solido como red de seguridad
   ONBOARDING_AGENT_FALLBACK: 'meta-llama/llama-3.3-70b-instruct',
+
+  // ─── ORQUESTADOR DE TOOL CALLING (Fase 1) ───
+  // Grok 4.1 Fast — modelo primario para el nuevo pipeline agentico que
+  // expone `tools` al LLM y ejecuta el loop hasta una respuesta final.
+  // Elegido por baja latencia + soporte robusto de tool calling vía
+  // OpenRouter. Vivirá detrás del feature flag USE_TOOL_CALLING durante
+  // la migración; cuando el flag está OFF estos modelos no se invocan.
+  ORCHESTRATOR: 'x-ai/grok-4.1-fast',
+
+  // ─── FALLBACK DEL ORQUESTADOR ───
+  // GPT-4.1 mini — cobertura cuando Grok devuelve error o supera el
+  // presupuesto de tiempo (3s en la implementación actual del orchestrator).
+  ORCHESTRATOR_FALLBACK: 'openai/gpt-4.1-mini',
 } as const;
 
 // Precios por millon de tokens [input, output]
@@ -80,6 +93,9 @@ const MODEL_PRICES: Record<string, [number, number]> = {
   'anthropic/claude-sonnet-4-6': [3.00, 15.00],
   'qwen/qwen3-235b-a22b-2507': [0.071, 0.10],
   'meta-llama/llama-3.3-70b-instruct': [0.12, 0.30],
+  // Tool calling orchestrator models (Fase 1)
+  'x-ai/grok-4.1-fast': [0.20, 1.50],
+  'openai/gpt-4.1-mini': [0.40, 1.60],
 };
 
 // ═══ ROUTING POR TIPO DE NEGOCIO + INTENT ═══
@@ -319,4 +335,209 @@ export async function generateStructured<T>(opts: {
     'All generation attempts failed',
     lastError,
   );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TOOL CALLING — Fase 1 de la migración a arquitectura agentica
+//
+// `generateWithTools` ejecuta el ciclo completo de tool calling:
+//   1. Llama al modelo con la lista de `tools` disponibles.
+//   2. Si el modelo devuelve `tool_calls`, ejecuta cada herramienta vía el
+//      `executeTool` callback inyectado por el caller (el caller pone el
+//      mapeo nombre→handler; aquí no conocemos los nombres concretos).
+//   3. Inyecta cada resultado como un mensaje role=tool y vuelve a llamar.
+//   4. Repite hasta `maxToolRounds` o hasta que el modelo emita texto final.
+//   5. Si se agotan los rounds sin texto final, lanza LoopGuardError.
+//
+// Esta función NO toca `generateResponse` ni `generateStructured`. Es un
+// helper independiente que el `orchestrator.ts` consume.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Registro de una sola tool ejecutada durante una corrida del orquestador.
+ * El caller usa esto para auditar (tabla `tool_call_logs`) y para debugging.
+ */
+export type ToolCallRecord = {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: unknown;
+  durationMs: number;
+  error?: string;
+};
+
+/**
+ * Lanzada cuando el modelo entra en un loop de tool calls que excede
+ * `maxToolRounds`. Indica un bug en el prompt o en la definición de tools
+ * (el modelo no sabe cuándo parar).
+ */
+export class LoopGuardError extends Error {
+  constructor(public readonly rounds: number) {
+    super(`Tool calling loop exceeded ${rounds} rounds`);
+    this.name = 'LoopGuardError';
+  }
+}
+
+/**
+ * Resultado de una corrida completa del ciclo de tool calling.
+ */
+export interface GenerateWithToolsResult {
+  finalText: string;
+  toolCallsExecuted: ToolCallRecord[];
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  cost: number;
+}
+
+/**
+ * Callback que el caller provee para ejecutar tools por nombre. Vive aquí
+ * como tipo (no se importa de tool-executor para evitar dependencia
+ * circular: openrouter.ts es la capa más baja).
+ */
+export type ToolExecutorCallback = (
+  toolName: string,
+  args: Record<string, unknown>,
+) => Promise<{ success: boolean; result: unknown; error?: string; durationMs: number }>;
+
+export async function generateWithTools(opts: {
+  model: string;
+  system: string;
+  messages: OpenAI.Chat.ChatCompletionMessageParam[];
+  tools: OpenAI.Chat.ChatCompletionTool[];
+  toolExecutor: ToolExecutorCallback;
+  tool_choice?: 'auto' | 'none' | 'required';
+  maxTokens?: number;
+  temperature?: number;
+  /**
+   * Maximo de rondas de tool calls antes de abortar. Cada "ronda" =
+   * 1 LLM call. Default 5 = el modelo puede llamar herramientas hasta 4
+   * veces y luego DEBE emitir texto final.
+   */
+  maxToolRounds?: number;
+}): Promise<GenerateWithToolsResult> {
+  const maxRounds = opts.maxToolRounds ?? 5;
+  const client = getOpenRouter();
+
+  // Acumuladores a través de las rondas
+  const toolCallsExecuted: ToolCallRecord[] = [];
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+  let modelUsed = opts.model;
+
+  // Construimos el array de mensajes que vamos a ir extendiendo turno a turno
+  // con assistant tool_calls + tool results. Comenzamos con system + lo que
+  // el caller pasó.
+  const conversation: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: opts.system },
+    ...opts.messages,
+  ];
+
+  for (let round = 0; round < maxRounds; round++) {
+    const response = await client.chat.completions.create({
+      model: opts.model,
+      messages: conversation,
+      tools: opts.tools.length > 0 ? opts.tools : undefined,
+      tool_choice: opts.tools.length > 0 ? (opts.tool_choice ?? 'auto') : undefined,
+      max_tokens: opts.maxTokens || 800,
+      temperature: opts.temperature ?? 0.5,
+    });
+
+    totalTokensIn += response.usage?.prompt_tokens || 0;
+    totalTokensOut += response.usage?.completion_tokens || 0;
+    modelUsed = response.model || opts.model;
+
+    const choice = response.choices[0];
+    if (!choice) {
+      // Sin choice = respuesta vacía del provider; tratamos como texto vacío.
+      return {
+        finalText: '',
+        toolCallsExecuted,
+        model: modelUsed,
+        tokensIn: totalTokensIn,
+        tokensOut: totalTokensOut,
+        cost: calculateCost(opts.model, totalTokensIn, totalTokensOut),
+      };
+    }
+
+    const toolCalls = choice.message.tool_calls;
+
+    // ── Caso 1: el modelo NO pidió tools — tenemos texto final ──
+    if (!toolCalls || toolCalls.length === 0) {
+      return {
+        finalText: choice.message.content || '',
+        toolCallsExecuted,
+        model: modelUsed,
+        tokensIn: totalTokensIn,
+        tokensOut: totalTokensOut,
+        cost: calculateCost(opts.model, totalTokensIn, totalTokensOut),
+      };
+    }
+
+    // ── Caso 2: el modelo pidió 1+ tools — las ejecutamos en paralelo ──
+    // Empujamos primero el assistant message (con los tool_calls) al
+    // historial — el provider espera ver ese turno antes de los tool results.
+    conversation.push({
+      role: 'assistant',
+      content: choice.message.content ?? null,
+      tool_calls: toolCalls,
+    });
+
+    const toolResultMessages = await Promise.all(
+      toolCalls.map(async (call) => {
+        // Solo manejamos function tool calls (las únicas que existen hoy).
+        if (call.type !== 'function') {
+          return {
+            role: 'tool' as const,
+            tool_call_id: call.id,
+            content: JSON.stringify({ error: `Unsupported tool type: ${call.type}` }),
+          };
+        }
+
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = call.function.arguments
+            ? (JSON.parse(call.function.arguments) as Record<string, unknown>)
+            : {};
+        } catch (err) {
+          // Args no parseables = devolver error como result, dejar al
+          // modelo decidir si reintenta o se rinde.
+          const errMsg = err instanceof Error ? err.message : 'JSON parse error';
+          toolCallsExecuted.push({
+            toolName: call.function.name,
+            args: {},
+            result: null,
+            durationMs: 0,
+            error: `args_parse: ${errMsg}`,
+          });
+          return {
+            role: 'tool' as const,
+            tool_call_id: call.id,
+            content: JSON.stringify({ error: `Invalid arguments JSON: ${errMsg}` }),
+          };
+        }
+
+        const exec = await opts.toolExecutor(call.function.name, parsedArgs);
+        toolCallsExecuted.push({
+          toolName: call.function.name,
+          args: parsedArgs,
+          result: exec.result,
+          durationMs: exec.durationMs,
+          error: exec.error,
+        });
+
+        return {
+          role: 'tool' as const,
+          tool_call_id: call.id,
+          content: JSON.stringify(exec.success ? exec.result : { error: exec.error }),
+        };
+      }),
+    );
+
+    conversation.push(...toolResultMessages);
+    // Loop continúa: la siguiente iteración llama al modelo con los resultados.
+  }
+
+  // Si llegamos aquí es porque el modelo siguió pidiendo tools sin emitir
+  // texto final. Eso indica un loop — abortamos con error explícito.
+  throw new LoopGuardError(maxRounds);
 }
