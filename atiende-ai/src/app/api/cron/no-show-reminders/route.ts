@@ -198,10 +198,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     /* best effort */
   }
 
+  // Alert Javier si hubo fallos
+  const failedCount = results.filter((r) => !r.success).length;
+  if (failedCount > 0) {
+    const { alertOnCronFailure } = await import('@/lib/cron/alert-on-failure');
+    await alertOnCronFailure(
+      'no-show-reminders',
+      results.length,
+      failedCount,
+      results.find((r) => !r.success)?.error,
+    ).catch(() => {});
+  }
+
   return NextResponse.json({
     processed: results.length,
     succeeded: results.filter((r) => r.success).length,
-    failed: results.filter((r) => !r.success).length,
+    failed: failedCount,
     total_tool_calls: totalToolCalls,
     total_cost_usd: Number(totalCost.toFixed(6)),
     duration_ms: Date.now() - start,

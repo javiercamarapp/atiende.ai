@@ -197,8 +197,9 @@ registerTool('send_confirmation_request', {
       };
     }
 
-    // Marcar como recordado aunque hayamos fallado en el update — esto evita
-    // spam si el cron se re-ejecuta. UPDATE best-effort.
+    // Marcar como recordado. Si falla el UPDATE pero el mensaje ya se envió,
+    // el caller debe saberlo para NO contar la cita como "recordatorio enviado"
+    // en el próximo cron (si el cron se re-ejecuta, pediría template duplicado).
     const { error: updErr } = await supabaseAdmin
       .from('appointments')
       .update({
@@ -208,10 +209,20 @@ registerTool('send_confirmation_request', {
       .eq('id', args.appointment_id)
       .eq('tenant_id', ctx.tenantId);
 
+    let updateFailed = false;
+    let updateError: string | undefined;
     if (updErr) {
-      console.warn(
-        '[tool:send_confirmation_request] Update no_show_reminded failed (message sent but flag not set):',
-        updErr.message,
+      updateFailed = true;
+      updateError = updErr.message;
+      // ERROR, no warn — esto es un bug potencial (spam risk)
+      console.error(
+        '[tool:send_confirmation_request] UPDATE no_show_reminded FAILED after successful send. Patient may get duplicate reminder on next cron run:',
+        {
+          appointment_id: args.appointment_id,
+          tenant_id: ctx.tenantId,
+          patient_phone: args.patient_phone,
+          error: updErr.message,
+        },
       );
     }
 
@@ -233,6 +244,8 @@ registerTool('send_confirmation_request', {
       appointment_id: args.appointment_id,
       template: 'appointment_reminder_24h',
       reminded_at: new Date().toISOString(),
+      update_failed: updateFailed,
+      update_error: updateError,
     };
   },
 });

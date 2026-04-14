@@ -25,5 +25,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     triggerMessage: () =>
       'Procesa la lista de pacientes en riesgo de churn y envía mensajes personalizados de reactivación.',
   });
+
+  if (summary.failed > 0) {
+    const { alertOnCronFailure } = await import('@/lib/cron/alert-on-failure');
+    await alertOnCronFailure(
+      'retention',
+      summary.processed,
+      summary.failed,
+      summary.results.find((r) => !r.success)?.error,
+    ).catch(() => {});
+  }
+
   return NextResponse.json(summary);
 }

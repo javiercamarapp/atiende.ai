@@ -30,6 +30,19 @@ export interface QuestionCluster {
   frequency: number;
 }
 
+export interface ClusteringStats {
+  total_questions: number;
+  embedding_success: number;
+  embedding_fallback: number;
+  fallback_rate: number; // 0-1
+  method_used: 'embeddings' | 'jaccard';
+}
+
+export interface ClusteringResult {
+  clusters: QuestionCluster[];
+  stats: ClusteringStats;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,15 +123,37 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 export async function clusterSimilarQuestions(
   questions: string[],
   opts: { tenantId?: string } = {},
-): Promise<QuestionCluster[]> {
-  if (questions.length === 0) return [];
+): Promise<ClusteringResult> {
+  if (questions.length === 0) {
+    return {
+      clusters: [],
+      stats: {
+        total_questions: 0,
+        embedding_success: 0,
+        embedding_fallback: 0,
+        fallback_rate: 0,
+        method_used: 'embeddings',
+      },
+    };
+  }
 
   // Embedding por pregunta (paralelo)
   const embeddings = await Promise.all(questions.map((q) => generateEmbedding(q)));
+  const successCount = embeddings.filter((e) => e !== null).length;
+  const fallbackCount = embeddings.length - successCount;
 
-  // Fallback Jaccard si embeddings no disponibles (no hay API key, error, etc.)
-  if (embeddings.every((e) => e === null)) {
-    return clusterWithJaccard(questions);
+  // Si TODOS los embeddings fallaron, cae a Jaccard completamente
+  if (successCount === 0) {
+    return {
+      clusters: clusterWithJaccard(questions),
+      stats: {
+        total_questions: questions.length,
+        embedding_success: 0,
+        embedding_fallback: questions.length,
+        fallback_rate: 1,
+        method_used: 'jaccard',
+      },
+    };
   }
 
   // Persistir (si hay tenantId) para histórico
@@ -134,7 +169,6 @@ export async function clusterSimilarQuestions(
         rowsToInsert.map((r) => ({
           tenant_id: tenantId,
           question_text: r.question,
-          // pgvector acepta string "[0.1, 0.2, ...]" o array; supabase-js serializa array
           embedding: r.embedding,
           frequency: 1,
         })),
@@ -144,8 +178,16 @@ export async function clusterSimilarQuestions(
     }
   }
 
-  // Clustering in-memory con cosine similarity directa sobre los vectores
-  return clusterWithEmbeddings(questions, embeddings);
+  return {
+    clusters: clusterWithEmbeddings(questions, embeddings),
+    stats: {
+      total_questions: questions.length,
+      embedding_success: successCount,
+      embedding_fallback: fallbackCount,
+      fallback_rate: fallbackCount / questions.length,
+      method_used: 'embeddings',
+    },
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

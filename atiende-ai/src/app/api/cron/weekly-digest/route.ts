@@ -187,6 +187,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     details: { week_start: weekStartDay, sent, per_tenant: perTenant },
   });
 
+  if (failed > 0) {
+    const { alertOnCronFailure } = await import('@/lib/cron/alert-on-failure');
+    await alertOnCronFailure('weekly-digest', tenants.length, failed).catch(() => {});
+  }
+
   return NextResponse.json({
     processed,
     failed,

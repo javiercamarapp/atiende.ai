@@ -8,6 +8,8 @@ import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
 import {
   runOrchestrator,
   OrchestratorBothFailedError,
+  RateLimitError,
+  RATE_LIMIT_USER_MESSAGE,
   type OrchestratorContext,
 } from '@/lib/llm/orchestrator';
 import { getToolSchemas } from '@/lib/llm/tool-executor';
@@ -448,8 +450,11 @@ async function handleSingleMessage(
     return;
   }
 
-  // 7. Save inbound message
-  await supabaseAdmin.from('messages').insert({
+  // 7. Save inbound message. Doble protección de idempotencia:
+  //    - Check a nivel app (arriba, paso 0) — reject silent si ya existe
+  //    - DB UNIQUE constraint en wa_message_id (si código 23505 → duplicate
+  //      webhook retry simultáneo, safe to skip)
+  const { error: insertErr } = await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
     direction: 'inbound',
@@ -458,6 +463,18 @@ async function handleSingleMessage(
     message_type: messageType,
     wa_message_id: messageId,
   });
+  if (insertErr) {
+    // PostgreSQL 23505 = unique_violation. Significa race con otro webhook
+    // retry de Meta — el primer insert ganó, este es duplicado. No es error.
+    if ((insertErr as { code?: string }).code === '23505') {
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('[processor] duplicate wa_message_id, skipping', { messageId });
+      }
+      return;
+    }
+    console.error('[processor] insert inbound message failed:', insertErr);
+    // No retornamos — mejor intentar responder al cliente que silencio total
+  }
 
   // 8. Welcome message for new conversations
   if (isNewConversation && tenant.welcome_message) {
@@ -766,13 +783,18 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     tokensIn = result.tokensIn;
     tokensOut = result.tokensOut;
   } catch (err) {
-    if (err instanceof OrchestratorBothFailedError) {
+    if (err instanceof RateLimitError) {
+      console.warn('[orchestrator] rate limited:', err.scope, 'retry_after=', err.retryAfter);
+      responseText = RATE_LIMIT_USER_MESSAGE;
+    } else if (err instanceof OrchestratorBothFailedError) {
       console.error('[orchestrator] both models failed:', err.message);
+      responseText =
+        'Tuvimos un problema técnico momentáneo. Ya avisé al equipo y lo contactarán en breve.';
     } else {
       console.error('[orchestrator] unexpected error:', err);
+      responseText =
+        'Tuvimos un problema técnico momentáneo. Ya avisé al equipo y lo contactarán en breve.';
     }
-    responseText =
-      'Tuvimos un problema técnico momentáneo. Ya avisé al equipo y lo contactarán en breve.';
   }
 
   const responseTimeMs = Date.now() - startMs;
