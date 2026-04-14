@@ -106,3 +106,121 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Dashboard — Premium dark theme (Apple-style)
+   Activated by wrapping the dashboard with .dashboard-shell. Scoped so
+   marketing / onboarding pages keep their white look.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dashboard-shell {
+  /* Override tokens inside this subtree only */
+  --background: 0 0% 4%;           /* near-black canvas */
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;             /* inverted — white "ink" on dark */
+  --primary-foreground: 0 0% 7%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 14%;
+  --muted-foreground: 0 0% 62%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 98%;
+  --border: 0 0% 16%;              /* hair-line dividers */
+  --input: 0 0% 14%;
+  --ring: 0 0% 70%;
+  --radius: 0.875rem;
+
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(255, 255, 255, 0.035), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, rgba(255, 255, 255, 0.025), transparent 60%),
+    hsl(var(--background));
+  min-height: 100vh;
+}
+
+/* Dashboard-scoped glass (dark) */
+.dashboard-shell .glass-panel {
+  background: rgba(20, 20, 20, 0.65);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dashboard-shell .glass-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: transform 250ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 250ms ease,
+              background 250ms ease;
+}
+.dashboard-shell .glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+}
+
+/* Soft halo used behind active sidebar items + focus rings */
+.dashboard-shell .halo {
+  position: relative;
+}
+.dashboard-shell .halo::before {
+  content: '';
+  position: absolute; inset: -1px;
+  border-radius: inherit;
+  background: radial-gradient(120% 120% at 0% 50%, rgba(255, 255, 255, 0.08), transparent 55%);
+  pointer-events: none;
+}
+
+/* KPI accent — number rendered with subtle shimmer */
+@keyframes kpiShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.dashboard-shell .kpi-number {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: kpiShimmer 6s linear infinite;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.02em;
+}
+
+/* Stagger helpers for dashboard entrance */
+.dashboard-shell .stagger-item {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: fadeSlideIn 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.dashboard-shell .stagger-item:nth-child(1) { animation-delay: 60ms; }
+.dashboard-shell .stagger-item:nth-child(2) { animation-delay: 140ms; }
+.dashboard-shell .stagger-item:nth-child(3) { animation-delay: 220ms; }
+.dashboard-shell .stagger-item:nth-child(4) { animation-delay: 300ms; }
+.dashboard-shell .stagger-item:nth-child(5) { animation-delay: 380ms; }
+.dashboard-shell .stagger-item:nth-child(6) { animation-delay: 460ms; }
+
+/* Scrollbar — thin + monochrome */
+.dashboard-shell ::-webkit-scrollbar { width: 10px; height: 10px; }
+.dashboard-shell ::-webkit-scrollbar-track { background: transparent; }
+.dashboard-shell ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.dashboard-shell ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+  background-clip: padding-box;
+}
