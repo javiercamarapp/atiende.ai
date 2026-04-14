@@ -13,10 +13,17 @@ function verifyConektaSignature(
     .createHmac('sha256', webhookKey)
     .update(payload)
     .digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(expectedDigest, 'hex'),
-    Buffer.from(signatureHeader, 'hex')
-  );
+  // timingSafeEqual throws RangeError if the two Buffers differ in length.
+  // A malicious `digest` header of arbitrary length would surface as a 500
+  // response (via the outer try/catch) instead of the correct 401.
+  try {
+    const expected = Buffer.from(expectedDigest, 'hex');
+    const received = Buffer.from(signatureHeader, 'hex');
+    if (expected.length !== received.length) return false;
+    return crypto.timingSafeEqual(expected, received);
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(req: NextRequest) {
