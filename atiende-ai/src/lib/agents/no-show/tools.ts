@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { formatDateTimeMx } from '@/lib/actions/appointment-helpers';
+import { sendTemplate } from '@/lib/whatsapp/send';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
 const NOT_IMPLEMENTED = {
@@ -129,19 +130,32 @@ registerTool('get_appointments_tomorrow', {
   },
 });
 
+// ─── Tool 2: send_confirmation_request ───────────────────────────────────────
+const SendConfirmationArgs = z
+  .object({
+    appointment_id: z.string().uuid(),
+    patient_phone: z.string().min(6).max(20),
+    patient_name: z.string().min(1).max(200),
+    appointment_datetime: z.string(),
+    doctor_name: z.string().min(1).max(200),
+    service: z.string().min(1).max(200),
+  })
+  .strict();
+
 registerTool('send_confirmation_request', {
   schema: {
     type: 'function',
     function: {
       name: 'send_confirmation_request',
-      description: 'Envía template WhatsApp de confirmación 24h antes con CTA "CONFIRMAR / CANCELAR".',
+      description:
+        'Envía el WhatsApp template "appointment_reminder_24h" al paciente pidiéndole que responda CONFIRMAR o CANCELAR. Marca la cita con no_show_reminded=true y reminded_at=NOW() al terminar. Si el envío falla, retorna {sent:false, error} — NO lanza excepción, el worker debe continuar con la siguiente cita.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
+          appointment_id: { type: 'string', description: 'UUID de la cita.' },
           patient_phone: { type: 'string' },
           patient_name: { type: 'string' },
-          appointment_datetime: { type: 'string' },
+          appointment_datetime: { type: 'string', description: 'ISO datetime de la cita (ctx.tenant.timezone).' },
           doctor_name: { type: 'string' },
           service: { type: 'string' },
         },
@@ -150,7 +164,82 @@ registerTool('send_confirmation_request', {
       },
     },
   },
-  handler: async (_args: unknown, _ctx: ToolContext) => NOT_IMPLEMENTED,
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = SendConfirmationArgs.parse(rawArgs);
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
+    if (!phoneNumberId) {
+      return {
+        sent: false,
+        error: 'Tenant sin wa_phone_number_id configurado.',
+        error_code: 'TENANT_NOT_CONFIGURED',
+      };
+    }
+
+    const { dateFmt, timeFmt } = formatDateTimeMx(args.appointment_datetime, timezone);
+
+    try {
+      await sendTemplate(
+        phoneNumberId,
+        args.patient_phone,
+        'appointment_reminder_24h',
+        [
+          args.patient_name,
+          (ctx.tenant.name as string) || 'el consultorio',
+          `${dateFmt} a las ${timeFmt}`,
+          args.doctor_name,
+          args.service,
+        ],
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[tool:send_confirmation_request] template send failed:', msg);
+      return {
+        sent: false,
+        error: msg,
+        error_code: 'TEMPLATE_SEND_FAILED',
+        appointment_id: args.appointment_id,
+      };
+    }
+
+    // Marcar como recordado aunque hayamos fallado en el update — esto evita
+    // spam si el cron se re-ejecuta. UPDATE best-effort.
+    const { error: updErr } = await supabaseAdmin
+      .from('appointments')
+      .update({
+        no_show_reminded: true,
+        reminded_at: new Date().toISOString(),
+      })
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (updErr) {
+      console.warn(
+        '[tool:send_confirmation_request] Update no_show_reminded failed (message sent but flag not set):',
+        updErr.message,
+      );
+    }
+
+    // Audit log (best effort)
+    try {
+      await supabaseAdmin.from('audit_log').insert({
+        tenant_id: ctx.tenantId,
+        action: 'no_show.reminder_sent',
+        entity_type: 'appointment',
+        entity_id: args.appointment_id,
+        details: { patient_phone: args.patient_phone },
+      });
+    } catch {
+      /* best effort */
+    }
+
+    return {
+      sent: true,
+      appointment_id: args.appointment_id,
+      template: 'appointment_reminder_24h',
+      reminded_at: new Date().toISOString(),
+    };
+  },
 });
 
 // ─── Tool 3: mark_confirmed ──────────────────────────────────────────────────
@@ -207,24 +296,116 @@ registerTool('mark_confirmed', {
   },
 });
 
+// ─── Tool 4: mark_no_show ────────────────────────────────────────────────────
+const MarkNoShowArgs = z
+  .object({
+    appointment_id: z.string().uuid(),
+    reason: z.string().max(500).optional(),
+  })
+  .strict();
+
 registerTool('mark_no_show', {
   schema: {
     type: 'function',
     function: {
       name: 'mark_no_show',
-      description: 'Marca cita como no_show e incrementa contador del paciente. Notifica al dueño.',
+      description:
+        'Marca una cita como no_show e incrementa el contador en el contacto para elevar el risk_score futuro. Notifica al dueño. Scoped por tenant_id.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
-          reason: { type: 'string', description: 'Opcional' },
+          appointment_id: { type: 'string', description: 'UUID de la cita.' },
+          reason: { type: 'string', description: 'Opcional: motivo observado.' },
         },
         required: ['appointment_id'],
         additionalProperties: false,
       },
     },
   },
-  handler: async (_args: unknown, _ctx: ToolContext) => NOT_IMPLEMENTED,
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = MarkNoShowArgs.parse(rawArgs);
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+
+    // 1. SELECT scoped para obtener el customer_phone + datetime
+    const { data: apt } = await supabaseAdmin
+      .from('appointments')
+      .select('id, customer_phone, customer_name, datetime, status')
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (!apt) {
+      return {
+        success: false,
+        error_code: 'NOT_FOUND',
+        message: 'Cita no encontrada para este tenant.',
+      };
+    }
+
+    if (apt.status === 'no_show') {
+      return {
+        success: true,
+        already_marked: true,
+        appointment_id: apt.id as string,
+      };
+    }
+
+    // 2. UPDATE appointment
+    const { error: aptErr } = await supabaseAdmin
+      .from('appointments')
+      .update({
+        status: 'no_show',
+        cancellation_reason: args.reason ?? null,
+      })
+      .eq('id', apt.id);
+
+    if (aptErr) {
+      return {
+        success: false,
+        error_code: 'UPDATE_FAILED',
+        message: aptErr.message,
+      };
+    }
+
+    // 3. Incrementar no_show_count en contacts (best effort — el trigger SQL
+    //    podría hacerlo automáticamente; aquí es fallback).
+    try {
+      const { data: contact } = await supabaseAdmin
+        .from('contacts')
+        .select('id, no_show_count')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('phone', apt.customer_phone as string)
+        .single();
+
+      if (contact) {
+        await supabaseAdmin
+          .from('contacts')
+          .update({ no_show_count: ((contact.no_show_count as number) || 0) + 1 })
+          .eq('id', contact.id);
+      }
+    } catch (err) {
+      console.warn('[tool:mark_no_show] contact counter update failed:', err);
+    }
+
+    // 4. Notificar al dueño
+    try {
+      const { notifyOwner } = await import('@/lib/actions/notifications');
+      const { dateFmt, timeFmt } = formatDateTimeMx(apt.datetime as string, timezone);
+      await notifyOwner({
+        tenantId: ctx.tenantId,
+        event: 'complaint', // reuse — no existe 'no_show' evento nativo
+        details: `No-show: ${apt.customer_name || apt.customer_phone}\nCita: ${dateFmt} ${timeFmt}${args.reason ? `\nMotivo: ${args.reason}` : ''}`,
+      });
+    } catch {
+      /* best effort */
+    }
+
+    return {
+      success: true,
+      appointment_id: apt.id as string,
+      slot_freed: true,
+    };
+  },
 });
 
 registerTool('notify_risk', {
