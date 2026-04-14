@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
 import { createServerSupabase } from '@/lib/supabase/server';
 
+// Calls the tenant's chat LLM for testing; 30s headroom over Pro's 15s default.
+export const maxDuration = 30;
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createServerSupabase();

@@ -1,4 +1,4 @@
-import type { VerticalEnum, VerticalQuestion } from '../types';
+import type { VerticalEnum, VerticalQuestion } from '@/lib/verticals/types';
 
 export const retailQuestions: Partial<Record<VerticalEnum, VerticalQuestion[]>> = {
   floreria: [

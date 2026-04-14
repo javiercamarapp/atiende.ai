@@ -7,6 +7,11 @@ import { createRetellAgent } from '@/lib/voice/retell';
 import { getChatTemplate } from '@/lib/templates/chat/index';
 import { getVoiceTemplate } from '@/lib/templates/voice/index';
 
+// Heavy route: generates a system prompt, ingests knowledge chunks with
+// OpenAI embeddings, and optionally provisions a Retell voice agent. Can
+// exceed 60s on the first run. 180s fits within Vercel Pro's 300s cap.
+export const maxDuration = 180;
+
 export async function POST(req: NextRequest) {
   try {
     // Validate auth — must have a valid session

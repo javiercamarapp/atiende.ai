@@ -4,6 +4,9 @@
 import { NextResponse } from 'next/server';
 import { detectVertical } from '@/lib/onboarding/detect-vertical';
 
+// Calls an LLM classifier; 30s is generous headroom over the Pro default 15s.
+export const maxDuration = 30;
+
 export async function POST(request: Request) {
   const { input } = await request.json();
 
