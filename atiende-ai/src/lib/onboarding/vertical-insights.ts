@@ -67,6 +67,7 @@ export const VERTICAL_INSIGHTS: Partial<Record<VerticalEnum, string>> = {
   escuela: 'Los padres preguntan requisitos de inscripción y colegiaturas a todas horas. Tu bot va a responder 24/7 y aumentar tu conversión de prospectos.',
   agencia_digital: '"¿Cuánto cuesta contratar una agencia?" Tu bot va a presentar paquetes y precios al instante — leads calificados antes de tu primera llamada.',
   fotografo: '"¿Tienes disponibilidad para [fecha]?" Tu bot va a verificar tu calendario y responder al momento, sin perder bookings.',
+  condominio: 'El 78% de los residentes prefieren reportar fallas y pagar cuotas por WhatsApp. Tu agente va a gestionar solicitudes 24/7 sin saturar a tu equipo de administracion.',
 };
 
 /**

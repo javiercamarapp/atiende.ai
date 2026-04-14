@@ -22,8 +22,9 @@ export type VerticalEnum =
   // Retail (9)
   | 'floreria' | 'tienda_ropa' | 'papeleria' | 'ferreteria' | 'abarrotes'
   | 'libreria' | 'joyeria' | 'jugueteria' | 'zapateria'
-  // Servicios (6)
-  | 'contable_legal' | 'seguros' | 'taller_mecanico' | 'escuela' | 'agencia_digital' | 'fotografo';
+  // Servicios (7)
+  | 'contable_legal' | 'seguros' | 'taller_mecanico' | 'escuela' | 'agencia_digital' | 'fotografo'
+  | 'condominio';
 
 export type QuestionInputType = 'text' | 'textarea' | 'select' | 'multiselect' | 'boolean' | 'number' | 'price_list';
 
