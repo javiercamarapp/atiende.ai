@@ -6,7 +6,7 @@
 //   1. Recibe el historial completo de la conversación + system prompt + tools
 //      del sub-agente que debe atender este turno.
 //   2. Llama a `generateWithTools` con el modelo PRIMARIO (Grok 4.1 Fast),
-//      envuelto en un timeout de 3 segundos.
+//      envuelto en un timeout de 10 segundos.
 //   3. Si el primario falla (timeout, error de provider, LoopGuardError),
 //      reintenta con el modelo FALLBACK (GPT-4.1 mini) y registra que se usó
 //      fallback.
