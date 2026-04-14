@@ -1,15 +1,19 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// AGENDA TOOLS — Phase 2.A (in progress)
+// AGENDA TOOLS — Phase 2.A complete
 //
-// 5 tools que reúsan helpers existentes de `appointment-helpers.ts`:
-//   - check_availability       [STUB — sub-phase A.2]
-//   - book_appointment         [STUB — sub-phase A.3]
-//   - get_my_appointments      [IMPLEMENTED — sub-phase A.1]
-//   - modify_appointment       [STUB — sub-phase A.4]
-//   - cancel_appointment       [IMPLEMENTED — sub-phase A.1]
+// 5 tools que reúsan helpers de `appointment-helpers.ts` (Phase 1 bug-fixed):
+//   - check_availability   (A.2)
+//   - book_appointment     (A.3)
+//   - get_my_appointments  (A.1)
+//   - modify_appointment   (A.4)
+//   - cancel_appointment   (A.1)
 //
-// El registro vive en este archivo (side-effect al import) — `agenda/index.ts`
-// importa este file para forzar el registerTool().
+// Todas scoped por tenantId + customer_phone para prevenir prompt-injection
+// cross-patient. Todas retornan {success, error_code, message, next_step}
+// para que el LLM sepa qué responder sin ver detalles técnicos.
+//
+// Registro: side-effect al importar. `agenda/index.ts` importa este file
+// para forzar el registerTool() global.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { z } from 'zod';
@@ -25,11 +29,6 @@ import {
   type ServiceRow,
 } from '@/lib/actions/appointment-helpers';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
-
-const NOT_IMPLEMENTED = {
-  unimplemented: true,
-  message: 'Tool registered (Phase 2 scaffolding) — handler implementation pending in next sub-phase.',
-};
 
 // ─── Tool 1: check_availability ──────────────────────────────────────────────
 const CheckAvailArgs = z
@@ -684,28 +683,219 @@ registerTool('get_my_appointments', {
 });
 
 // ─── Tool 4: modify_appointment ──────────────────────────────────────────────
+const ModifyArgs = z
+  .object({
+    appointment_id: z.string().uuid(),
+    patient_phone: z.string().min(6).max(20),
+    new_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    new_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    reason: z.string().max(500).optional(),
+  })
+  .strict()
+  .refine((d) => d.new_date || d.new_time, {
+    message: 'Debes proveer new_date o new_time (o ambos).',
+  });
+
 registerTool('modify_appointment', {
   schema: {
     type: 'function',
     function: {
       name: 'modify_appointment',
       description:
-        'Modifica fecha u hora de una cita existente. Verifica disponibilidad del nuevo slot.',
+        'Reagenda una cita existente a nueva fecha y/o hora. Verifica ownership (tenant + customer_phone), que la cita sea futura, que el nuevo slot esté en horario laboral y libre (hasConflict excluyendo la cita que se mueve).',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
-          patient_phone: { type: 'string' },
-          new_date: { type: 'string', description: 'YYYY-MM-DD opcional' },
-          new_time: { type: 'string', description: 'HH:MM opcional' },
-          reason: { type: 'string', description: 'Opcional' },
+          appointment_id: { type: 'string', description: 'UUID de la cita.' },
+          patient_phone: { type: 'string', description: 'Número WhatsApp del paciente.' },
+          new_date: { type: 'string', description: 'YYYY-MM-DD — opcional si solo cambia la hora.' },
+          new_time: { type: 'string', description: 'HH:MM (24h) — opcional si solo cambia el día.' },
+          reason: { type: 'string', description: 'Opcional: motivo del cambio.' },
         },
         required: ['appointment_id', 'patient_phone'],
         additionalProperties: false,
       },
     },
   },
-  handler: async (_args: unknown, _ctx: ToolContext) => NOT_IMPLEMENTED,
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const parse = ModifyArgs.safeParse(rawArgs);
+    if (!parse.success) {
+      return {
+        success: false,
+        error_code: 'INVALID_ARGS',
+        message: parse.error.issues.map((i) => i.message).join('; '),
+      };
+    }
+    const args = parse.data;
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+
+    // 1. SELECT scoped por (id, tenant_id, customer_phone) — anti-injection
+    const { data: apt, error: readErr } = await supabaseAdmin
+      .from('appointments')
+      .select(
+        'id, staff_id, datetime, end_datetime, duration_minutes, status, google_event_id, notes',
+      )
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('customer_phone', args.patient_phone)
+      .single();
+
+    if (readErr || !apt) {
+      return {
+        success: false,
+        error_code: 'NOT_FOUND',
+        message: 'No encontré una cita con ese identificador a nombre de este paciente.',
+        next_step: 'Llama get_my_appointments para listar sus citas.',
+      };
+    }
+
+    if (new Date(apt.datetime as string).getTime() < Date.now()) {
+      return {
+        success: false,
+        error_code: 'PAST_APPOINTMENT',
+        message: 'Esa cita ya pasó — no puede reagendarse.',
+      };
+    }
+    if (apt.status === 'cancelled') {
+      return {
+        success: false,
+        error_code: 'CANCELLED',
+        message: 'Esa cita fue cancelada previamente. Agenda una nueva con book_appointment.',
+      };
+    }
+
+    // 2. Componer el nuevo datetime — reusar la fecha/hora original si una es opcional
+    const origDt = new Date(apt.datetime as string);
+    const origDateIso = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(origDt);
+    const origTimeIso = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit',
+    }).format(origDt);
+
+    const newDate = args.new_date || origDateIso;
+    const newTime = args.new_time || origTimeIso;
+    const newDatetime = buildLocalIso(newDate, newTime, timezone);
+
+    if (new Date(newDatetime).getTime() < Date.now()) {
+      return {
+        success: false,
+        error_code: 'PAST_DATE',
+        message: 'La nueva fecha y hora ya pasaron.',
+      };
+    }
+
+    // 3. Validar nuevo slot dentro de business hours
+    const businessHours =
+      (ctx.tenant.business_hours as Record<string, string>) || null;
+    if (!isWithinBusinessHours(newDatetime, businessHours, timezone)) {
+      return {
+        success: false,
+        error_code: 'OUTSIDE_HOURS',
+        message: 'El nuevo horario está fuera del horario de atención.',
+        next_step: 'Llama check_availability para ver opciones válidas.',
+      };
+    }
+
+    const duration = (apt.duration_minutes as number) || 30;
+    const newEndDt = new Date(
+      new Date(newDatetime).getTime() + duration * 60_000,
+    ).toISOString();
+
+    // 4. Conflict check EXCLUYENDO la propia cita (si no, detectaría colisión
+    //    consigo misma cuando solo cambia la hora dentro del mismo slot original).
+    const newStart = new Date(newDatetime).toISOString();
+    const { count: conflictCount } = await supabaseAdmin
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId)
+      .eq('staff_id', apt.staff_id as string)
+      .neq('id', apt.id)
+      .in('status', ['scheduled', 'confirmed'])
+      .lt('datetime', newEndDt)
+      .gt('end_datetime', newStart);
+
+    if ((conflictCount ?? 0) > 0) {
+      return {
+        success: false,
+        error_code: 'SLOT_TAKEN',
+        message: 'El nuevo horario ya está ocupado.',
+        next_step: 'Llama check_availability para slots alternativos.',
+      };
+    }
+
+    // 5. UPDATE + persistir notes con motivo si se dio
+    const mergedNotes = args.reason
+      ? `${apt.notes ? apt.notes + ' | ' : ''}Reagenda: ${args.reason}`
+      : apt.notes;
+
+    const { error: updErr } = await supabaseAdmin
+      .from('appointments')
+      .update({
+        datetime: newDatetime,
+        end_datetime: newEndDt,
+        notes: mergedNotes,
+        // Reset status to scheduled — si estaba 'confirmed' queremos que se
+        // re-confirme con el nuevo horario.
+        status: 'scheduled',
+      })
+      .eq('id', apt.id);
+
+    if (updErr) {
+      return {
+        success: false,
+        error_code: 'UPDATE_FAILED',
+        message: 'Tuve un problema registrando el cambio.',
+      };
+    }
+
+    // 6. Actualizar Google Calendar (cancel del viejo evento — el siguiente
+    //    sync creará el nuevo si la integración está activa en el staff)
+    let calendar_unsync_attempted = false;
+    if (apt.google_event_id) {
+      calendar_unsync_attempted = true;
+      try {
+        const { cancelCalendarEvent } = await import('@/lib/calendar/google');
+        await cancelCalendarEvent('primary', apt.google_event_id as string);
+      } catch (err) {
+        console.warn('[tool:modify_appointment] Calendar unsync failed:', err);
+      }
+    }
+
+    const { dateFmt: oldDateFmt, timeFmt: oldTimeFmt } = formatDateTimeMx(
+      apt.datetime as string,
+      timezone,
+    );
+    const { dateFmt: newDateFmt, timeFmt: newTimeFmt } = formatDateTimeMx(
+      newDatetime,
+      timezone,
+    );
+
+    // 7. Notify owner
+    try {
+      const { notifyOwner } = await import('@/lib/actions/notifications');
+      await notifyOwner({
+        tenantId: ctx.tenantId,
+        event: 'new_appointment', // reuse closest existing event
+        details: `Reagendamiento: ${args.patient_phone}\nAntes: ${oldDateFmt} ${oldTimeFmt}\nAhora: ${newDateFmt} ${newTimeFmt}${args.reason ? `\nMotivo: ${args.reason}` : ''}`,
+      });
+    } catch {
+      /* best effort */
+    }
+
+    return {
+      success: true,
+      modified: {
+        appointment_id: apt.id as string,
+        old_datetime_iso: apt.datetime as string,
+        old_datetime_formatted: `${oldDateFmt} a las ${oldTimeFmt}`,
+        new_datetime_iso: newDatetime,
+        new_datetime_formatted: `${newDateFmt} a las ${newTimeFmt}`,
+        calendar_unsync_attempted,
+      },
+      summary: `Su cita fue reagendada de ${oldDateFmt} ${oldTimeFmt} a ${newDateFmt} ${newTimeFmt}.`,
+    };
+  },
 });
 
 // ─── Tool 5: cancel_appointment ──────────────────────────────────────────────
