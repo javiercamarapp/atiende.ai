@@ -83,6 +83,12 @@ export const MODELS = {
   // GPT-4.1 mini — cobertura cuando Grok devuelve error o supera el
   // presupuesto de tiempo (3s en la implementación actual del orchestrator).
   ORCHESTRATOR_FALLBACK: 'openai/gpt-4.1-mini',
+
+  // ─── BATCH NOCTURNO (analytics, digests, intelligence) ───
+  // DeepSeek V3.2 — barato para cargas grandes sin SLA de latencia.
+  // $0.14 input / $0.28 output por M tokens. Ideal para generación de insights
+  // sobre conversaciones cerradas, métricas por tenant, etc. (cron intelligence).
+  BATCH: 'deepseek/deepseek-v3.2-exp',
 } as const;
 
 // Precios por millon de tokens [input, output]
@@ -96,6 +102,8 @@ const MODEL_PRICES: Record<string, [number, number]> = {
   // Tool calling orchestrator models (Fase 1)
   'x-ai/grok-4.1-fast': [0.20, 1.50],
   'openai/gpt-4.1-mini': [0.40, 1.60],
+  // Batch nocturno para intelligence cron
+  'deepseek/deepseek-v3.2-exp': [0.14, 0.28],
 };
 
 // ═══ ROUTING POR TIPO DE NEGOCIO + INTENT ═══

@@ -1029,6 +1029,17 @@ registerTool('cancel_appointment', {
       /* best effort */
     }
 
+    // 6. Clasificar motivo de cancelación con LLM (best effort, fire-and-forget)
+    //    Se dispara en background — no bloqueamos la respuesta al paciente.
+    if (ctx.conversationId) {
+      const { classifyCancellationReason } = await import(
+        '@/lib/intelligence/conversation-analysis'
+      );
+      classifyCancellationReason(ctx.conversationId, apt.id as string).catch(() => {
+        /* best effort */
+      });
+    }
+
     const { dateFmt, timeFmt } = formatDateTimeMx(apt.datetime as string, timezone);
     return {
       success: true,
