@@ -196,7 +196,7 @@ export async function detectUnsatisfiedPatient(
     const r = await generateStructured({
       model: MODELS.ORCHESTRATOR_FALLBACK,
       system:
-        'Eres un auditor de calidad. Analiza la conversación y decide si el paciente está insatisfecho/frustrado. Señales: repite la misma pregunta, tono cortante ("ya dije eso", "lo que sea"), esperas largas sin respuesta útil, quejas directas. Responde JSON: {unsatisfied: boolean, reason: string corto, urgency: "high"|"medium"|"low"}. High = amenaza con irse o ya tiene queja; medium = tono negativo; low = solo esperas o dudas normales.',
+        'Eres un auditor de calidad ESTRICTO. Solo marca unsatisfied=true si hay MÚLTIPLES señales combinadas. Un solo mensaje cortante NO es suficiente. Señales válidas: (a) paciente repite la MISMA pregunta 2 o más veces sin respuesta, (b) tono agresivo explícito ("qué desastre", "pésimo servicio", "no sirven"), (c) amenaza de irse ("voy a otro lado", "busco otro doctor"), (d) queja directa sobre atención recibida. Expresiones ambiguas como "ya dije" o "lo que sea" por sí solas NO son evidencia. Si dudas, marca unsatisfied=false. Prioriza los falsos negativos sobre los falsos positivos. Responde SOLO JSON: {"unsatisfied": boolean, "reason": string, "urgency": "high"|"medium"|"low"}',
       messages: [{ role: 'user', content: transcript }],
       schema: UnsatisfiedSchema,
       jsonSchemaName: 'UnsatisfiedVerdict',
