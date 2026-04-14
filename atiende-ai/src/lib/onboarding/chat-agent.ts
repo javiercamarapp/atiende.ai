@@ -199,15 +199,7 @@ function buildMessagesForAgent(input: ChatAgentInput): {
   if (input.scrapedMarkdown) {
     finalUserContent += `\n\n--- CONTENIDO DEL SITIO WEB DEL USUARIO (scraping automático) ---\n${input.scrapedMarkdown}\n--- FIN DEL CONTENIDO ---`;
   } else if (input.scrapeError) {
-    // Special-case social-media blocks so the agent gives actionable guidance
-    // ("compárteme tu sitio web o una foto") instead of a generic "no pude
-    // acceder al link". The ScrapeError code prefix is preserved by the
-    // route handler when it passes `scrapeError` here.
-    if (input.scrapeError.startsWith('SOCIAL_MEDIA_BLOCKED')) {
-      finalUserContent += `\n\n(nota interna: el usuario compartió un link de red social (Facebook / Instagram / TikTok / X / LinkedIn) que no podemos leer por sus restricciones anti-bots. Dile con calidez que esos links no se pueden leer directamente, y pídele UNA de estas opciones: (a) describir su negocio en una frase, (b) compartir su sitio web propio si tiene, o (c) subir una foto de su letrero, tarjeta o cédula. NO inferir el vertical solo por el dominio de la URL.)`;
-    } else {
-      finalUserContent += `\n\n(nota interna: intentamos abrir el link que pegó el usuario pero falló: ${input.scrapeError}. Pídele los datos a mano.)`;
-    }
+    finalUserContent += `\n\n(nota interna: intentamos abrir el link que pegó el usuario pero falló: ${input.scrapeError}. Dile con calidez que no pudiste acceder al link (si es de Facebook / Instagram / redes sociales, mencionalo puntualmente) y pídele UNA de: (a) describir su negocio en una frase, (b) compartir su sitio web propio, o (c) subir una foto de su letrero, tarjeta o cédula. NO inferir el vertical solo por el dominio de la URL.)`;
   }
 
   if (input.uploadedContent && input.uploadedContent.length > 0) {
