@@ -189,14 +189,16 @@ describe('/api/webhook/whatsapp', () => {
       );
     });
 
-    it('skips signature check when WA_APP_SECRET is not set', async () => {
+    it('rejects with 500 when WA_APP_SECRET is not configured (signature is mandatory)', async () => {
+      // Security fix: previously, missing WA_APP_SECRET skipped verification
+      // entirely, letting anyone POST to the endpoint. Now it must be set.
       delete process.env.WA_APP_SECRET;
       const req = new Request('http://localhost/api/webhook/whatsapp', {
         method: 'POST',
         body: JSON.stringify(messagePayload),
       }) as any;
       const res = await POST(req);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(500);
     });
 
     it('returns 500 on malformed JSON body', async () => {
