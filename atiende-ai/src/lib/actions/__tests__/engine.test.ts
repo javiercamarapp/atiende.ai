@@ -7,6 +7,8 @@ const {
   mockGenerateResponse,
   mockSendTextMessage,
   mockSetConversationState,
+  mockGetConversationState,
+  mockClearConversationState,
   mockExecuteEventAgents,
   mockCreateCalendarEvent,
   mockCancelCalendarEvent,
@@ -17,6 +19,8 @@ const {
     mockGenerateResponse: vi.fn(),
     mockSendTextMessage: vi.fn(),
     mockSetConversationState: vi.fn(),
+    mockGetConversationState: vi.fn(async () => ({ state: null, context: {} })),
+    mockClearConversationState: vi.fn(),
     mockExecuteEventAgents: vi.fn(),
     mockCreateCalendarEvent: vi.fn(),
     mockCancelCalendarEvent: vi.fn(),
@@ -41,6 +45,8 @@ vi.mock('@/lib/llm/openrouter', () => ({
 
 vi.mock('@/lib/actions/state-machine', () => ({
   setConversationState: mockSetConversationState,
+  getConversationState: mockGetConversationState,
+  clearConversationState: mockClearConversationState,
 }));
 
 vi.mock('@/lib/marketplace/engine', () => ({
@@ -316,9 +322,12 @@ describe('executeAction', () => {
       expect(result.actionType).toBe('appointment.clarify');
       expect(result.followUpMessage).toContain('día');
       expect(result.followUpMessage).toContain('hora');
+      // (I) Bug fix: state context now persists the partial fields captured
+      // so far (even if empty) so the next turn can merge them.
       expect(mockSetConversationState).toHaveBeenCalledWith(
         'conv-1',
-        'awaiting_appointment_date'
+        'awaiting_appointment_date',
+        expect.any(Object),
       );
     });
 
@@ -335,14 +344,14 @@ describe('executeAction', () => {
       const insertedApt = { id: 'apt-1' };
       mockFrom.mockImplementation((table: string) => {
         if (table === 'staff') {
+          // New handler does select().eq().eq() with no .limit()
+          const inner = Promise.resolve({
+            data: [{ id: 'staff-1', name: 'Dr. Lopez', google_calendar_id: null, default_duration: 30 }],
+          });
           return {
             select: vi.fn(() => ({
               eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  limit: vi.fn(() => ({
-                    data: [{ id: 'staff-1', name: 'Dr. Lopez', google_calendar_id: null, default_duration: 30 }],
-                  })),
-                })),
+                eq: vi.fn(() => inner),
               })),
             })),
           };
@@ -359,7 +368,18 @@ describe('executeAction', () => {
           };
         }
         if (table === 'appointments') {
+          // Chain used by hasConflict(): select().eq().in().lt().gt().eq()
+          // Every method returns the same chain object (which is thenable),
+          // so `await` at any point resolves to { count: 0 } = no conflict.
+          const conflictChain: any = {
+            eq: vi.fn(() => conflictChain),
+            in: vi.fn(() => conflictChain),
+            lt: vi.fn(() => conflictChain),
+            gt: vi.fn(() => conflictChain),
+            then: (resolve: (v: any) => void) => resolve({ count: 0 }),
+          };
           return {
+            select: vi.fn(() => conflictChain),
             insert: vi.fn(() => ({
               select: vi.fn(() => ({
                 single: vi.fn(() => ({ data: insertedApt, error: null })),
@@ -381,6 +401,19 @@ describe('executeAction', () => {
         makeCtx({
           intent: 'APPOINTMENT_NEW',
           content: 'Quiero una cita el 10 de abril a las 2pm para corte',
+          tenant: {
+            name: 'Mi Negocio',
+            address: 'Calle 1',
+            phone: '5551234567',
+            timezone: 'America/Merida',
+            // Business open from 09:00-18:00 every day so 14:00 passes the
+            // business-hours gate regardless of which day the test runs on.
+            business_hours: {
+              lun: '09:00-18:00', mar: '09:00-18:00', mie: '09:00-18:00',
+              jue: '09:00-18:00', vie: '09:00-18:00', sab: '09:00-18:00',
+              dom: '09:00-18:00',
+            },
+          },
         })
       );
 
@@ -390,7 +423,10 @@ describe('executeAction', () => {
       expect(result.details?.appointmentId).toBe('apt-1');
     });
 
-    it('returns actionTaken=false when LLM returns unparseable JSON', async () => {
+    it('surfaces parse failure to the user when LLM returns unparseable JSON', async () => {
+      // (F) Bug fix: silent failure was a bug — the old behavior returned
+      // actionTaken:false and the user got no explanation. Now we send a
+      // clear clarification message so the user knows to retry.
       mockGenerateResponse.mockResolvedValue({ text: 'not json' });
       setupSupabase();
 
@@ -398,7 +434,9 @@ describe('executeAction', () => {
         makeCtx({ intent: 'APPOINTMENT_NEW', content: 'cita' })
       );
 
-      expect(result.actionTaken).toBe(false);
+      expect(result.actionTaken).toBe(true);
+      expect(result.actionType).toBe('appointment.parse_failed');
+      expect(result.followUpMessage).toBeTruthy();
     });
   });
 

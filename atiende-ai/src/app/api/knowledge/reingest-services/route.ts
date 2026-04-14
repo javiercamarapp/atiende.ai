@@ -3,6 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { ingestKnowledge } from '@/lib/rag/search';
 import { createServerSupabase } from '@/lib/supabase/server';
 
+// Generates embeddings for every active service + re-indexes knowledge.
+// Scales linearly with service count; 120s gives safe headroom.
+export const maxDuration = 120;
+
 export async function POST(_req: NextRequest) {
   try {
     const supabase = await createServerSupabase();

@@ -9,6 +9,9 @@ import type { VerticalEnum } from '@/lib/verticals/types';
 import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
+// Generates the full agent config (big prompt + knowledge chunks + embeddings).
+// Comfortably exceeds the Pro default of 15s for verticals with many answers.
+export const maxDuration = 120;
 
 const GenerateRequestSchema = z.object({
   vertical: z.enum(ALL_VERTICALS as [VerticalEnum, ...VerticalEnum[]]),

@@ -1,23 +1,22 @@
-// Master registry of all 43 verticals
-// Source: atiende_guia_definitiva_40_verticales.pdf
+// Master registry of verticals for atiende.ai.
+//
+// ⚠️  MVP SCOPE: atiende.ai v1 se enfoca exclusivamente en agentes de reservas
+// para los sectores de Salud y Estética — los verticales cuyo pilar operativo
+// es el dashboard de Citas. El resto de verticales esta en `src/despues/`
+// a la espera de ser reactivado en futuras iteraciones.
+//
+// Ver `src/despues/README.md` para detalles de la estrategia y el procedimiento
+// para reactivar un vertical.
 
 import type { VerticalEnum, VerticalCategory, VerticalDefinition } from './types';
 
-// Question imports by category
+// Question imports — solo verticales ACTIVOS
 import { saludQuestions } from './questions/salud';
-import { gastronomiaQuestions } from './questions/gastronomia';
-import { hospedajeQuestions } from './questions/hospedaje';
 import { bellezaQuestions } from './questions/belleza';
-import { retailQuestions } from './questions/retail';
-import { serviciosQuestions } from './questions/servicios';
 
-// Metadata imports by category
+// Metadata imports — solo verticales ACTIVOS
 import { saludMetadata } from './metadata/salud';
-import { gastronomiaMetadata } from './metadata/gastronomia';
-import { hospedajeMetadata } from './metadata/hospedaje';
 import { bellezaMetadata } from './metadata/belleza';
-import { retailMetadata } from './metadata/retail';
-import { serviciosMetadata } from './metadata/servicios';
 
 import type { VerticalQuestion, VerticalMetadata } from './types';
 
@@ -31,7 +30,8 @@ export const CATEGORY_NAMES: Record<VerticalCategory, string> = {
   SERVICIOS_PROFESIONALES: 'Servicios Profesionales',
 };
 
-// Vertical → category mapping
+// Vertical → category mapping (incluye ACTIVOS + FUTUROS — la lista de enums
+// se mantiene completa para compatibilidad con DB, tipos y tests existentes).
 export const VERTICAL_CATEGORY: Record<VerticalEnum, VerticalCategory> = {
   dental: 'SALUD_Y_BIENESTAR', medico: 'SALUD_Y_BIENESTAR', nutriologa: 'SALUD_Y_BIENESTAR',
   psicologo: 'SALUD_Y_BIENESTAR', dermatologo: 'SALUD_Y_BIENESTAR', ginecologo: 'SALUD_Y_BIENESTAR',
@@ -52,7 +52,7 @@ export const VERTICAL_CATEGORY: Record<VerticalEnum, VerticalCategory> = {
   condominio: 'SERVICIOS_PROFESIONALES',
 };
 
-// Vertical display names
+// Vertical display names (ACTIVOS + FUTUROS por compatibilidad)
 export const VERTICAL_NAMES: Record<VerticalEnum, string> = {
   dental: 'Consultorio Dental', medico: 'Consultorio Medico', nutriologa: 'Nutriologa',
   psicologo: 'Psicologo', dermatologo: 'Dermatologo', ginecologo: 'Ginecologo',
@@ -73,25 +73,53 @@ export const VERTICAL_NAMES: Record<VerticalEnum, string> = {
   condominio: 'Administracion de Condominios',
 };
 
-// All question data combined
+// Verticales ACTIVAS — únicos que el onboarding ofrece en el MVP actual.
+// Pilar: dashboard de Citas. Sectores: Salud y Estética.
+export const ACTIVE_VERTICALS: VerticalEnum[] = [
+  // Salud (9)
+  'dental', 'medico', 'nutriologa', 'psicologo', 'dermatologo',
+  'ginecologo', 'pediatra', 'oftalmologo', 'veterinaria',
+  // Belleza / Estética (6)
+  'salon_belleza', 'barberia', 'spa', 'gimnasio', 'nail_salon', 'estetica',
+];
+
+// Verticales FUTUROS — en standby en `src/despues/`. No se ofrecen en onboarding.
+export const FUTURE_VERTICALS: VerticalEnum[] = [
+  // Salud no-citas
+  'farmacia',
+  // Gastronomia
+  'restaurante', 'taqueria', 'cafeteria', 'panaderia', 'bar_cantina', 'food_truck',
+  // Hospedaje y Turismo
+  'hotel', 'hotel_boutique', 'motel', 'glamping', 'bb_hostal', 'resort',
+  // Comercios y Retail
+  'floreria', 'tienda_ropa', 'papeleria', 'ferreteria', 'abarrotes',
+  'libreria', 'joyeria', 'jugueteria', 'zapateria',
+  // Servicios Profesionales
+  'contable_legal', 'seguros', 'taller_mecanico', 'escuela', 'agencia_digital',
+  'fotografo', 'condominio',
+];
+
+// Set para chequeos O(1) de si un vertical está activo.
+const ACTIVE_SET = new Set<VerticalEnum>(ACTIVE_VERTICALS);
+
+/** True si el vertical está activo en el MVP actual. */
+export function isActiveVertical(vertical: VerticalEnum): boolean {
+  return ACTIVE_SET.has(vertical);
+}
+
+// All question data combined — SOLO ACTIVOS. Se filtra farmacia que viene en salud.ts.
 const ALL_QUESTIONS: Partial<Record<VerticalEnum, VerticalQuestion[]>> = {
   ...saludQuestions,
-  ...gastronomiaQuestions,
-  ...hospedajeQuestions,
   ...bellezaQuestions,
-  ...retailQuestions,
-  ...serviciosQuestions,
 };
+delete ALL_QUESTIONS.farmacia;
 
-// All metadata combined
+// All metadata combined — SOLO ACTIVOS. Se filtra farmacia que viene en salud.ts.
 const ALL_METADATA: Partial<Record<VerticalEnum, VerticalMetadata>> = {
   ...saludMetadata,
-  ...gastronomiaMetadata,
-  ...hospedajeMetadata,
   ...bellezaMetadata,
-  ...retailMetadata,
-  ...serviciosMetadata,
 };
+delete ALL_METADATA.farmacia;
 
 // Get questions for a vertical
 export function getVerticalQuestions(vertical: VerticalEnum): VerticalQuestion[] {
@@ -117,10 +145,12 @@ export function getVerticalDefinition(vertical: VerticalEnum): VerticalDefinitio
   };
 }
 
-// List all available verticals (those with questions loaded)
+// List all available verticals (those with questions loaded — solo ACTIVOS).
 export function getAvailableVerticals(): VerticalEnum[] {
   return Object.keys(ALL_QUESTIONS) as VerticalEnum[];
 }
 
-// All 43 vertical enums for detection
+// ALL_VERTICALS incluye activos y futuros — se mantiene para compatibilidad con
+// zod schemas, DB types, y validaciones defensivas. Para la lista que se ofrece
+// al usuario en onboarding, usa `ACTIVE_VERTICALS`.
 export const ALL_VERTICALS: VerticalEnum[] = Object.keys(VERTICAL_CATEGORY) as VerticalEnum[];
