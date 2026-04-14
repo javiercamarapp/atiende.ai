@@ -5,9 +5,23 @@
 export type ScrapeErrorCode =
   | 'INVALID_URL'
   | 'BLOCKED'
+  | 'SOCIAL_MEDIA_BLOCKED'
   | 'TIMEOUT'
   | 'BAD_STATUS'
   | 'EMPTY';
+
+// Social-media domains reject scrapers by design (Meta / X / LinkedIn auth
+// walls + bot protection). Rather than hitting Jina and timing out, we
+// short-circuit with a specific error code so the caller can give the user
+// actionable guidance ("compárteme tu sitio web o una foto").
+const SOCIAL_MEDIA_HOSTS = new Set([
+  'facebook.com', 'm.facebook.com', 'www.facebook.com', 'fb.com',
+  'instagram.com', 'www.instagram.com',
+  'tiktok.com', 'www.tiktok.com', 'm.tiktok.com',
+  'twitter.com', 'www.twitter.com', 'mobile.twitter.com', 'x.com', 'www.x.com',
+  'linkedin.com', 'www.linkedin.com',
+  'threads.net', 'www.threads.net',
+]);
 
 export class ScrapeError extends Error {
   constructor(
@@ -90,6 +104,17 @@ function normalizeUrl(raw: string): URL {
  */
 export async function scrapeUrl(rawUrl: string): Promise<ScrapeResult> {
   const target = normalizeUrl(rawUrl);
+
+  // Short-circuit social media URLs — they will always fail with Jina/other
+  // scrapers due to auth walls and anti-bot protection. Giving a specific
+  // error code lets the caller tell the user to share something else instead.
+  if (SOCIAL_MEDIA_HOSTS.has(target.hostname.toLowerCase())) {
+    throw new ScrapeError(
+      'SOCIAL_MEDIA_BLOCKED',
+      `Social media pages can't be scraped (${target.hostname})`,
+    );
+  }
+
   const jinaUrl = `https://r.jina.ai/${target.toString()}`;
 
   const controller = new AbortController();

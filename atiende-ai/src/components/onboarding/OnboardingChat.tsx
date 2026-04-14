@@ -32,8 +32,14 @@ interface PersistedState {
 }
 
 const STORAGE_KEY = 'atiende_onboarding_v2';
-const INITIAL_AI_MESSAGE =
-  '¡Hola! Cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"). Si prefieres, pégame el link de tu sitio web o adjunta fotos o PDFs de tu menú, lista de precios o cédula — los leo y extraigo lo que pueda.';
+// Two opening bubbles: Valeria introduces herself, then asks the first
+// question. Rendered sequentially via addAiMessage so the user sees them as
+// separate chat bubbles (Valeria's persona is the agent defined in
+// src/lib/onboarding/chat-agent.ts).
+const INITIAL_AI_MESSAGES: readonly string[] = [
+  '¡Hola! Soy Valeria, de atiende.ai. Voy a ayudarte a configurar tu agente de inteligencia artificial para que atienda tu negocio —consultorio, clínica, salón o spa— 24/7 por WhatsApp, sin que pierdas una sola cita.',
+  'Para empezar, cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"). Si prefieres, pégame el link de tu sitio web o adjunta fotos o PDFs de tu menú, lista de precios o cédula — los leo y extraigo lo que pueda.',
+];
 
 function loadPersistedState(): PersistedState | null {
   if (typeof window === 'undefined') return null;
@@ -390,10 +396,11 @@ export function OnboardingChat() {
         // WhatsApp onboarding not implemented yet; announce and fall back to web.
         addAiMessage(
           'El onboarding por WhatsApp estará disponible pronto. Por ahora continuamos por web.',
-        ).then(() => {
-          addAiMessage(INITIAL_AI_MESSAGE).then(() => {
-            historyRef.current.push({ role: 'assistant', content: INITIAL_AI_MESSAGE });
-          });
+        ).then(async () => {
+          for (const msg of INITIAL_AI_MESSAGES) {
+            await addAiMessage(msg);
+            historyRef.current.push({ role: 'assistant', content: msg });
+          }
         });
         return;
       }
@@ -417,9 +424,12 @@ export function OnboardingChat() {
         }
         setShowInput(true);
       } else {
-        addAiMessage(INITIAL_AI_MESSAGE).then(() => {
-          historyRef.current.push({ role: 'assistant', content: INITIAL_AI_MESSAGE });
-        });
+        (async () => {
+          for (const msg of INITIAL_AI_MESSAGES) {
+            await addAiMessage(msg);
+            historyRef.current.push({ role: 'assistant', content: msg });
+          }
+        })();
       }
     },
     [addAiMessage, addAiMessageSilent, addUserMessage, historyRef],
