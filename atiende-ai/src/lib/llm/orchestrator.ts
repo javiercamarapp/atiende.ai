@@ -25,6 +25,7 @@ import {
   type ToolCallRecord,
 } from '@/lib/llm/openrouter';
 import { executeTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { checkOpenRouterRateLimit, RateLimitError } from '@/lib/llm/rate-limiter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos públicos
@@ -65,18 +66,13 @@ export interface OrchestratorResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Tiempo máximo para que el modelo primario responda (incluyendo todas las
- * rondas de tool calling). Si lo excede, abortamos y caemos al fallback.
- *
- * 3 segundos según el spec de Fase 1 — Grok 4.1 Fast debería responder en
- * <2s para mensajes típicos. Si tarda más, asumimos provider degradado y
- * preferimos la respuesta del fallback que tarde un poco más a no responder.
- *
- * NOTA: este timeout cubre el TOTAL de la corrida (LLM rounds + tool exec).
- * En Fase 1 el registry de tools está vacío, así que en la práctica es
- * timeout sobre 1 LLM call.
+ * Tiempo máximo por LLM call. Cubre el TOTAL de la corrida (LLM rounds +
+ * tool exec). Grok 4.1 Fast típicamente <2s, pero con tools complejas y
+ * múltiples rondas puede subir. 10s garantiza que ningún request se cuelgue
+ * indefinidamente — ni en primary ni en fallback.
  */
-const PRIMARY_TIMEOUT_MS = 3_000;
+const PRIMARY_TIMEOUT_MS = 10_000;
+const FALLBACK_TIMEOUT_MS = 10_000;
 
 /** Default sub-agente cuando el caller no especifica uno. */
 const DEFAULT_AGENT_NAME = 'base';
@@ -134,6 +130,11 @@ export async function runOrchestrator(
   const toolExecutor = buildToolExecutor(ctx);
   const agentUsed = ctx.agentName || DEFAULT_AGENT_NAME;
 
+  // Rate limit gate — lanza RateLimitError si se excede presupuesto OpenRouter
+  // por tenant (60/min) o global (500/min). El caller (processor.ts) debe
+  // capturarlo y responder al paciente con mensaje amigable.
+  await checkOpenRouterRateLimit(ctx.tenantId);
+
   // ── Intento 1: modelo primario con timeout ──
   try {
     const result = await withTimeout(
@@ -173,19 +174,24 @@ export async function runOrchestrator(
       `[orchestrator] primary model (${MODELS.ORCHESTRATOR}) failed → ${errName}: ${errMsg}. Trying fallback.`,
     );
 
-    // ── Intento 2: modelo fallback (sin timeout — dejarlo ejecutar) ──
+    // ── Intento 2: modelo fallback CON timeout ──
+    // Crítico: sin este timeout, una degradación de GPT-4.1-mini colgaría
+    // el request indefinidamente (el usuario no recibe respuesta jamás).
     try {
-      const result = await generateWithTools({
-        model: MODELS.ORCHESTRATOR_FALLBACK,
-        system: ctx.systemPrompt,
-        messages: ctx.messages,
-        tools: ctx.tools,
-        toolExecutor,
-        tool_choice: 'auto',
-        maxTokens: 800,
-        temperature: 0.5,
-        maxToolRounds: 5,
-      });
+      const result = await withTimeout(
+        generateWithTools({
+          model: MODELS.ORCHESTRATOR_FALLBACK,
+          system: ctx.systemPrompt,
+          messages: ctx.messages,
+          tools: ctx.tools,
+          toolExecutor,
+          tool_choice: 'auto',
+          maxTokens: 800,
+          temperature: 0.5,
+          maxToolRounds: 5,
+        }),
+        FALLBACK_TIMEOUT_MS,
+      );
 
       return {
         responseText: result.finalText,
@@ -231,3 +237,4 @@ export class OrchestratorBothFailedError extends Error {
 // Re-exports para que processor.ts no tenga que importar de 3 sitios distintos.
 export { LoopGuardError } from '@/lib/llm/openrouter';
 export type { ToolCallRecord } from '@/lib/llm/openrouter';
+export { RateLimitError, RATE_LIMIT_USER_MESSAGE } from '@/lib/llm/rate-limiter';

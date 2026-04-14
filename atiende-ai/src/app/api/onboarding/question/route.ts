@@ -1,30 +1,19 @@
-// TODO(onboarding-v2): deprecated — replaced by /api/onboarding/chat.
-// Delete in a follow-up PR once the conversational flow is validated in prod.
+// ═════════════════════════════════════════════════════════════════════════════
+// DEPRECATED — replaced by /api/onboarding/chat.
+// ═════════════════════════════════════════════════════════════════════════════
+
 import { NextResponse } from 'next/server';
-import { getNextQuestion, formatQuestionMessage } from '@/lib/onboarding/question-engine';
-import type { VerticalEnum } from '@/lib/verticals/types';
 
-export async function POST(request: Request) {
-  const { vertical, questionNumber, businessName } = await request.json();
+const DEPRECATED_RESPONSE = {
+  error: 'deprecated',
+  message: 'Esta ruta fue reemplazada por /api/onboarding/chat',
+  migration: 'Use POST /api/onboarding/chat en su lugar',
+};
 
-  if (!vertical || !questionNumber) {
-    return NextResponse.json({ error: 'vertical and questionNumber required' }, { status: 400 });
-  }
+export async function POST() {
+  return NextResponse.json(DEPRECATED_RESPONSE, { status: 410 });
+}
 
-  const q = getNextQuestion(vertical as VerticalEnum, questionNumber, businessName);
-
-  if (!q) {
-    return NextResponse.json({ error: 'Question not found' }, { status: 404 });
-  }
-
-  return NextResponse.json({
-    questionNumber: q.questionNumber,
-    totalQuestions: q.totalQuestions,
-    text: q.text,
-    why: q.why,
-    inputType: q.inputType,
-    required: q.required,
-    isLastQuestion: q.isLastQuestion,
-    formattedMessage: formatQuestionMessage(q),
-  });
+export async function GET() {
+  return NextResponse.json(DEPRECATED_RESPONSE, { status: 410 });
 }
