@@ -35,7 +35,29 @@ export async function POST(req: NextRequest) {
     const meta = s.metadata as Record<string, string> | undefined;
     const tid = meta?.tenant_id;
     const plan = meta?.plan;
-    if (tid && plan) await supabaseAdmin.from('tenants').update({ plan, stripe_customer_id: s.customer as string }).eq('id', tid);
+    const stripeCustomer = s.customer as string | undefined;
+
+    if (tid && plan && stripeCustomer) {
+      // Defense-in-depth: if this tenant already has a stripe_customer_id
+      // on file, make sure the new event comes from the same customer.
+      // The signed webhook guarantees Stripe-provided authenticity, but
+      // this guards against metadata-replay across accounts.
+      const { data: existing } = await supabaseAdmin
+        .from('tenants')
+        .select('stripe_customer_id')
+        .eq('id', tid)
+        .single();
+      if (existing?.stripe_customer_id && existing.stripe_customer_id !== stripeCustomer) {
+        console.warn(
+          `[stripe-webhook] customer mismatch for tenant ${tid}: existing=${existing.stripe_customer_id}, event=${stripeCustomer}`,
+        );
+        return NextResponse.json({ received: true });
+      }
+      await supabaseAdmin
+        .from('tenants')
+        .update({ plan, stripe_customer_id: stripeCustomer })
+        .eq('id', tid);
+    }
   }
 
   if (event.type === 'customer.subscription.deleted') {

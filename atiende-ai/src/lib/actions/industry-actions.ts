@@ -47,7 +47,14 @@ export async function executeIndustryAction(ctx: IndustryContext): Promise<{ act
 
   try {
     return await handler(ctx);
-  } catch {
+  } catch (err) {
+    // Previously this catch was silent — any error in an industry handler
+    // (notifyOwner down, lead upsert failure, DB outage) vanished with no
+    // trace. Now we log enough context to debug without exposing PII.
+    console.warn(
+      `[industry-action] ${ctx.businessType}/${ctx.intent} failed for tenant ${ctx.tenantId}:`,
+      err instanceof Error ? err.message : err,
+    );
     return { acted: false };
   }
 }

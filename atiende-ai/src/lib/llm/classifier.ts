@@ -12,6 +12,10 @@ import { getOpenRouter, MODELS } from './openrouter';
 
 export const VALID_INTENTS = [
   'GREETING', 'FAREWELL', 'FAQ', 'PRICE', 'HOURS', 'LOCATION',
+  // SERVICES_INFO has a handler in engine.ts but the classifier prompt never
+  // used to emit it — dead code. Added to the enum + prompt below so
+  // "qué servicios ofrecen?" can actually route to handleServicesInfo.
+  'SERVICES_INFO',
   'APPOINTMENT_NEW', 'APPOINTMENT_MODIFY', 'APPOINTMENT_CANCEL',
   'ORDER_NEW', 'ORDER_STATUS', 'RESERVATION',
   'COMPLAINT', 'EMERGENCY', 'MEDICAL_QUESTION', 'LEGAL_QUESTION',
@@ -76,11 +80,15 @@ export async function classifyIntent(message: string): Promise<ValidIntent> {
           role: 'system',
           content: `Clasifica el mensaje del cliente en UNA sola categoria.
 Categorias posibles:
-  GREETING, FAREWELL, FAQ, PRICE, HOURS, LOCATION,
+  GREETING, FAREWELL, FAQ, PRICE, HOURS, LOCATION, SERVICES_INFO,
   APPOINTMENT_NEW, APPOINTMENT_MODIFY, APPOINTMENT_CANCEL,
   ORDER_NEW, ORDER_STATUS, RESERVATION,
   COMPLAINT, EMERGENCY, MEDICAL_QUESTION, LEGAL_QUESTION,
   HUMAN, CRISIS, REVIEW, THANKS, SPAM, OTHER.
+
+SERVICES_INFO: el cliente pregunta qué servicios/tratamientos/productos ofrece el negocio (catálogo).
+PRICE: el cliente pregunta cuánto cuesta algo específico.
+
 Responde SOLO la categoria, nada mas.`,
         },
         { role: 'user', content: message },
