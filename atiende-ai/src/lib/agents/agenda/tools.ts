@@ -17,7 +17,12 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import {
   buildLocalIso,
   formatDateTimeMx,
+  hasConflict,
   isWithinBusinessHours,
+  findMatchingService,
+  findMatchingStaff,
+  type StaffRow,
+  type ServiceRow,
 } from '@/lib/actions/appointment-helpers';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
@@ -315,13 +320,32 @@ registerTool('check_availability', {
 });
 
 // ─── Tool 2: book_appointment ────────────────────────────────────────────────
+const BookArgs = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date debe ser YYYY-MM-DD'),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time debe ser HH:MM 24h'),
+    service_type: z.string().min(1).max(120),
+    patient_name: z.string().min(1).max(200),
+    patient_phone: z.string().min(6).max(20),
+    staff_id: z.string().uuid().optional(),
+    notes: z.string().max(500).optional(),
+  })
+  .strict();
+
+/** 8-char hex uppercase, sirve como referencia humana para el paciente. */
+function generateConfirmationCode(): string {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
 registerTool('book_appointment', {
   schema: {
     type: 'function',
     function: {
       name: 'book_appointment',
       description:
-        'Crea una cita confirmada. SOLO llamar después de (1) check_availability OK y (2) confirmación EXPLÍCITA del paciente. Nunca llamar sin confirmación.',
+        'Crea una cita confirmada en la base de datos. SOLO llamar después de: (1) check_availability confirmó disponibilidad, (2) el paciente confirmó TODOS los datos explícitamente. Nunca llamar sin confirmación del paciente.',
       parameters: {
         type: 'object',
         properties: {
@@ -330,15 +354,226 @@ registerTool('book_appointment', {
           service_type: { type: 'string' },
           patient_name: { type: 'string' },
           patient_phone: { type: 'string' },
-          staff_id: { type: 'string', description: 'Opcional' },
-          notes: { type: 'string', description: 'Opcional' },
+          staff_id: { type: 'string', description: 'UUID opcional — si se omite se elige un staff libre' },
+          notes: { type: 'string', description: 'Opcional — alergias, motivo, primera vez, etc.' },
         },
         required: ['date', 'time', 'service_type', 'patient_name', 'patient_phone'],
         additionalProperties: false,
       },
     },
   },
-  handler: async (_args: unknown, _ctx: ToolContext) => NOT_IMPLEMENTED,
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const parse = BookArgs.safeParse(rawArgs);
+    if (!parse.success) {
+      return {
+        success: false,
+        error_code: 'INVALID_ARGS',
+        message: `Datos inválidos: ${parse.error.issues.map((i) => i.message).join('; ')}`,
+      };
+    }
+    const args = parse.data;
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const datetime = buildLocalIso(args.date, args.time, timezone);
+
+    // 1. Validar que la fecha no es pasada
+    if (new Date(datetime).getTime() < Date.now()) {
+      return {
+        success: false,
+        error_code: 'PAST_DATE',
+        message: 'Esa fecha y hora ya pasaron.',
+      };
+    }
+
+    // 2. Validar business hours (defense in depth — check_availability ya lo validó)
+    const businessHours =
+      (ctx.tenant.business_hours as Record<string, string>) || null;
+    if (!isWithinBusinessHours(datetime, businessHours, timezone)) {
+      return {
+        success: false,
+        error_code: 'OUTSIDE_HOURS',
+        message: 'Ese horario está fuera del horario de atención.',
+        next_step: 'Llama check_availability para ver slots válidos.',
+      };
+    }
+
+    // 3. Cargar staff activo; elegir por staff_id o fuzzy-match por nombre
+    const { data: staffRows } = await supabaseAdmin
+      .from('staff')
+      .select('id, name, google_calendar_id, default_duration')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+
+    if (!staffRows || staffRows.length === 0) {
+      return {
+        success: false,
+        error_code: 'NO_STAFF',
+        message: 'No hay profesionales activos para agendar en línea.',
+        next_step: 'Escala a humano (escalate_to_human).',
+      };
+    }
+
+    let staffMember: StaffRow | null = null;
+    if (args.staff_id) {
+      staffMember = (staffRows.find((s) => s.id === args.staff_id) as StaffRow) || null;
+      if (!staffMember) {
+        return {
+          success: false,
+          error_code: 'STAFF_NOT_FOUND',
+          message: 'El profesional solicitado no existe o no está activo.',
+        };
+      }
+    } else {
+      // Sin staff específico: dejamos el fuzzy-match (aunque no hay name en args,
+      // en la práctica caerá al primer disponible después del conflict check).
+      staffMember = findMatchingStaff(staffRows as StaffRow[], null);
+    }
+    if (!staffMember) {
+      return {
+        success: false,
+        error_code: 'NO_STAFF',
+        message: 'No encontré un profesional disponible.',
+      };
+    }
+
+    // 4. Match service (para grabar service_id + duración real)
+    const { data: serviceRows } = await supabaseAdmin
+      .from('services')
+      .select('id, name, duration_minutes, price')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+
+    const matchedService = findMatchingService(
+      (serviceRows || []) as ServiceRow[],
+      args.service_type,
+    );
+
+    const duration = matchedService?.duration_minutes
+      || staffMember.default_duration
+      || 30;
+    const endDt = new Date(
+      new Date(datetime).getTime() + duration * 60_000,
+    ).toISOString();
+
+    // 5. Conflict check (previene double-booking — el slot pudo haberse tomado
+    //    entre el check_availability y este book_appointment)
+    const conflict = await hasConflict({
+      tenantId: ctx.tenantId,
+      staffId: staffMember.id,
+      datetime,
+      durationMinutes: duration,
+    });
+    if (conflict) {
+      return {
+        success: false,
+        error_code: 'SLOT_TAKEN',
+        message: 'Ese horario ya no está disponible.',
+        next_step:
+          'Llama check_availability de nuevo para obtener slots actualizados y pide al paciente que elija otro.',
+      };
+    }
+
+    // 6. INSERT atómico
+    const confirmationCode = generateConfirmationCode();
+    const { data: appointment, error } = await supabaseAdmin
+      .from('appointments')
+      .insert({
+        tenant_id: ctx.tenantId,
+        staff_id: staffMember.id,
+        service_id: matchedService?.id ?? null,
+        contact_id: ctx.contactId,
+        conversation_id: ctx.conversationId,
+        customer_phone: args.patient_phone,
+        customer_name: args.patient_name,
+        datetime,
+        end_datetime: endDt,
+        duration_minutes: duration,
+        status: 'scheduled',
+        source: 'orchestrator',
+        confirmation_code: confirmationCode,
+        notes: args.notes ?? null,
+      })
+      .select('id')
+      .single();
+
+    if (error || !appointment) {
+      console.warn('[tool:book_appointment] INSERT failed:', error?.message);
+      return {
+        success: false,
+        error_code: 'INSERT_FAILED',
+        message: 'Tuve un problema registrando la cita.',
+        next_step:
+          'Disculpa al paciente y avísale que el equipo lo va a contactar. Puedes llamar escalate_to_human.',
+      };
+    }
+
+    // 7. Google Calendar sync (best effort)
+    let calendar_synced = false;
+    if (staffMember.google_calendar_id) {
+      try {
+        const { createCalendarEvent } = await import('@/lib/calendar/google');
+        const ev = await createCalendarEvent({
+          calendarId: staffMember.google_calendar_id,
+          summary: `${matchedService?.name || args.service_type} - ${args.patient_name}`,
+          description: `WhatsApp: ${args.patient_phone}${args.notes ? `\nNotas: ${args.notes}` : ''}\nCódigo: ${confirmationCode}`,
+          startTime: datetime,
+          endTime: endDt,
+          attendeeEmail: undefined,
+        });
+        if (ev?.eventId) {
+          await supabaseAdmin
+            .from('appointments')
+            .update({ google_event_id: ev.eventId })
+            .eq('id', appointment.id);
+          calendar_synced = true;
+        }
+      } catch (err) {
+        console.warn('[tool:book_appointment] Calendar sync failed:', err);
+      }
+    }
+
+    // 8. notifyOwner (best effort)
+    const { dateFmt, timeFmt } = formatDateTimeMx(datetime, timezone);
+    try {
+      const { notifyOwner } = await import('@/lib/actions/notifications');
+      await notifyOwner({
+        tenantId: ctx.tenantId,
+        event: 'new_appointment',
+        details: `${args.patient_name} (${args.patient_phone})\n${matchedService?.name || args.service_type} con ${staffMember.name}\n${dateFmt} ${timeFmt}\nCódigo: ${confirmationCode}`,
+      });
+    } catch {
+      /* best effort */
+    }
+
+    // 9. Marketplace event
+    try {
+      const { executeEventAgents } = await import('@/lib/marketplace/engine');
+      await executeEventAgents('appointment.completed', {
+        tenant_id: ctx.tenantId,
+        customer_phone: args.patient_phone,
+        customer_name: args.patient_name,
+        service_name: matchedService?.name,
+      });
+    } catch {
+      /* best effort */
+    }
+
+    return {
+      success: true,
+      appointment: {
+        appointment_id: appointment.id as string,
+        confirmation_code: confirmationCode,
+        datetime_iso: datetime,
+        date_human: dateFmt,
+        time_human: timeFmt,
+        service: matchedService?.name || args.service_type,
+        staff_name: staffMember.name,
+        duration_minutes: duration,
+        price: matchedService?.price ?? null,
+        calendar_synced,
+      },
+      summary: `Cita agendada para ${dateFmt} a las ${timeFmt} con ${staffMember.name}. Código: ${confirmationCode}`,
+    };
+  },
 });
 
 // ─── Tool 3: get_my_appointments ─────────────────────────────────────────────
