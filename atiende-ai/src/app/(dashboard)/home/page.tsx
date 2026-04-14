@@ -6,6 +6,8 @@
 
 import { createServerSupabase } from '@/lib/supabase/server';
 import { IntelligenceAlerts } from '@/components/dashboard/intelligence-alerts';
+import { AnomalyBanner } from '@/components/dashboard/anomaly-banner';
+import { detectAnomalies } from '@/lib/intelligence/anomaly-detector';
 
 function healthTone(score: number): { label: string; dot: string; ring: string; text: string } {
   if (score > 70) return { label: 'Saludable', dot: 'bg-emerald-400', ring: 'ring-emerald-400/30', text: 'text-emerald-300' };
@@ -71,6 +73,14 @@ export default async function DashboardPage() {
       .eq('tenant_id', tenant.id).gte('datetime', monthStart.toISOString()),
   ]);
 
+  // Anomalías (best effort — si falla por schema faltante, mostramos lista vacía)
+  let anomalies: Awaited<ReturnType<typeof detectAnomalies>> = [];
+  try {
+    anomalies = await detectAnomalies(tenant.id);
+  } catch (err) {
+    console.warn('[home] detectAnomalies failed:', err);
+  }
+
   const aptsToday = aptsTodayR.count ?? 0;
   const aptsYest = aptsYestR.count ?? 0;
   const delta = aptsToday - aptsYest;
@@ -84,6 +94,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* ── Anomaly banners ─────────────────────────────────────────────── */}
+      {anomalies.length > 0 && <AnomalyBanner anomalies={anomalies} />}
+
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="animate-element">
         <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Panel</p>
