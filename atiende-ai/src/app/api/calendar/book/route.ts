@@ -3,6 +3,9 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createCalendarEvent } from '@/lib/calendar/google';
 import { createServerSupabase } from '@/lib/supabase/server';
 
+// Google Calendar round-trip + DB insert. 30s is safe headroom over Pro's 15s.
+export const maxDuration = 30;
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createServerSupabase();

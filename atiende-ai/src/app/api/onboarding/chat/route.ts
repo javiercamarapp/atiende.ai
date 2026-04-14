@@ -15,6 +15,12 @@ import { logger } from '@/lib/logger';
 import { StructuredGenerationError } from '@/lib/llm/openrouter';
 
 export const runtime = 'nodejs';
+// Vercel function timeout. Pro default is 15s — not enough for this route
+// because it may scrape a URL, extract content, then call the Qwen 235B
+// onboarding LLM, which together can take 20-40s in the worst case.
+// Setting to 60s (within Pro's 300s cap) gives headroom without blowing the
+// LLM budget. If this fires, investigate — something is slower than expected.
+export const maxDuration = 60;
 
 const ChatRequestSchema = z.object({
   vertical: z
