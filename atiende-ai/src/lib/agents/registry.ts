@@ -35,6 +35,8 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
   },
   'no-show': {
     name: 'no-show',
+    // Worker batch — usa gpt-4.1-mini como primary (no fallback) por costo.
+    // No conversacional, no requiere Grok por latencia baja.
     model: MODELS.ORCHESTRATOR_FALLBACK,
     description: 'Worker autónomo: envía recordatorios de confirmación 24h antes',
     tools: [
