@@ -11,9 +11,6 @@
 import { MODELS } from '@/lib/llm/openrouter';
 import type { AgentConfig, AgentName } from './types';
 import { triajeConfig } from './placeholders/triaje';
-import { retencionConfig } from './placeholders/retencion';
-import { cobranzaConfig } from './placeholders/cobranza';
-import { reputacionConfig } from './placeholders/reputacion';
 
 export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
   orchestrator: {
@@ -97,16 +94,41 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
     systemPromptKey: 'intake',
   },
 
-  // ── Phase 3.B.2 — pendientes (placeholders del registry de Phase 1) ──────
-  retencion: retencionConfig,
+  // ── Phase 3.B.2 — agentes activos ────────────────────────────────────────
+  retencion: {
+    name: 'retencion',
+    model: MODELS.ORCHESTRATOR_FALLBACK,
+    description: 'Reactiva pacientes con churn alto vía mensajes personalizados',
+    tools: [
+      'get_patients_at_risk',
+      'generate_retention_message',
+      'send_retention_message',
+      'mark_patient_reactivated',
+    ],
+    systemPromptKey: 'retencion',
+  },
   'agenda-gap': {
     name: 'agenda-gap',
     model: MODELS.ORCHESTRATOR_FALLBACK,
-    description: 'Llena huecos de agenda contactando a pacientes elegibles [3.B.2]',
-    tools: [],
+    description: 'Detecta huecos de agenda y propone slots a pacientes elegibles',
+    tools: ['detect_schedule_gaps', 'get_candidates_for_gaps', 'send_gap_fill_message'],
     systemPromptKey: 'agenda-gap',
   },
+  reputacion: {
+    name: 'reputacion',
+    model: MODELS.ORCHESTRATOR_FALLBACK,
+    description: '24h post-encuesta excelente, solicita reseña Google',
+    tools: ['send_review_request', 'track_review_sent'],
+    systemPromptKey: 'reputacion',
+  },
+  cobranza: {
+    name: 'cobranza',
+    model: MODELS.ORCHESTRATOR_FALLBACK,
+    description: 'Recordatorios de pago escalados por vencimiento',
+    tools: ['get_pending_payments', 'send_payment_reminder', 'mark_payment_received'],
+    systemPromptKey: 'cobranza',
+  },
+
+  // ── Phase 3 placeholders restantes ───────────────────────────────────────
   triaje: triajeConfig,
-  cobranza: cobranzaConfig,
-  reputacion: reputacionConfig,
 };

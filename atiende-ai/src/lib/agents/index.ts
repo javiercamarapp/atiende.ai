@@ -16,6 +16,10 @@ import './post-consulta';
 import './encuesta';
 import './medicamento';
 import './intake';
+import './retencion';
+import './agenda-gap';
+import './reputacion';
+import './cobranza';
 
 import type { AgentName, TenantContext, FastRoute } from './types';
 import { AGENT_REGISTRY } from './registry';
@@ -26,6 +30,10 @@ import { getPostConsultaPrompt } from './post-consulta/prompt';
 import { getEncuestaPrompt } from './encuesta/prompt';
 import { getMedicamentoPrompt } from './medicamento/prompt';
 import { getIntakePrompt } from './intake/prompt';
+import { getRetencionPrompt } from './retencion/prompt';
+import { getAgendaGapPrompt } from './agenda-gap/prompt';
+import { getReputacionPrompt } from './reputacion/prompt';
+import { getCobranzaPrompt } from './cobranza/prompt';
 
 export type { AgentName, TenantContext, FastRoute, AgentConfig } from './types';
 export { AGENT_REGISTRY } from './registry';
@@ -111,14 +119,14 @@ export function getSystemPrompt(agentName: AgentName, ctx: TenantContext): strin
     case 'encuesta':     return getEncuestaPrompt(ctx);
     case 'medicamento':  return getMedicamentoPrompt(ctx);
     case 'intake':       return getIntakePrompt(ctx);
+    case 'retencion':    return getRetencionPrompt(ctx);
+    case 'agenda-gap':   return getAgendaGapPrompt(ctx);
+    case 'reputacion':   return getReputacionPrompt(ctx);
+    case 'cobranza':     return getCobranzaPrompt(ctx);
     case 'faq':
       return '(FAQ no usa LLM — los handlers son funciones directas en src/lib/agents/faq/tools.ts)';
-    case 'retencion':
-    case 'agenda-gap':
     case 'triaje':
-    case 'cobranza':
-    case 'reputacion':
-      return `[Placeholder Phase 3.B.2/C] Agente ${agentName} aún no implementado.`;
+      return `[Placeholder Phase 3.C] Agente triaje aún no implementado.`;
     default: {
       const _exhaustive: never = agentName;
       return _exhaustive;
