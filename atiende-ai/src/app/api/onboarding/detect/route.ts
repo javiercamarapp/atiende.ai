@@ -1,24 +1,21 @@
-// TODO(onboarding-v2): deprecated — replaced by /api/onboarding/chat.
-// Kept only while the new conversational flow is validated in prod.
-// Delete in a follow-up PR once metrics confirm migration is stable.
+// ═════════════════════════════════════════════════════════════════════════════
+// DEPRECATED — replaced by /api/onboarding/chat (conversational flow).
+// Returns HTTP 410 Gone with migration instructions.
+// Kept as zombie route for any legacy client still hitting this path.
+// ═════════════════════════════════════════════════════════════════════════════
+
 import { NextResponse } from 'next/server';
-import { detectVertical } from '@/lib/onboarding/detect-vertical';
 
-// Calls an LLM classifier; 30s is generous headroom over the Pro default 15s.
-export const maxDuration = 30;
+const DEPRECATED_RESPONSE = {
+  error: 'deprecated',
+  message: 'Esta ruta fue reemplazada por /api/onboarding/chat',
+  migration: 'Use POST /api/onboarding/chat en su lugar',
+};
 
-export async function POST(request: Request) {
-  const { input } = await request.json();
+export async function POST() {
+  return NextResponse.json(DEPRECATED_RESPONSE, { status: 410 });
+}
 
-  if (!input || typeof input !== 'string') {
-    return NextResponse.json({ error: 'Input required' }, { status: 400 });
-  }
-
-  const result = await detectVertical(input);
-
-  if (!result) {
-    return NextResponse.json({ vertical: null });
-  }
-
-  return NextResponse.json(result);
+export async function GET() {
+  return NextResponse.json(DEPRECATED_RESPONSE, { status: 410 });
 }
