@@ -648,7 +648,56 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   // 2. Construir tenantCtx (Mexico TZ + fechas + servicios)
   const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
 
-  // 3. FAST PATH — antes de tocar el LLM, intenta resolver con regex
+  // 3a. FAST PATH — confirmación a recordatorio de cita.
+  //     Sin este fast-path, el paciente que responde "sí voy" queda con
+  //     confirmed_at=NULL porque el orchestrator no tiene la tool mark_confirmed
+  //     registrada. Resultado: dashboard lo muestra como "en riesgo" cuando
+  //     ya confirmó. El regex es conservador: solo mensajes que son claramente
+  //     confirmación (no una pregunta que incluya "sí").
+  const confirmRegex = /^\s*(s[ií]+|confirmo|confirmado|ah[íi]\s*(voy|estar[eé])|asisto|asistir[eé]|cuento\s*con(\s*usted)?|voy)\s*[.!]?\s*$/i;
+  if (confirmRegex.test(content)) {
+    const { data: pendingAppt } = await supabaseAdmin
+      .from('appointments')
+      .select('id, datetime')
+      .eq('tenant_id', tenant.id)
+      .eq('customer_phone', senderPhone)
+      .eq('status', 'scheduled')
+      .eq('no_show_reminded', true)
+      .is('confirmed_at', null)
+      .gt('datetime', new Date().toISOString())
+      .order('datetime', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (pendingAppt) {
+      await supabaseAdmin
+        .from('appointments')
+        .update({
+          status: 'confirmed',
+          confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', pendingAppt.id);
+
+      const thankMsg = '¡Perfecto! Su cita está confirmada. Le esperamos con gusto. 😊';
+      await sendTextMessage(phoneNumberId, senderPhone, thankMsg);
+      await supabaseAdmin.from('messages').insert({
+        conversation_id: conversationId,
+        tenant_id: tenant.id,
+        direction: 'outbound',
+        sender_type: 'bot',
+        content: thankMsg,
+        message_type: 'text',
+        intent: 'orchestrator.confirm_fast_path',
+      });
+      await supabaseAdmin
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversationId);
+      return;
+    }
+  }
+
+  // 3b. FAST PATH — antes de tocar el LLM, intenta resolver con regex
   const fastRoute = routeToAgent(content, tenantCtx);
 
   // 3a. URGENCIA: respuesta inmediata + escalación

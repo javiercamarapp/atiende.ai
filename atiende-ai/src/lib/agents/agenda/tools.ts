@@ -29,6 +29,7 @@ import {
   type ServiceRow,
 } from '@/lib/actions/appointment-helpers';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: check_availability ──────────────────────────────────────────────
 const CheckAvailArgs = z
@@ -364,13 +365,16 @@ registerTool('book_appointment', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const parse = BookArgs.safeParse(rawArgs);
     if (!parse.success) {
+      console.warn('[tool:book_appointment] validation failed:', parse.error.issues);
       return {
         success: false,
         error_code: 'INVALID_ARGS',
-        message: `Datos inválidos: ${parse.error.issues.map((i) => i.message).join('; ')}`,
+        message:
+          'Permítame verificar los datos. ¿Puede confirmarme el día, la hora y su nombre completo?',
       };
     }
     const args = parse.data;
+    args.patient_phone = normalizePhoneMx(args.patient_phone);
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
     const datetime = buildLocalIso(args.date, args.time, timezone);
 
@@ -613,6 +617,7 @@ registerTool('get_my_appointments', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = GetMyArgs.parse(rawArgs);
+    args.patient_phone = normalizePhoneMx(args.patient_phone);
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
     let q = supabaseAdmin
@@ -720,13 +725,16 @@ registerTool('modify_appointment', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const parse = ModifyArgs.safeParse(rawArgs);
     if (!parse.success) {
+      console.warn('[tool:modify_appointment] validation failed:', parse.error.issues);
       return {
         success: false,
         error_code: 'INVALID_ARGS',
-        message: parse.error.issues.map((i) => i.message).join('; '),
+        message:
+          'Permítame verificar los datos. ¿Puede confirmarme el código de cita y la nueva fecha u hora que prefiere?',
       };
     }
     const args = parse.data;
+    args.patient_phone = normalizePhoneMx(args.patient_phone);
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
     // 1. SELECT scoped por (id, tenant_id, customer_phone) — anti-injection
@@ -928,6 +936,7 @@ registerTool('cancel_appointment', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = CancelArgs.parse(rawArgs);
+    args.patient_phone = normalizePhoneMx(args.patient_phone);
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
     // 1. Verificar existencia + ownership + futura — un solo query scoped por
