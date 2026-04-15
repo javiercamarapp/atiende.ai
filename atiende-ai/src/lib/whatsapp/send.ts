@@ -259,6 +259,10 @@ export async function markAsRead(
 }
 
 // Enviar indicador de escritura (best-effort)
+// AUDIT-R6 MEDIO: antes silenciaba TODOS los errores — si WA_SYSTEM_TOKEN
+// estaba corrupto, nunca nos enterábamos hasta que sendTextMessage fallara.
+// Ahora sí loggeamos auth failures (401 / code 133000) aunque mantenemos
+// el fire-and-forget para no romper el pipeline.
 export async function sendTypingIndicator(phoneNumberId: string, to: string): Promise<SendResult> {
   try {
     await axios.post(
@@ -273,8 +277,18 @@ export async function sendTypingIndicator(phoneNumberId: string, to: string): Pr
       { headers: getHeaders(), timeout: 5_000 },
     );
     return { ok: true };
-  } catch {
-    // Typing indicator is best-effort, don't fail the pipeline
+  } catch (err) {
+    if (err instanceof AxiosError) {
+      const status = err.response?.status;
+      const code = err.response?.data?.error?.code as number | undefined;
+      // Solo loggeamos si es auth failure o rate-limit — los demás errores
+      // (recipient inválido, emoji mal formado) son ruido para typing.
+      if (status === 401 || code === 133000) {
+        console.error('[whatsapp:sendTypingIndicator] AUTH FAILURE — verificar WA_SYSTEM_TOKEN');
+      } else if (code === 131056) {
+        console.warn('[whatsapp:sendTypingIndicator] rate-limited by Meta');
+      }
+    }
     return { ok: false };
   }
 }

@@ -236,19 +236,42 @@ export async function extractPdfText(
 
   // 1) Intento nativo con pdf-parse (dynamic import — solo lo cargamos si
   //    está instalado; si no, vamos directo al fallback Gemini).
+  //
+  // AUDIT-R6 ALTO: pdf-parse es SÍNCRONO y CPU-bound — un PDF denso de
+  // ~200 páginas puede bloquear el event loop. Mitigaciones:
+  //   (a) si el buffer es >5MB, saltamos pdf-parse directo a Gemini Vision
+  //       (que procesa en su backend, no aquí);
+  //   (b) envolvemos la llamada en Promise.race con timeout de 5s;
+  //   (c) el handler downstream (processor.ts) ya tiene timeout global
+  //       de EXTRACT_CONTENT_TIMEOUT_MS=25s como red de seguridad.
+  const PDF_PARSE_MAX_BYTES = 5 * 1024 * 1024; // 5MB
+  const PDF_PARSE_TIMEOUT_MS = 5_000;
+
   let nativeText = '';
-  try {
-    // dynamic + tipado laxo — pdf-parse es opcional (no listamos como dep
-    // dura para no inflar el bundle si el tenant no usa PDFs).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mod: any = await (new Function('return import("pdf-parse")')() as Promise<unknown>).catch(() => null);
-    const fn = mod?.default ?? mod;
-    if (typeof fn === 'function') {
-      const result = await fn(dl.buffer);
-      nativeText = (result?.text || '').trim();
+  if (dl.buffer.length <= PDF_PARSE_MAX_BYTES) {
+    try {
+      // dynamic + tipado laxo — pdf-parse es opcional (no listamos como dep
+      // dura para no inflar el bundle si el tenant no usa PDFs).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mod: any = await (new Function('return import("pdf-parse")')() as Promise<unknown>).catch(() => null);
+      const fn = mod?.default ?? mod;
+      if (typeof fn === 'function') {
+        const result = await Promise.race([
+          fn(dl.buffer),
+          new Promise<never>((_, rej) =>
+            setTimeout(
+              () => rej(new Error(`pdf-parse timeout after ${PDF_PARSE_TIMEOUT_MS}ms`)),
+              PDF_PARSE_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        nativeText = ((result as { text?: string })?.text || '').trim();
+      }
+    } catch (err) {
+      console.warn('[media] pdf-parse failed/timeout:', err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.warn('[media] pdf-parse failed:', err instanceof Error ? err.message : err);
+  } else {
+    console.warn(`[media] PDF too large for native parse (${dl.buffer.length} bytes) — skipping to Gemini Vision`);
   }
 
   // Si pdf-parse devolvió texto razonable, lo usamos.
