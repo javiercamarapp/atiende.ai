@@ -1,1 +1,27 @@
+# ─── Claude Code / local dev tooling ────────────────────────
 .claude/worktrees/
+.claude/commands/
+.claude/
+
+# ─── Research / planning documents (keep local, never commit) ──
+*.pdf
+*.mp4
+*.mov
+*.docx
+*.xlsx
+
+# Screenshots (allow curated /public/** assets)
+/*.png
+/*.jpg
+/*.jpeg
+
+# ─── OS / editor noise ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ─── Env (app-local .env lives in atiende-ai/) ──────────────
+.env
+.env.local
