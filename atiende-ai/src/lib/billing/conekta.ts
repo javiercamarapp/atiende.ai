@@ -9,7 +9,7 @@ const headers = () => ({
 // Fallback a los defaults actuales si las env vars no están configuradas.
 //   basic   $599   = WhatsApp Básico (sin voz)
 //   pro     $999   = legacy
-//   premium $1,499 = WhatsApp + Voz (200 min incluidos + $5/min overage)
+//   premium $1,499 = WhatsApp + Voz (300 min incluidos + $5/min overage)
 const AMOUNTS:Record<string,number> = {
   basic:   Number(process.env.CONEKTA_AMOUNT_BASIC   || 59900),
   pro:     Number(process.env.CONEKTA_AMOUNT_PRO     || 99900),
