@@ -21,6 +21,7 @@
     { "path": "/api/cron/fraud-detection", "schedule": "0 2 * * *" },
     { "path": "/api/cron/refresh-materialized-views", "schedule": "0 * * * *" },
     { "path": "/api/cron/intelligence", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/data-retention", "schedule": "0 3 * * 0" }
+    { "path": "/api/cron/data-retention", "schedule": "0 3 * * 0" },
+    { "path": "/api/cron/notify-retry", "schedule": "*/15 * * * *" }
   ]
 }
