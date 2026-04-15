@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
         // skip-eará a estos tenants — el cobro de excedentes vía OXXO
         // requiere un flujo aparte (ej. crear nuevo order al final del mes).
         const voicePatch = plan === 'premium'
-          ? { voice_minutes_included: 200 }
+          ? { voice_minutes_included: 300 }
           : { voice_minutes_included: 0 };
         const { error } = await supabaseAdmin
           .from('tenants')
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
           console.error('[conekta-webhook] Failed to update tenant plan:', error.message);
           return NextResponse.json({ error: 'DB update failed' }, { status: 500 });
         }
-        console.warn(`[conekta-webhook] Tenant ${tenantId} upgraded to ${plan}` + (plan === 'premium' ? ' (200 min voz incluidos; overage NO se cobra automático via Conekta)' : ''));
+        console.warn(`[conekta-webhook] Tenant ${tenantId} upgraded to ${plan}` + (plan === 'premium' ? ' (300 min voz incluidos; overage NO se cobra automático via Conekta)' : ''));
         break;
       }
 

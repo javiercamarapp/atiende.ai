@@ -317,6 +317,22 @@ export async function runOrchestrator(
       // mensaje genérico de "hubo un problema, te contactamos en breve".
       const fbName = fallbackErr instanceof Error ? fallbackErr.name : 'unknown';
       const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      // AUDIT-VC R11: capturar error crítico en Sentry + Supabase para
+      // observabilidad en producción (no queda solo en console).
+      try {
+        const { captureError } = await import('@/lib/observability/error-tracker');
+        await captureError(
+          new Error(`Orchestrator both models failed: ${errName}/${fbName}`),
+          {
+            tenantId: ctx.tenantId,
+            agentName: agentUsed,
+            route: 'orchestrator',
+            primaryErr: errMsg,
+            fallbackErr: fbMsg,
+          },
+          'fatal',
+        );
+      } catch { /* no-op */ }
       throw new OrchestratorBothFailedError(
         `Primary (${errName}: ${errMsg}); Fallback (${fbName}: ${fbMsg})`,
         primaryErr,
