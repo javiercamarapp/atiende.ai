@@ -162,7 +162,19 @@ export function selectModel(
 export function calculateCost(
   model: string, tokensIn: number, tokensOut: number
 ): number {
-  const [rateIn, rateOut] = MODEL_PRICES[model] || [1.0, 5.0];
+  // AUDIT R15 BUG REAL: antes hacía `|| [1.0, 5.0]` para modelos desconocidos
+  // — reportaba costos fake inflados ($1/$5 por M tokens). Si se agregaba un
+  // modelo a `MODELS.*` olvidando el precio en MODEL_PRICES, sus mensajes
+  // contaminaban el dashboard de costo con números ficticios.
+  // Fix: modelos desconocidos → 0, con warn en dev para no silenciar el gap.
+  const rates = MODEL_PRICES[model];
+  if (!rates) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[openrouter] calculateCost: modelo desconocido "${model}" — agregar a MODEL_PRICES`);
+    }
+    return 0;
+  }
+  const [rateIn, rateOut] = rates;
   return (tokensIn * rateIn + tokensOut * rateOut) / 1_000_000;
 }
 

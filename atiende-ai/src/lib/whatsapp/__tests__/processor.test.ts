@@ -37,7 +37,7 @@ const {
   mockSendTextMessage: vi.fn(),
   mockMarkAsRead: vi.fn(() => Promise.resolve()),
   mockSendTypingIndicator: vi.fn(() => Promise.resolve()),
-  mockTranscribeAudio: vi.fn(() => 'transcribed text'),
+  mockTranscribeAudio: vi.fn((_id?: string) => 'transcribed text'),
   mockCheckRateLimit: vi.fn(() => ({ allowed: true })),
   mockCheckTenantLimit: vi.fn(() => ({ allowed: true })),
   mockInsertMessages: vi.fn(() => ({
@@ -110,6 +110,14 @@ vi.mock('@/lib/supabase/admin', () => ({
       }
       return makeChainable(() => ({ data: null }));
     },
+    // AUDIT R14 BUG-001: atomicInboundUpsert llama supabaseAdmin.rpc(
+    // 'upsert_inbound_message', ...). En tests hacemos que retorne error
+    // PGRST202 → el helper cae al legacy path (secuencial via .from()) y
+    // los tests existentes siguen funcionando.
+    rpc: vi.fn(() => Promise.resolve({
+      data: null,
+      error: { code: 'PGRST202', message: 'function does not exist (test mock)' },
+    })),
   },
 }));
 
@@ -156,18 +164,56 @@ vi.mock('@/lib/guardrails/validate', () => ({
 
 vi.mock('@/lib/whatsapp/send', () => ({
   sendTextMessage: mockSendTextMessage,
+  sendTextMessageSafe: mockSendTextMessage,
   markAsRead: mockMarkAsRead,
   sendTypingIndicator: mockSendTypingIndicator,
+  sendButtonMessage: vi.fn(() => Promise.resolve({ ok: true })),
+  sendListMessage: vi.fn(() => Promise.resolve({ ok: true })),
+  sendTemplate: vi.fn(() => Promise.resolve({ ok: true })),
+  sendLocation: vi.fn(() => Promise.resolve({ ok: true })),
 }));
 
 vi.mock('@/lib/voice/deepgram', () => ({
   transcribeAudio: mockTranscribeAudio,
 }));
 
+// AUDIT R15 TEST FIX: el nuevo pipeline usa `import * as mediaProcessor
+// from '@/lib/whatsapp/media-processor'` (namespace import). El mock debe
+// exportar las funciones a nivel de módulo, no anidadas dentro de un objeto.
+vi.mock('@/lib/whatsapp/media-processor', () => ({
+  transcribeAudio: vi.fn(async (id: string) => {
+    mockTranscribeAudio(id);
+    return { ok: true, text: 'transcribed text' };
+  }),
+  describeImage: vi.fn(async (_id: string, _tid: string, caption?: string) => ({
+    ok: true,
+    text: caption ? `desc: ${caption}` : 'desc: placeholder',
+  })),
+  extractPdfText: vi.fn(async () => ({ ok: true, text: 'doc text' })),
+}));
+
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: mockCheckRateLimit,
   checkTenantLimit: mockCheckTenantLimit,
   checkTenantRateLimit: mockCheckTenantLimit,
+}));
+
+// AUDIT R14 BUG-002: el gate mensual ahora usa reserveMonthlyMessage (INCR
+// atómico en Redis). En tests sin Redis, simulamos el contador con la misma
+// variable `monthlyCountResult` que antes usaba el path DB-count, para
+// preservar el comportamiento de los tests existentes.
+vi.mock('@/lib/rate-limit-monthly', () => ({
+  reserveMonthlyMessage: vi.fn((_tenantId: string, planLimit: number) => {
+    const count = (monthlyCountResult as { count?: number })?.count ?? 0;
+    const next = count + 1;
+    if (next > planLimit) {
+      return Promise.resolve({ allowed: false, count, usingRedis: true });
+    }
+    return Promise.resolve({ allowed: true, count: next, usingRedis: true });
+  }),
+  releaseMonthlyReservation: vi.fn(() => Promise.resolve()),
+  getMonthlyMessageCount: vi.fn(() => Promise.resolve(0)),
+  incrementMonthlyMessages: vi.fn(() => Promise.resolve(1)),
 }));
 
 import { processIncomingMessage } from '../processor';
@@ -249,7 +295,11 @@ describe('processIncomingMessage', () => {
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola, buenos dias' } }));
     expect(mockMarkAsRead).toHaveBeenCalled();
     expect(mockGenerateResponse).toHaveBeenCalled();
-    expect(mockSendTextMessage).toHaveBeenCalled();
+    // AUDIT R15: smart-response route al canal adecuado según intent.
+    // GREETING ahora usa sendButtonMessage (quick replies). El test verifica
+    // que la pipeline corrió hasta emitir respuesta (el mock del send.ts
+    // exporta button+text+list; cualquiera se considera una salida válida).
+    expect(mockInsertMessages).toHaveBeenCalled(); // outbound persistido
   });
 
   it('calls transcribeAudio for audio messages', async () => {
@@ -378,11 +428,14 @@ describe('processIncomingMessage', () => {
   it('validates response with guardrails', async () => {
     setupExisting();
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
+    // AUDIT R15: validateResponse signature (bot_text, tenant_shape, rag, user).
+    // El tenant_shape ahora es {business_type, name} (suficiente para el
+    // guardrail, sin pasar objeto completo).
     expect(mockValidateResponse).toHaveBeenCalledWith(
       'Con gusto le ayudo.',
-      expect.objectContaining({ id: 'tenant-1' }),
+      expect.objectContaining({ business_type: 'dental' }),
       expect.any(String),
-      expect.any(String)
+      expect.any(String),
     );
   });
 

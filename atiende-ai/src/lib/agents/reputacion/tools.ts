@@ -20,6 +20,7 @@ const SendReviewArgs = z
   .strict();
 
 registerTool('send_review_request', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -76,6 +77,7 @@ const TrackArgs = z
   .strict();
 
 registerTool('track_review_sent', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

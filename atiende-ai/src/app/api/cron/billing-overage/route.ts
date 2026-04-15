@@ -143,7 +143,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       cappedAlerts++;
     }
 
-    const result = await reportVoiceOverageToStripe(itemId, billableMinutes);
+    // AUDIT R14 BUG-011: pasar year_month de la row (ej. "2026-03") como
+    // periodKey estable, para que la idempotency key de Stripe sea
+    // determinística aunque el retry cruce el mes calendario.
+    const result = await reportVoiceOverageToStripe(itemId, billableMinutes, row.year_month);
 
     if (result.success) {
       await supabaseAdmin

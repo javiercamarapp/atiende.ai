@@ -154,6 +154,7 @@ const SendConfirmationArgs = z
   .strict();
 
 registerTool('send_confirmation_request', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -274,6 +275,7 @@ const MarkConfirmedArgs = z
   .strict();
 
 registerTool('mark_confirmed', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -330,6 +332,7 @@ const MarkNoShowArgs = z
   .strict();
 
 registerTool('mark_no_show', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -444,6 +447,7 @@ const NotifyRiskArgs = z
   .strict();
 
 registerTool('notify_risk', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
