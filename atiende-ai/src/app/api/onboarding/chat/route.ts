@@ -16,7 +16,7 @@ import { getVerticalInsight } from '@/lib/onboarding/vertical-insights';
 // Mirrors the prompt rule in chat-agent.ts so the server enforces the same
 // behavior even if the LLM misbehaves.
 const STANDBY_REJECTION_MESSAGE =
-  'Gracias por escribirnos. Por el momento atiende.ai está enfocado exclusivamente en agentes de reservas para los sectores de salud y estética — médicos, dentistas, psicólogos, estilistas, spas, gimnasios y similares. Estaremos habilitando más industrias próximamente. Si gustas, déjame tu nombre, correo o WhatsApp y te avisamos cuando tu sector esté disponible.';
+  'Gracias por escribirnos. Por el momento useatiende.ai está enfocado exclusivamente en agentes de reservas para los sectores de salud y estética — médicos, dentistas, psicólogos, estilistas, spas, gimnasios y similares. Estaremos habilitando más industrias próximamente. Si gustas, déjame tu nombre, correo o WhatsApp y te avisamos cuando tu sector esté disponible.';
 import { logger } from '@/lib/logger';
 import { StructuredGenerationError } from '@/lib/llm/openrouter';
 

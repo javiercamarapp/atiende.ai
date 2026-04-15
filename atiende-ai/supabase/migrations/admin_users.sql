@@ -33,9 +33,9 @@ FROM auth.users u
 WHERE (u.raw_app_meta_data->>'role')::text = 'admin'
 ON CONFLICT (user_id) DO NOTHING;
 
--- Bootstrap: garantiza que javier@atiende.ai sigue siendo admin si existe.
+-- Bootstrap: garantiza que ventas@useatiende.ai sigue siendo admin si existe.
 INSERT INTO admin_users (user_id, email, role, notes)
-SELECT u.id, u.email, 'admin', 'Bootstrap (atiende founder)'
+SELECT u.id, u.email, 'admin', 'Bootstrap (useatiende.ai founder)'
 FROM auth.users u
-WHERE u.email IN ('javier@atiende.ai', 'admin@atiende.ai')
+WHERE u.email IN ('ventas@useatiende.ai')
 ON CONFLICT (user_id) DO NOTHING;

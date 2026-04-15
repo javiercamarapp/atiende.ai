@@ -48,7 +48,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       <nav className="glass-panel border-b border-white/5 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6 overflow-x-auto">
           <h1 className="font-semibold text-sm text-white whitespace-nowrap">
-            atiende.ai <span className="text-emerald-400 text-[10px] font-medium uppercase tracking-wider ml-1">Admin</span>
+            useatiende.ai <span className="text-emerald-400 text-[10px] font-medium uppercase tracking-wider ml-1">Admin</span>
           </h1>
           <div className="h-4 w-px bg-white/10" />
           <ul className="flex items-center gap-1">
