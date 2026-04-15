@@ -15,10 +15,25 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- Detectar duplicados ANTES de aplicar UNIQUE (rompería si existen)
+-- Idempotente: chequea pg_constraint ANTES de intentar ADD.
 DO $$
 DECLARE
   dup_count INT;
+  constraint_exists BOOLEAN;
 BEGIN
+  -- Si ya existe, salir (idempotencia real)
+  SELECT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'tenants_wa_phone_number_id_unique'
+      AND conrelid = 'tenants'::regclass
+  ) INTO constraint_exists;
+
+  IF constraint_exists THEN
+    RAISE NOTICE 'Constraint tenants_wa_phone_number_id_unique ya existe — skip';
+    RETURN;
+  END IF;
+
+  -- Detectar duplicados (bloquean creación)
   SELECT COUNT(*) INTO dup_count FROM (
     SELECT wa_phone_number_id FROM tenants
     WHERE wa_phone_number_id IS NOT NULL
@@ -26,12 +41,10 @@ BEGIN
   ) t;
   IF dup_count > 0 THEN
     RAISE NOTICE 'Found % duplicate wa_phone_number_id — manual cleanup required BEFORE UNIQUE constraint', dup_count;
-  ELSE
-    BEGIN
-      ALTER TABLE tenants
-        ADD CONSTRAINT tenants_wa_phone_number_id_unique UNIQUE (wa_phone_number_id);
-    EXCEPTION WHEN duplicate_object THEN
-      NULL; -- ya existe
-    END;
+    RETURN;
   END IF;
+
+  ALTER TABLE tenants
+    ADD CONSTRAINT tenants_wa_phone_number_id_unique UNIQUE (wa_phone_number_id);
+  RAISE NOTICE 'Constraint creado OK';
 END $$;
