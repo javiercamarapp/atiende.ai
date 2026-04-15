@@ -130,13 +130,7 @@ export function getToolSchemas(names?: string[] | null): OpenAI.Chat.ChatComplet
   return out;
 }
 
-/** Timeout máximo por tool individual. Si una tool tarda más, se aborta para
- * no consumir el presupuesto del orchestrator (10s total) en una sola tool. */
-const TOOL_TIMEOUT_MS = 4_000;
-
-/** Máximo de chars que serializamos al pasar el resultado de una tool al LLM.
- * Evita que un get_my_appointments con 200 citas explote tokens y costo. */
-const MAX_TOOL_RESULT_CHARS = 8_000;
+import { TOOL_TIMEOUT_MS, TOOL_RESULT_MAX_CHARS as MAX_TOOL_RESULT_CHARS } from '@/lib/config';
 
 function truncateToolResult(result: unknown, name: string): unknown {
   try {

@@ -71,8 +71,10 @@ export interface OrchestratorResult {
  * múltiples rondas puede subir. 10s garantiza que ningún request se cuelgue
  * indefinidamente — ni en primary ni en fallback.
  */
-const PRIMARY_TIMEOUT_MS = 10_000;
-const FALLBACK_TIMEOUT_MS = 10_000;
+import {
+  ORCHESTRATOR_PRIMARY_TIMEOUT_MS as PRIMARY_TIMEOUT_MS,
+  ORCHESTRATOR_FALLBACK_TIMEOUT_MS as FALLBACK_TIMEOUT_MS,
+} from '@/lib/config';
 
 /** Default sub-agente cuando el caller no especifica uno. */
 const DEFAULT_AGENT_NAME = 'base';
