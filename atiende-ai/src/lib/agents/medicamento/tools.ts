@@ -5,7 +5,8 @@
 
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { sendTextMessage } from '@/lib/whatsapp/send';
+import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
+void sendTextMessage;
 import { generateResponse, generateStructured, MODELS } from '@/lib/llm/openrouter';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
@@ -197,7 +198,10 @@ registerTool('send_medication_reminder', {
       .join('\n');
 
     try {
-      await sendTextMessage(phoneNumberId, args.patient_phone, text);
+      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      if (!r.ok && r.windowExpired) {
+        return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
+      }
     } catch (err) {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }

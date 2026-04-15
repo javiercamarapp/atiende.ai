@@ -226,8 +226,11 @@ export function formatDateTimeMx(datetime: string, timezone: string) {
   const dateFmt = new Intl.DateTimeFormat('es-MX', {
     timeZone: timezone, weekday: 'long', day: 'numeric', month: 'long',
   }).format(d);
+  // FIX 10: usar formato 12h con AM/PM — los pacientes mexicanos esperan
+  // "10:00 a.m." en vez de "10:00", y especialmente "3:00 p.m." en vez de
+  // "15:00" que confunde a usuarios mayores.
   const timeFmt = new Intl.DateTimeFormat('es-MX', {
-    timeZone: timezone, hour: '2-digit', minute: '2-digit',
+    timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true,
   }).format(d);
   return { dateFmt, timeFmt };
 }

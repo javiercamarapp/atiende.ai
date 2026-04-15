@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 const WA_API = 'https://graph.facebook.com/v21.0';
 const getHeaders = () => ({
@@ -60,8 +61,79 @@ export async function sendTextMessage(
     );
     return { ok: true };
   } catch (err) {
-    return inspectAxiosError(err, 'sendTextMessage');
+    const result = inspectAxiosError(err, 'sendTextMessage');
+    // WA-1: persistir el último error de envío en contacts para que el dueño
+    // del consultorio pueda ver desde el dashboard qué pacientes ya no son
+    // contactables (bloquearon el WhatsApp business, número inválido, etc.)
+    if (!result.ok && result.errorCode) {
+      void persistContactSendError(to, result.errorCode, result.errorLabel || 'unknown');
+    }
+    return result;
   }
+}
+
+async function persistContactSendError(
+  phone: string, errorCode: number, errorLabel: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('contacts')
+      .update({
+        last_send_error_code: errorCode,
+        last_send_error_label: errorLabel,
+        last_send_error_at: new Date().toISOString(),
+      })
+      .eq('phone', phone);
+  } catch {
+    /* best effort — no romper el flujo si la columna no existe */
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX 13: sendTextMessageSafe — verifica la ventana 24h antes de enviar
+//
+// Meta solo permite mensajes free-form si el usuario nos escribió en las
+// últimas 24h. Fuera de esa ventana hay que usar un template aprobado o el
+// envío fallará con error 131047 (reengagement_required).
+//
+// sendTextMessageSafe consulta la última inbound del paciente (tabla messages)
+// y, si la ventana cerró, reporta sin gastar la llamada a Meta.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export async function sendTextMessageSafe(
+  phoneNumberId: string,
+  to: string,
+  text: string,
+  opts?: { tenantId?: string },
+): Promise<SendResult & { windowExpired?: boolean }> {
+  // Consulta la última inbound del paciente para este tenant
+  let query = supabaseAdmin
+    .from('messages')
+    .select('created_at')
+    .eq('direction', 'inbound')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (opts?.tenantId) query = query.eq('tenant_id', opts.tenantId);
+
+  const { data: lastInbound } = await query.maybeSingle();
+
+  if (lastInbound) {
+    const ageMs = Date.now() - new Date(lastInbound.created_at as string).getTime();
+    if (ageMs > WINDOW_MS) {
+      console.warn(`[sendTextMessageSafe] window expired (${Math.floor(ageMs / 3600000)}h) — not sending free-form to ${to}`);
+      return {
+        ok: false,
+        windowExpired: true,
+        errorCode: 131047,
+        errorLabel: 'reengagement_required',
+        errorMessage: 'Outside 24h window — use a template instead.',
+      };
+    }
+  }
+  return sendTextMessage(phoneNumberId, to, text);
 }
 
 // Enviar mensaje con botones (max 3 botones)

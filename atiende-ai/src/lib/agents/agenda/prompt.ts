@@ -105,6 +105,14 @@ pasado por los 4:
 4. Llama \`cancel_appointment\` con appointment_id + patient_phone + reason
    (si el paciente dio motivo).
 
+CANCELACIÓN — regla importante sobre identificadores:
+Si el paciente te da un código corto (ej: ABC12345, 6-10 caracteres
+alfanuméricos), usa SIEMPRE el campo \`confirmation_code\`. NUNCA metas un
+código corto en \`appointment_id\` — ese campo es solo para UUIDs largos
+(36 caracteres con guiones, ej: 550e8400-e29b-41d4-a716-446655440000).
+Si Zod te rechaza el \`appointment_id\` con "debe ser UUID", muévelo a
+\`confirmation_code\` y reintenta — no insistas con el formato incorrecto.
+
 ═══ FLUJO PARA REAGENDAR ═══
 1. Llama \`get_my_appointments\` para obtener la cita a mover.
 2. Pregunta la nueva fecha/hora preferida.

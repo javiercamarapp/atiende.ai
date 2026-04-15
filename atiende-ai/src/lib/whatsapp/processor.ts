@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
-import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
+import { checkRateLimit, checkTenantLimit, checkTenantRateLimit } from '@/lib/rate-limit';
 import { resolveIntent } from '@/lib/whatsapp/classifier';
 import { buildRagContext } from '@/lib/whatsapp/rag-context';
 import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
@@ -19,9 +19,26 @@ import {
   getSystemPrompt,
   routeToAgent,
   handleFAQ,
+  initializeAllAgents,
 } from '@/lib/agents';
+
+// Boot-time verification — corre UNA VEZ al cargar el módulo. Si algún
+// agente falló al registrar sus tools, mejor saberlo en el cold start que
+// al recibir el primer mensaje del paciente.
+const __agentsInit = initializeAllAgents();
+if (!__agentsInit.ok) {
+  console.error('[processor] agents init incomplete — missing:', __agentsInit.missing);
+}
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
 import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
+import {
+  acquireConversationLock,
+  releaseConversationLock,
+} from '@/lib/whatsapp/conversation-lock';
+import { maskPhone, redactHistoryForLLM } from '@/lib/utils/logger';
+import { encryptPII } from '@/lib/utils/crypto';
+import { detectPromptInjection, sanitizeUserInput } from '@/lib/whatsapp/input-guardrail';
+import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool calling pipeline (Fase 1) — feature flag
@@ -45,6 +62,18 @@ function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
 }
 
+// SEC-1: Wrapper que aplica el guardrail anti-prompt-injection además de
+// la sanitización HTML. Usado al construir el mensaje para el LLM.
+import { guardUserInput } from '@/lib/guardrails/input-guard';
+function safeUserMessage(raw: string): { content: string; flagged: boolean } {
+  const cleaned = sanitizeInput(raw);
+  const guard = guardUserInput(cleaned);
+  if (guard.flagged) {
+    console.warn('[guardrail] prompt injection patterns:', guard.reasons.slice(0, 3));
+  }
+  return { content: guard.sanitized, flagged: guard.flagged };
+}
+
 interface WhatsAppWebhookBody {
   entry?: Array<{
     changes?: Array<{
@@ -61,15 +90,19 @@ interface WhatsAppMessage {
   from: string;
   type: string;
   text?: { body: string };
-  audio?: { id: string };
-  image?: { caption?: string };
-  document?: { filename?: string };
+  audio?: { id: string; mime_type?: string };
+  voice?: { id: string; mime_type?: string };
+  image?: { id?: string; caption?: string };
+  document?: { id?: string; filename?: string; mime_type?: string; caption?: string };
+  video?: { id?: string; caption?: string };
   location?: { latitude: number; longitude: number };
   interactive?: {
     type: string;
     button_reply?: { title: string };
     list_reply?: { title: string };
   };
+  reaction?: { message_id: string; emoji: string };
+  sticker?: { id: string };
   contacts?: Array<{ profile?: { name?: string } }>;
 }
 
@@ -110,8 +143,17 @@ async function checkGates(
   const rateLimited = await checkRateLimit(senderPhone);
   if (!rateLimited.allowed) return false;
 
-  const tenantLimited = await checkTenantLimit(tenant.id, tenant.plan);
-  if (!tenantLimited.allowed) return false;
+  // SEC-4: ahora pasa senderPhone para tracking de fan-out (DDoS con SIM
+  // virtuales) y aplica burst-cap per-minute (1/10 del límite horario).
+  const tenantLimited = await checkTenantRateLimit(tenant.id, tenant.plan, senderPhone);
+  if (!tenantLimited.allowed) {
+    if (tenantLimited.reason === 'burst') {
+      console.warn('[gates] tenant burst rate-limit', { tenantId: tenant.id });
+    }
+    return false;
+  }
+  // Mantengo checkTenantLimit referenciado para no romper el deprecated path
+  void checkTenantLimit;
 
   // Trial expiry
   if (tenant.plan === 'free_trial' && tenant.trial_ends_at) {
@@ -170,6 +212,9 @@ async function checkGates(
 }
 
 // -- Extract text content from any WhatsApp message type --
+//
+// Versión legacy (sin tenantId, usa Deepgram para audio). Mantenida para no
+// romper otros callers; nueva pipeline usa extractContentAsync abajo.
 
 async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; messageType: string }> {
   let content = '';
@@ -207,6 +252,125 @@ async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; 
   }
 
   return { content: sanitizeInput(content), messageType };
+}
+
+// -- Multimedia extractor (MISIÓN 2) --
+//
+// Procesa audio (Whisper), imagen (Gemini Vision), PDF (pdf-parse + Gemini
+// fallback). Retorna además metadata para persistir en messages.media_*.
+
+interface ExtractedContent {
+  content: string;
+  messageType: string;
+  mediaTranscription?: string;
+  mediaDescription?: string;
+}
+
+async function extractContentAsync(
+  msg: WhatsAppMessage,
+  tenantId: string,
+): Promise<ExtractedContent> {
+  switch (msg.type) {
+    case 'text':
+      return { content: sanitizeInput(msg.text?.body || ''), messageType: 'text' };
+
+    case 'audio':
+    case 'voice': {
+      const id = msg.audio?.id || msg.voice?.id;
+      if (!id) return { content: '[Audio no disponible]', messageType: 'audio' };
+      const r = await mediaProcessor.transcribeAudio(id, tenantId);
+      if (!r.ok || !r.text) {
+        return { content: '[No pude entender el audio. ¿Puedes escribirlo?]', messageType: 'audio' };
+      }
+      return {
+        content: sanitizeInput(r.text),
+        messageType: 'audio',
+        mediaTranscription: r.text,
+      };
+    }
+
+    case 'image': {
+      if (!msg.image?.id) {
+        return {
+          content: msg.image?.caption ? sanitizeInput(msg.image.caption) : '[Imagen]',
+          messageType: 'image',
+        };
+      }
+      const r = await mediaProcessor.describeImage(msg.image.id, tenantId, msg.image.caption);
+      if (!r.ok || !r.text) {
+        return {
+          content: msg.image?.caption ? sanitizeInput(msg.image.caption) : '[Imagen recibida — no pude analizarla]',
+          messageType: 'image',
+        };
+      }
+      const captionPart = msg.image.caption ? `${msg.image.caption}\n` : '';
+      return {
+        content: sanitizeInput(`${captionPart}[Imagen: ${r.text}]`),
+        messageType: 'image',
+        mediaDescription: r.text,
+      };
+    }
+
+    case 'document': {
+      if (!msg.document?.id) {
+        return { content: `[Documento: ${msg.document?.filename || 'archivo'}]`, messageType: 'document' };
+      }
+      const isPdf = (msg.document.mime_type || '').includes('pdf')
+        || (msg.document.filename || '').toLowerCase().endsWith('.pdf');
+      if (!isPdf) {
+        return {
+          content: `[Documento ${msg.document.filename || 'archivo'} — solo proceso PDFs por ahora]`,
+          messageType: 'document',
+        };
+      }
+      const r = await mediaProcessor.extractPdfText(msg.document.id, tenantId, msg.document.filename);
+      if (!r.ok || !r.text) {
+        return {
+          content: `[PDF ${msg.document.filename || ''} — no pude leerlo]`,
+          messageType: 'document',
+        };
+      }
+      return {
+        content: sanitizeInput(r.text),
+        messageType: 'document',
+        mediaDescription: r.text,
+      };
+    }
+
+    case 'location':
+      return {
+        content: `[Ubicación compartida: ${msg.location?.latitude},${msg.location?.longitude}]`,
+        messageType: 'location',
+      };
+
+    case 'interactive': {
+      let content = '';
+      if (msg.interactive?.type === 'button_reply') {
+        content = msg.interactive.button_reply?.title || '';
+      } else if (msg.interactive?.type === 'list_reply') {
+        content = msg.interactive.list_reply?.title || '';
+      }
+      return { content: sanitizeInput(content), messageType: 'interactive' };
+    }
+
+    case 'sticker':
+      return { content: '[Sticker]', messageType: 'sticker' };
+
+    case 'reaction':
+      return {
+        content: `[Reacción ${msg.reaction?.emoji || ''}]`,
+        messageType: 'reaction',
+      };
+
+    case 'video':
+      return {
+        content: `[Video recibido${msg.video?.caption ? `: ${msg.video.caption}` : ''} — no proceso video aún]`,
+        messageType: 'video',
+      };
+
+    default:
+      return { content: `[${msg.type} recibido]`, messageType: msg.type };
+  }
 }
 
 // -- Post-response side effects (actions, scoring, notifications) --
@@ -365,12 +529,12 @@ async function handleSingleMessage(
     }
   }
 
-  // 1. Identify tenant
+  // 1. Identify tenant — buscamos primero SIN filtro de status para poder
+  // dar respuesta amigable si está inactivo (FIX 6 audit Round 2).
   const { data: tenant } = await supabaseAdmin
     .from('tenants')
     .select('*')
     .eq('wa_phone_number_id', phoneNumberId)
-    .eq('status', 'active')
     .single();
 
   if (!tenant) {
@@ -378,16 +542,77 @@ async function handleSingleMessage(
     return;
   }
 
+  // 1.1 Tenant inactivo (suspendido / trial expirado / pausado): contestar
+  // un mensaje cordial en vez de silencio total — la peor UX es no recibir
+  // respuesta del consultorio.
+  if (tenant.status !== 'active') {
+    try {
+      await sendTextMessage(
+        phoneNumberId,
+        senderPhone,
+        'Gracias por contactarnos. En este momento nuestro servicio no está disponible. Por favor intente más tarde o contáctenos directamente.',
+      );
+    } catch { /* best effort */ }
+    return;
+  }
+
+  // 1.5. Conversation lock — serializa el procesamiento de mensajes del mismo
+  // (tenant, paciente). Sin esto, dos webhooks paralelos pueden disparar dos
+  // pipelines simultáneos y crear citas duplicadas (carrera entre hasConflict
+  // checks). Si no se obtiene el lock, otro pipeline ya está corriendo —
+  // dejamos que él procese (Meta reintentará si nada se persiste).
+  const lock = await acquireConversationLock(tenant.id as string, senderPhone);
+  if (!lock.acquired) {
+    console.info('[processor] conversation locked, skipping concurrent message:', maskPhone(senderPhone));
+    return;
+  }
+
+  try {
+    await handleSingleMessageInner(msg, metadata, tenant as TenantRecord, senderPhone, phoneNumberId, messageId);
+  } finally {
+    if (lock.token) {
+      await releaseConversationLock(tenant.id as string, senderPhone, lock.token).catch(() => {});
+    }
+  }
+}
+
+async function handleSingleMessageInner(
+  msg: WhatsAppMessage,
+  _metadata: { phone_number_id: string; display_phone_number: string },
+  tenant: TenantRecord,
+  senderPhone: string,
+  phoneNumberId: string,
+  messageId: string | undefined,
+) {
   // 2. Gate checks
-  if (!(await checkGates(tenant as TenantRecord, senderPhone, phoneNumberId))) return;
+  if (!(await checkGates(tenant, senderPhone, phoneNumberId))) return;
 
   // 3. Mark as read (non-critical)
-  await markAsRead(phoneNumberId, messageId).catch((err) => {
-    if (process.env.NODE_ENV !== 'production') console.error('markAsRead failed:', err);
-  });
+  if (messageId) {
+    await markAsRead(phoneNumberId, messageId).catch((err) => {
+      if (process.env.NODE_ENV !== 'production') console.error('markAsRead failed:', err);
+    });
+  }
 
   // 4. Extract content
-  const { content, messageType } = await extractContent(msg);
+  const extracted = await extractContentAsync(msg, tenant.id);
+  const { messageType, mediaTranscription, mediaDescription } = extracted;
+  // FIX 2 (audit Round 2): sanitize + block prompt-injection ANTES del LLM.
+  // Si el mensaje claramente intenta romper el system prompt, respondemos
+  // con un texto cordial y NO consumimos LLM ni guardamos historial.
+  const content = sanitizeUserInput(extracted.content);
+  if (detectPromptInjection(content)) {
+    console.warn(
+      '[security] prompt injection blocked from:',
+      maskPhone(senderPhone),
+    );
+    await sendTextMessage(
+      phoneNumberId,
+      senderPhone,
+      'Lo siento, no puedo procesar ese mensaje. ¿En qué le puedo ayudar con su cita?',
+    );
+    return;
+  }
   if (!content || content.length < 1) return;
 
   // 5. Upsert contact
@@ -444,7 +669,7 @@ async function handleSingleMessage(
       tenant_id: tenant.id,
       direction: 'inbound',
       sender_type: 'customer',
-      content,
+      content: encryptPII(content),
       message_type: messageType,
       wa_message_id: messageId,
     });
@@ -455,14 +680,19 @@ async function handleSingleMessage(
   //    - Check a nivel app (arriba, paso 0) — reject silent si ya existe
   //    - DB UNIQUE constraint en wa_message_id (si código 23505 → duplicate
   //      webhook retry simultáneo, safe to skip)
+  // PRIV-2: cifrado application-level de campos sensibles. Si la key no
+  // está configurada, encryptPII es passthrough (rollout gradual).
   const { error: insertErr } = await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
     direction: 'inbound',
     sender_type: 'customer',
-    content,
+    content: encryptPII(content),
     message_type: messageType,
     wa_message_id: messageId,
+    media_type: ['audio', 'image', 'document', 'video'].includes(messageType) ? messageType : null,
+    media_transcription: encryptPII(mediaTranscription || null),
+    media_description: encryptPII(mediaDescription || null),
   });
   if (insertErr) {
     // PostgreSQL 23505 = unique_violation. Significa race con otro webhook
@@ -576,13 +806,13 @@ async function handleSingleMessage(
     content,
   );
 
-  // 15. Save outbound message + metrics
+  // 15. Save outbound message + metrics (PRIV-2: cifrado at-rest)
   await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
     direction: 'outbound',
     sender_type: 'bot',
-    content: response.text,
+    content: encryptPII(response.text),
     message_type: 'text',
     intent,
     model_used: response.model,
@@ -826,13 +1056,16 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     // FAQ regex matchó pero handler retornó null (data missing) → cae al LLM
   }
 
-  // 4. Cargar historial conversacional
-  const history = await getConversationContext(conversationId, 20);
+  // 4. Cargar historial conversacional (MT-1: 40 mensajes en vez de 20)
+  const history = await getConversationContext(conversationId, 40);
 
   // 5. Componer messages: history + último mensaje del usuario
+  // SEC-1: aplicamos guardrail anti-prompt-injection al último mensaje;
+  // PRIV-6: enmascaramos PII en el historial antes de mandarlo al LLM.
+  const safeMsg = safeUserMessage(content);
   const orchestratorMessages = [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content },
+    ...redactHistoryForLLM(history).map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: safeMsg.content },
   ];
 
   // 6. AGENTE: Phase 2.D usa AGENDA agent para todos los tenants con
@@ -910,7 +1143,7 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     tenant_id: tenant.id,
     direction: 'outbound',
     sender_type: 'bot',
-    content: responseText,
+    content: encryptPII(responseText),
     message_type: 'text',
     intent: `orchestrator.${agentName}`,
     model_used: modelUsed,
