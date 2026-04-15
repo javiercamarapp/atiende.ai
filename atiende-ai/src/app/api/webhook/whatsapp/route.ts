@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { processIncomingMessage } from '@/lib/whatsapp/processor';
 import { logWebhook } from '@/lib/webhook-logger';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -117,12 +118,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // RESPONDER 200 INMEDIATAMENTE — no bloquear
-    // Procesar el mensaje en background
-    processIncomingMessage(body).catch(err => {
-      console.error('Error procesando mensaje WA:', err);
-      logWebhook({ provider: 'whatsapp', eventType: 'process_error', error: err instanceof Error ? err.message : 'Unknown error' });
-    });
+    // RESPONDER 200 INMEDIATAMENTE — no bloquear.
+    // CRÍTICO: usar waitUntil de @vercel/functions para que la función
+    // serverless NO se congele al retornar — sin esto, processIncomingMessage
+    // puede truncarse a medio LLM call, dejando mensajes sin procesar.
+    waitUntil(
+      processIncomingMessage(body).catch((err) => {
+        console.error('Error procesando mensaje WA:', err);
+        logWebhook({
+          provider: 'whatsapp',
+          eventType: 'process_error',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }),
+    );
 
     return NextResponse.json({ status: 'received' });
   } catch (error) {

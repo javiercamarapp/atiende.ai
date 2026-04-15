@@ -100,8 +100,15 @@ describe('check_availability', () => {
   });
 
   it('día cerrado (sin business_hours para ese día) → CLOSED', async () => {
-    // Mock staff query (vacío para path simple)
-    vi.mocked(supabaseAdmin.from).mockReturnValue(makeQuery([]) as never);
+    // Mock chainable: tenant_holidays retorna null (no es festivo), staff vacío
+    vi.mocked(supabaseAdmin.from).mockImplementation((table: string): never => {
+      if (table === 'tenant_holidays') {
+        const noHolidayChain = makeQuery(null);
+        noHolidayChain.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+        return noHolidayChain as never;
+      }
+      return makeQuery([]) as never;
+    });
 
     // Día sin business_hours configurado (por ejemplo "sab" o "dom")
     const result = await executeTool(
@@ -120,6 +127,11 @@ describe('check_availability', () => {
     let callCount = 0;
     vi.mocked(supabaseAdmin.from).mockImplementation((table: string): never => {
       callCount++;
+      if (table === 'tenant_holidays') {
+        const noHolidayChain = makeQuery(null);
+        noHolidayChain.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+        return noHolidayChain as never;
+      }
       if (table === 'staff') {
         return makeQuery([
           { id: 'staff-1', name: 'Dr. Test', default_duration: 30 },

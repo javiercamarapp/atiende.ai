@@ -183,19 +183,38 @@ export async function generateAllAgentPrompts(
 
 /**
  * Persiste prompts generados en tenant_prompts (UPSERT por (tenant, agent)).
+ *
+ * CRÍTICO: NO persistir prompts con `model_used === 'error'` — eso significa
+ * que ambos modelos LLM fallaron y `prompt_text` es un mensaje de error
+ * técnico. Persistirlo haría que el agente arranque con un "system prompt"
+ * que dice "[Error generando prompt: timeout]" → respuestas rotas al paciente.
+ *
+ * En su lugar, dejamos que el agente use el prompt hardcoded de
+ * src/lib/agents/<agent>/prompt.ts como fallback (se usa cuando no hay
+ * tenant_prompts row).
  */
 export async function saveTenantPrompts(opts: {
   tenantId: string;
   prompts: Record<string, { prompt_text: string; model_used: string }>;
-}): Promise<{ saved: number; errors: number }> {
-  const rows = Object.entries(opts.prompts).map(([agent_name, p]) => ({
-    tenant_id: opts.tenantId,
-    agent_name,
-    prompt_text: p.prompt_text,
-    model_used: p.model_used,
-    is_active: true,
-    generated_at: new Date().toISOString(),
-  }));
+}): Promise<{ saved: number; errors: number; skipped: number }> {
+  const rows = Object.entries(opts.prompts)
+    .filter(([agent, p]) => {
+      if (p.model_used === 'error' || p.prompt_text.startsWith('[Error generando prompt')) {
+        console.error(
+          `[onboarding-prompt] Skipping ${agent} — both LLM models failed. Agent will use hardcoded fallback prompt.`,
+        );
+        return false;
+      }
+      return true;
+    })
+    .map(([agent_name, p]) => ({
+      tenant_id: opts.tenantId,
+      agent_name,
+      prompt_text: p.prompt_text,
+      model_used: p.model_used,
+      is_active: true,
+      generated_at: new Date().toISOString(),
+    }));
 
   let saved = 0;
   let errors = 0;
@@ -206,7 +225,8 @@ export async function saveTenantPrompts(opts: {
     if (error) errors++;
     else saved++;
   }
-  return { saved, errors };
+  const skipped = Object.keys(opts.prompts).length - rows.length;
+  return { saved, errors, skipped };
 }
 
 /**
@@ -215,14 +235,14 @@ export async function saveTenantPrompts(opts: {
  */
 export async function generateAndSaveAllAgentPrompts(
   input: TenantOnboardingInput,
-): Promise<{ success: boolean; prompts_generated: number; errors: number }> {
+): Promise<{ success: boolean; prompts_generated: number; errors: number; skipped?: number }> {
   try {
     const prompts = await generateAllAgentPrompts(input);
-    const { saved, errors } = await saveTenantPrompts({
+    const { saved, errors, skipped } = await saveTenantPrompts({
       tenantId: input.tenantId,
       prompts,
     });
-    return { success: errors === 0, prompts_generated: saved, errors };
+    return { success: errors === 0, prompts_generated: saved, errors, skipped };
   } catch (err) {
     console.error('[onboarding-prompt] generateAndSaveAllAgentPrompts failed:', err);
     return { success: false, prompts_generated: 0, errors: 1 };
