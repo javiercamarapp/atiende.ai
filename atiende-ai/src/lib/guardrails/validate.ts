@@ -19,7 +19,7 @@ function normalizePrices(ctx: string): string {
   // canónica sin símbolos, para que includes() sobre el string normalizado
   // haga match del número solo.
   return ctx.replace(
-    /\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g,
+    /\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g,
     (m, n: string) => canonicalizePrice(n) || m,
   );
 }
@@ -38,7 +38,7 @@ function normalizePrices(ctx: string): string {
 function extractAllValidPrices(ctx: string): Set<string> {
   const valid = new Set<string>();
   const prices: number[] = [];
-  const matches = ctx.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g);
+  const matches = ctx.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g);
   for (const m of matches) {
     const can = canonicalizePrice(m[1]);
     if (!can) continue;
@@ -86,7 +86,7 @@ export function validateResponse(
   // (2-3 ítems) del catálogo para que "Limpieza $500 + Extracción $300 = $800"
   // no se marque como alucinación si esos 2 precios están en el RAG.
   const validPriceSet = extractAllValidPrices(ragContext);
-  const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
+  const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
   for (const match of priceMatches) {
     const raw = match[0];
     const num = match[1];

@@ -62,10 +62,13 @@ describe('searchKnowledge', () => {
     });
 
     // Verify RPC was called with the right parameters
-    expect(mockRpc).toHaveBeenCalledWith('search_knowledge', {
+    // AUDIT R13: prefer hybrid RPC (pgvector + tsvector + RRF). Si el RPC
+    // devuelve data > 0 usamos ese; si no, cae a `search_knowledge` legacy.
+    expect(mockRpc).toHaveBeenCalledWith('search_knowledge_hybrid', {
       p_tenant: 'tenant-1',
       p_query: fakeEmb,
-      p_threshold: 0.35,
+      p_query_text: 'cuanto cuesta un corte?',
+      p_threshold: 0.30,
       p_limit: 5,
     });
 
