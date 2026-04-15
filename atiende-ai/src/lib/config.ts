@@ -45,3 +45,8 @@ export const VOICE_MINUTES_INCLUDED_PREMIUM = 200;
 export const VOICE_OVERAGE_PRICE_MXN = 5;
 /** Umbral (%) para alertar al dueño vía WhatsApp antes del overage */
 export const VOICE_ALERT_THRESHOLD_PERCENT = 80;
+/** Cap mensual de minutos overage por tenant. Si se excede, alertamos al
+ * equipo y NO cobramos el exceso (defensa contra abuse / mal-config). */
+export const VOICE_OVERAGE_MONTHLY_CAP = 1000; // 1000 min × $5 = $5,000 MXN max
+/** Email/teléfono interno para alertas críticas de billing */
+export const ATIENDE_OPS_PHONE = process.env.JAVIER_PHONE || '';

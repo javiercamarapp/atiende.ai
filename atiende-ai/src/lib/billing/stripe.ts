@@ -36,7 +36,17 @@ export async function createCheckoutSession(tenantId: string, email: string, pla
   ];
   // Premium incluye el item metered de voice overage (cantidad 0 al inicio —
   // Stripe agrega los usageRecords reportados por el cron mensual).
-  if (plan === 'premium' && VOICE_OVERAGE_PRICE_ID) {
+  // AUDIT-R9 MED: si premium y NO hay VOICE_OVERAGE_PRICE_ID configurado,
+  // ALERTAR al equipo — el tenant tendría plan voz pero NO se le podrá
+  // cobrar overage. Lanzamos error para forzar fix antes de cobrar premium.
+  if (plan === 'premium') {
+    if (!VOICE_OVERAGE_PRICE_ID) {
+      throw new Error(
+        'STRIPE_VOICE_OVERAGE_PRICE_ID no está configurado. ' +
+        'Crea el producto "Minutos de Voz Adicionales" ($5 MXN, metered, SUM) ' +
+        'en Stripe Dashboard y ponlo en Vercel env antes de aceptar checkouts premium.',
+      );
+    }
     lineItems.push({ price: VOICE_OVERAGE_PRICE_ID });
   }
 
