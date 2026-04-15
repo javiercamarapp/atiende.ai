@@ -19,6 +19,7 @@ const SendIntakeArgs = z
   .strict();
 
 registerTool('send_intake_form', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -80,6 +81,7 @@ const SaveIntakeArgs = z
   .strict();
 
 registerTool('save_intake_data', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -134,6 +136,7 @@ registerTool('save_intake_data', {
 const MarkIntakeArgs = z.object({ patient_phone: z.string().min(6).max(20) }).strict();
 
 registerTool('mark_intake_completed', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

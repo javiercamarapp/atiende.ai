@@ -26,7 +26,7 @@ import {
   calculateCost,
   type ToolCallRecord,
 } from '@/lib/llm/openrouter';
-import { executeTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { executeTool, isMutationTool, type ToolContext } from '@/lib/llm/tool-executor';
 import { checkOpenRouterRateLimit, RateLimitError } from '@/lib/llm/rate-limiter';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,10 +229,17 @@ export async function runOrchestrator(
     // error_code:'SLOT_TAKEN'} sin throw — eso NO es mutación exitosa, fue
     // rechazada antes del INSERT. Si lo tratáramos como mutación, el
     // fallback creería que ya se hizo y no reintentaría.
-    const MUTATION_PREFIXES = ['book_', 'cancel_', 'modify_', 'mark_', 'send_', 'save_', 'schedule_', 'track_', 'parse_', 'request_', 'generate_'];
+    //
+    // AUDIT R14 BUG-010: antes usábamos `MUTATION_PREFIXES.some(...startsWith)`
+    // para detectar mutaciones — frágil a renames. Ahora cada tool declara
+    // `isMutation: true` en su `registerTool(...)` y consultamos ese flag
+    // directamente al registry. Si una tool no está registrada en este
+    // proceso (edge case), `isMutationTool` devuelve false y permitimos que
+    // el fallback la re-ejecute — comportamiento conservador pero correcto
+    // (tool read-only se puede reintentar sin daño).
     const successfulMutations = primaryPartialCalls.filter((tc) => {
       if (tc.error) return false; // tool throw
-      if (!MUTATION_PREFIXES.some((p) => tc.toolName.startsWith(p))) return false;
+      if (!isMutationTool(tc.toolName)) return false; // read-only: fallback puede reintentar
       const r = tc.result as { success?: boolean } | null;
       // Si la tool devolvió explícitamente success:false (ej. SLOT_TAKEN),
       // NO es mutación real — fue rechazada antes del INSERT.

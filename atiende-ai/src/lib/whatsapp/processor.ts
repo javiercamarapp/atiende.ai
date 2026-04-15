@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { waitUntil } from '@vercel/functions';
 import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
-import { checkRateLimit, checkTenantLimit, checkTenantRateLimit } from '@/lib/rate-limit';
 import { resolveIntent } from '@/lib/whatsapp/classifier';
 import { buildRagContext } from '@/lib/whatsapp/rag-context';
 import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
@@ -219,77 +219,16 @@ export async function processIncomingMessage(body: WhatsAppWebhookBody) {
 }
 
 // -- Gate checks (rate limits, plan, business hours) --
+// Extraído a src/lib/whatsapp/gates.ts (AUDIT R14 refactor).
+// El processor ya no tiene lógica de puerta; solo delega.
+import { runGates } from '@/lib/whatsapp/gates';
 
 async function checkGates(
   tenant: TenantRecord,
   senderPhone: string,
   phoneNumberId: string,
 ): Promise<boolean> {
-  // Rate limiting
-  const rateLimited = await checkRateLimit(senderPhone);
-  if (!rateLimited.allowed) return false;
-
-  // SEC-4: ahora pasa senderPhone para tracking de fan-out (DDoS con SIM
-  // virtuales) y aplica burst-cap per-minute (1/10 del límite horario).
-  const tenantLimited = await checkTenantRateLimit(tenant.id, tenant.plan, senderPhone);
-  if (!tenantLimited.allowed) {
-    if (tenantLimited.reason === 'burst') {
-      console.warn('[gates] tenant burst rate-limit', { tenantId: tenant.id });
-    }
-    return false;
-  }
-  // Mantengo checkTenantLimit referenciado para no romper el deprecated path
-  void checkTenantLimit;
-
-  // Trial expiry
-  if (tenant.plan === 'free_trial' && tenant.trial_ends_at) {
-    const trialEnd = new Date(tenant.trial_ends_at as string);
-    if (trialEnd < new Date()) {
-      await sendTextMessage(
-        phoneNumberId,
-        senderPhone,
-        'Tu periodo de prueba ha terminado. Para seguir usando nuestro servicio, por favor actualiza tu plan en el panel de administracion. Gracias por probar nuestro servicio.',
-      );
-      return false;
-    }
-  }
-
-  // Monthly message cap
-  // AUDIT R12 BUG-003: counter en Redis (hot path), fallback DB solo una vez
-  // por mes cuando Redis no tiene el valor aún. Evita COUNT(*) sobre messages
-  // en cada webhook (N+1 que saturaba connection pool a escala).
-  const planMsgLimits: Record<string, number> = { free_trial: 50, basic: 500, pro: 2000, premium: 10000 };
-  const monthlyLimit = planMsgLimits[tenant.plan] || 50;
-  const { getMonthlyMessageCount } = await import('@/lib/rate-limit-monthly');
-  const monthlyCount = await getMonthlyMessageCount(tenant.id as string);
-
-  if (monthlyCount >= monthlyLimit) {
-    await sendTextMessage(
-      phoneNumberId,
-      senderPhone,
-      'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.',
-    );
-    return false;
-  }
-
-  // Business hours
-  try {
-    const { isBusinessOpen, getNextOpenTime } = await import('@/lib/actions/business-hours');
-    const hours = tenant.business_hours as Record<string, string> | null;
-    if (!isBusinessOpen(hours)) {
-      const nextOpen = getNextOpenTime(hours);
-      await sendTextMessage(
-        phoneNumberId,
-        senderPhone,
-        `🌙 Gracias por escribirnos. En este momento estamos fuera de horario. Abrimos ${nextOpen}. Le responderemos a primera hora. ¡Que tenga buena noche!`,
-      );
-      return false;
-    }
-  } catch {
-    /* Best effort — continue processing if hours check fails */
-  }
-
-  return true;
+  return runGates(tenant, senderPhone, phoneNumberId);
 }
 
 // -- Extract text content from any WhatsApp message type --
@@ -760,110 +699,78 @@ async function handleSingleMessageInner(
     );
     return;
   }
-  if (!content || content.length < 1) return;
-
-  // 5. Upsert contact
-  let { data: contact } = await supabaseAdmin
-    .from('contacts')
-    .select('id, name')
-    .eq('tenant_id', tenant.id)
-    .eq('phone', senderPhone)
-    .single();
-
-  if (!contact) {
-    const { data: newContact } = await supabaseAdmin
-      .from('contacts')
-      .insert({
-        tenant_id: tenant.id,
-        phone: senderPhone,
-        name: msg.contacts?.[0]?.profile?.name || null,
-      })
-      .select('id, name')
-      .single();
-    contact = newContact;
-  }
-
-  // 6. Upsert conversation
-  let { data: conv } = await supabaseAdmin
-    .from('conversations')
-    .select('id, status, customer_name')
-    .eq('tenant_id', tenant.id)
-    .eq('customer_phone', senderPhone)
-    .eq('channel', 'whatsapp')
-    .single();
-
-  const isNewConversation = !conv;
-
-  if (!conv) {
-    const { data: newConv } = await supabaseAdmin
-      .from('conversations')
-      .insert({
-        tenant_id: tenant.id,
-        contact_id: contact?.id,
-        customer_phone: senderPhone,
-        customer_name: contact?.name || null,
-        channel: 'whatsapp',
-      })
-      .select('id, status, customer_name')
-      .single();
-    conv = newConv;
-  }
-
-  // Human handoff — save but don't respond
-  if (conv?.status === 'human_handoff') {
-    await supabaseAdmin.from('messages').insert({
-      conversation_id: conv.id,
-      tenant_id: tenant.id,
-      direction: 'inbound',
-      sender_type: 'customer',
-      content: encryptPII(content),
-      message_type: messageType,
-      wa_message_id: messageId,
-    });
+  if (!content || content.length < 1) {
+    // AUDIT R14 BUG-002 rollback: reservamos un slot en checkGates pero no
+    // vamos a consumir (no hay contenido procesable, no se envía respuesta).
+    try {
+      const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
+      await releaseMonthlyReservation(tenant.id as string);
+    } catch { /* no-op */ }
     return;
   }
 
-  // 7. Save inbound message. Doble protección de idempotencia:
-  //    - Check a nivel app (arriba, paso 0) — reject silent si ya existe
-  //    - DB UNIQUE constraint en wa_message_id (si código 23505 → duplicate
-  //      webhook retry simultáneo, safe to skip)
-  // PRIV-2: cifrado application-level de campos sensibles. Si la key no
-  // está configurada, encryptPII es passthrough (rollout gradual).
-  const { error: insertErr } = await supabaseAdmin.from('messages').insert({
-    conversation_id: conv!.id,
-    tenant_id: tenant.id,
-    direction: 'inbound',
-    sender_type: 'customer',
-    content: encryptPII(content),
-    message_type: messageType,
-    wa_message_id: messageId,
-    media_type: ['audio', 'image', 'document', 'video'].includes(messageType) ? messageType : null,
-    media_transcription: encryptPII(mediaTranscription || null),
-    media_description: encryptPII(mediaDescription || null),
+  // 5-7. Atomic upsert (contact + conversation + inbound message).
+  // AUDIT R14 BUG-001: antes teníamos 3 INSERTs secuenciales sin transacción
+  // — si fallaba a la mitad (DB flap, RLS, connection loss), rows huérfanas.
+  // atomicInboundUpsert usa un RPC plpgsql (ACID rollback automático) y
+  // cae a path legacy idempotente si la migración aún no está aplicada.
+  const { atomicInboundUpsert } = await import('@/lib/whatsapp/inbound-upsert');
+  const upsertResult = await atomicInboundUpsert({
+    tenantId: tenant.id as string,
+    senderPhone,
+    contactName: msg.contacts?.[0]?.profile?.name || null,
+    waMessageId: messageId,
+    content,
+    messageType,
+    mediaTranscription: mediaTranscription || null,
+    mediaDescription: mediaDescription || null,
   });
-  if (insertErr) {
-    // PostgreSQL 23505 = unique_violation. Significa race con otro webhook
-    // retry de Meta — el primer insert ganó, este es duplicado. No es error.
-    if ((insertErr as { code?: string }).code === '23505') {
-      if (process.env.NODE_ENV !== 'production') {
-        console.info('[processor] duplicate wa_message_id, skipping', { messageId });
-      }
-      return;
-    }
-    // BUG 1 FIX: cualquier otro error (DB caída, timeout, RLS) NO debe
-    // continuar a LLM. Si persistimos la respuesta del bot pero no el
-    // mensaje inbound, el historial queda desincronizado para siempre.
-    // Abortamos la pipeline con aviso al paciente — Meta reintentará
-    // (somos idempotentes) y cuando la DB vuelva el mensaje se guardará.
-    console.error(
-      '[processor] CRITICAL inbound insert failed — aborting pipeline to preserve history integrity:',
-      insertErr,
-    );
+
+  // Shape-compatible variables para no tocar el código downstream (welcome
+  // message, handleWithOrchestrator, etc. esperan contact y conv).
+  const contact: { id: string; name: string | null } | null = upsertResult.contactId
+    ? { id: upsertResult.contactId, name: upsertResult.contactName }
+    : null;
+  const conv: { id: string; status: string | null; customer_name: string | null } | null =
+    upsertResult.conversationId
+      ? {
+          id: upsertResult.conversationId,
+          status: upsertResult.convStatus,
+          customer_name: upsertResult.contactName,
+        }
+      : null;
+  const isNewConversation = upsertResult.isNewConversation;
+
+  // Caso error crítico (DB caída, RLS mal): abortamos para no desincronizar
+  // historial. Meta reintentará (somos idempotentes).
+  if (upsertResult.aborted) {
+    console.error('[processor] atomic upsert aborted:', upsertResult.errorMessage);
     await sendTextMessage(
       phoneNumberId,
       senderPhone,
       'Tuvimos un problema técnico. Por favor intente de nuevo en un momento.',
     ).catch(() => { /* best effort */ });
+    return;
+  }
+
+  // Webhook duplicado (UNIQUE en wa_message_id). El original ya se procesó.
+  if (upsertResult.wasDuplicateWebhook) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.info('[processor] duplicate wa_message_id, skipping', { messageId });
+    }
+    try {
+      const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
+      await releaseMonthlyReservation(tenant.id as string);
+    } catch { /* no-op */ }
+    return;
+  }
+
+  // Human handoff — mensaje ya guardado por la RPC, solo salimos sin responder.
+  if (conv?.status === 'human_handoff') {
+    try {
+      const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
+      await releaseMonthlyReservation(tenant.id as string);
+    } catch { /* no-op */ }
     return;
   }
 
@@ -923,7 +830,10 @@ async function handleSingleMessageInner(
   }
 
   // 11. Typing indicator (fire-and-forget)
-  sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
+  // AUDIT R14 BUG-030: waitUntil evita que Vercel mate la HTTP request al
+  // regresar el handler — sin esto, si la respuesta principal termina antes
+  // de que Meta reciba el typing POST, el runtime puede cortarlo.
+  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
   // 12. Generate and validate response
   const response = await generateAndValidateResponse({
@@ -983,12 +893,11 @@ async function handleSingleMessageInner(
     confidence: response.confidence,
   });
 
-  // AUDIT R12 BUG-003: incrementar contador Redis para rate-limit mensual.
-  // Fire-and-forget — si Redis falla, el próximo check cae a DB fallback.
-  try {
-    const { incrementMonthlyMessages } = await import('@/lib/rate-limit-monthly');
-    await incrementMonthlyMessages(tenant.id as string);
-  } catch { /* no-op */ }
+  // AUDIT R14 BUG-002: el contador mensual se PRE-RESERVA en checkGates
+  // (reserveMonthlyMessage). Ya no incrementamos aquí — si llegamos hasta
+  // este punto el slot ya fue contado. El rollback en caso de error se hace
+  // en el catch del caller (handleSingleMessageInner) vía
+  // releaseMonthlyReservation.
 
   // AUDIT R13: métricas per-tenant para dashboard.
   try {
@@ -1062,7 +971,9 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   } = args;
 
   // 1. Typing indicator (fire-and-forget)
-  sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
+  // AUDIT R14 BUG-030: wrap en waitUntil para que el runtime serverless
+  // mantenga viva la petición aunque el handler principal termine antes.
+  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
   // 2. Construir tenantCtx (Mexico TZ + fechas + servicios)
   const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
@@ -1074,8 +985,9 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   // "Quiero darme de baja por favor" o "Stop a estos mensajes". Guard de
   // longitud <150 chars evita falsos positivos en mensajes largos que
   // solo mencionan "baja" de pasada.
-  const optOutRegex = /\b(stop|baja|unsubscribe|unsuscribe|d[eé]me\s+de\s+baja|darme\s+de\s+baja|quiero\s+darme\s+de\s+baja|no\s+(quiero|m[áa]s)\s+(mensajes|notificaci[oó]n(es)?)|no\s+me\s+manden(\s+m[áa]s)?(\s+mensajes?)?|cancelar\s+(mi\s+)?(suscripci[oó]n|cuenta)|dejar\s+de\s+recibir|qu[ií]t[ae]me\s+de\s+(la\s+)?lista)\b/i;
-  if (optOutRegex.test(content) && content.length < 150) {
+  // Fast-path opt-out (AUDIT R14: regex extraído a opt-out-regex.ts + tests)
+  const { isOptOutIntent } = await import('@/lib/whatsapp/opt-out-regex');
+  if (isOptOutIntent(content)) {
     if (contactId) {
       await supabaseAdmin
         .from('contacts')

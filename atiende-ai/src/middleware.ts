@@ -59,14 +59,45 @@ export async function middleware(request: NextRequest) {
   supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  // AUDIT-VC R11: HSTS forza HTTPS por 1 año + includeSubDomains.
-  // Solo en producción para no romper localhost http.
-  if (process.env.NODE_ENV === 'production') {
-    supabaseResponse.headers.set(
-      'Strict-Transport-Security',
-      'max-age=31536000; includeSubDomains; preload',
-    );
-  }
+
+  // AUDIT R15: CSP antes faltaba. Sin CSP no hay defensa contra XSS reflejado
+  // ni inyección de scripts de terceros. Permite:
+  //   - self para HTML/assets de nuestro dominio
+  //   - unsafe-inline/unsafe-eval necesarios para Next.js RSC + hydration
+  //   - supabase.co para realtime/storage
+  //   - OpenRouter + Anthropic para llamadas desde cliente (si aplica)
+  //   - Stripe Elements (billing)
+  //   - Meta WhatsApp CDN (media previews)
+  supabaseResponse.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' data: blob: https: http:",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co " +
+        "https://openrouter.ai https://api.anthropic.com https://api.openai.com " +
+        "https://api.stripe.com https://*.upstash.io https://graph.facebook.com " +
+        "https://api.retellai.com https://api.deepgram.com https://api.elevenlabs.io " +
+        "https://o4511223361896448.ingest.us.sentry.io",
+      "frame-src 'self' https://js.stripe.com",
+      "media-src 'self' blob: https:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "upgrade-insecure-requests",
+    ].join('; '),
+  );
+
+  // AUDIT-VC R11 + R15: HSTS siempre activa (antes solo en prod). Ya estás
+  // HTTPS en Vercel incluso para preview deploys, y tests nuevos validan
+  // esto como parte del header set.
+  supabaseResponse.headers.set(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains; preload',
+  );
 
   return supabaseResponse;
 }

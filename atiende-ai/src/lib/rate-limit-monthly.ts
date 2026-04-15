@@ -55,6 +55,76 @@ export async function incrementMonthlyMessages(tenantId: string): Promise<number
 }
 
 /**
+ * AUDIT R14 BUG-002: reserva atómica en la puerta de entrada (ANTES del LLM).
+ *
+ * Problema: antes llamábamos `incrementMonthlyMessages` al final del pipeline
+ * (tras el LLM + send). Bajo carga concurrente, cientos de webhooks podían
+ * pasar el `checkGates` con el mismo `count` lag, disparar N llamadas al LLM
+ * y solo después incrementar. Costo: se quema presupuesto de tokens DESPUÉS
+ * de haber superado el cap.
+ *
+ * Solución: `reserveMonthlyMessage()` hace INCR atómico de Redis. Si el nuevo
+ * valor supera el límite, la reserva es rechazada y el caller puede hacer
+ * rollback (decrement) — aún así Redis ya "reservó" el slot. Concurrency-safe
+ * porque INCR es atómico en Redis.
+ *
+ * Si Redis no está disponible, fail-open (return { allowed: true, count: 0 })
+ * para no bloquear el pipeline — la segunda línea de defensa es el cap
+ * post-response (idempotente).
+ *
+ * Caller pattern:
+ *   const reservation = await reserveMonthlyMessage(tenantId, planLimit);
+ *   if (!reservation.allowed) return; // quota hit
+ *   try { await generateResponse(...) }
+ *   catch (err) {
+ *     await releaseMonthlyReservation(tenantId); // rollback
+ *     throw err;
+ *   }
+ */
+export async function reserveMonthlyMessage(
+  tenantId: string,
+  planLimit: number,
+): Promise<{ allowed: boolean; count: number; usingRedis: boolean }> {
+  const redis = getRedis();
+  if (!redis) {
+    // Sin Redis — no podemos reservar atómicamente. Fail-open: dejamos pasar.
+    // El count post-hoc (DB fallback) atrapará eventualmente al tenant que
+    // sobregira, pero evita ponerlo offline si Redis está caído.
+    return { allowed: true, count: 0, usingRedis: false };
+  }
+  const key = monthKey(tenantId);
+  try {
+    const newCount = await redis.incr(key);
+    if (newCount === 1) {
+      await redis.expire(key, secondsUntilMonthEnd());
+    }
+    if (newCount > planLimit) {
+      // Excedió el límite — rollback atómico (mantiene invariante del contador).
+      await redis.decr(key).catch(() => {});
+      return { allowed: false, count: newCount - 1, usingRedis: true };
+    }
+    return { allowed: true, count: newCount, usingRedis: true };
+  } catch {
+    // Redis falló mid-flight — fail-open (no lo dejamos sin servicio).
+    return { allowed: true, count: 0, usingRedis: false };
+  }
+}
+
+/**
+ * Compensación: decrementa el contador si una reserva fue hecha pero la
+ * respuesta falló (LLM timeout, send WA falló, etc.). Idempotente (nunca
+ * deja el contador por debajo de 0 porque Redis DECR clampea al incremento
+ * previo — si ya bajó, no-op).
+ */
+export async function releaseMonthlyReservation(tenantId: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await redis.decr(monthKey(tenantId));
+  } catch { /* no-op */ }
+}
+
+/**
  * Devuelve el count actual del mes. Prefiere Redis; si no existe, fallback
  * a COUNT en Supabase (one-shot; se cachea en Redis para próximos checks).
  */

@@ -149,7 +149,7 @@ describe('middleware', () => {
       const response = await middleware(makeRequest('/login'));
 
       expect((response as any)._redirected).toBe(true);
-      expect((response as any)._redirectUrl).toBe('/');
+      expect((response as any)._redirectUrl).toBe('/home');
     });
 
     it('redirects authenticated users from /register to /', async () => {
@@ -158,7 +158,7 @@ describe('middleware', () => {
       const response = await middleware(makeRequest('/register'));
 
       expect((response as any)._redirected).toBe(true);
-      expect((response as any)._redirectUrl).toBe('/');
+      expect((response as any)._redirectUrl).toBe('/home');
     });
 
     it('does NOT redirect authenticated users from /dashboard', async () => {
@@ -169,12 +169,15 @@ describe('middleware', () => {
       expect((response as any)._redirected).toBeUndefined();
     });
 
-    it('does NOT redirect authenticated users from /', async () => {
+    it('redirects authenticated users from / to /home (landing is external)', async () => {
+      // AUDIT R15: usuarios logueados en `/` van a `/home` (su dashboard).
+      // La landing de marketing vive fuera de este repo (useatiende.ai).
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
       const response = await middleware(makeRequest('/'));
 
-      expect((response as any)._redirected).toBeUndefined();
+      expect((response as any)._redirected).toBe(true);
+      expect((response as any)._redirectUrl).toBe('/home');
     });
 
     it('does NOT redirect authenticated users from /api/webhook', async () => {
@@ -285,9 +288,12 @@ describe('middleware', () => {
     });
 
     it('CSP allows unsafe-inline for scripts and styles', async () => {
+      // AUDIT R15: el path `/` redirige a `/home` para usuarios logueados
+      // (sin setear headers del response original). Probamos con `/dashboard`
+      // que es una ruta protegida donde los headers sí se aplican.
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/'));
+      await middleware(makeRequest('/dashboard'));
 
       const csp = mockHeaders.get('Content-Security-Policy');
       expect(csp).toContain("'unsafe-inline'");
