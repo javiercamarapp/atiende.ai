@@ -67,6 +67,18 @@ function ensureEncryptionAtRequestTime(): void {
 import { detectPromptInjection, sanitizeUserInput } from '@/lib/whatsapp/input-guardrail';
 import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
+/**
+ * AUDIT-R10 MED: error indicativo "procesar después, no silenciar".
+ * Caller (QStash worker) retorna 500 para triggerar retry. waitUntil
+ * lo atrapa y loggea.
+ */
+export class ConversationLockedError extends Error {
+  constructor(public readonly phone: string) {
+    super(`Conversation lock held for ${phone} — retry recommended`);
+    this.name = 'ConversationLockedError';
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool calling pipeline (Fase 1) — feature flag
 //
@@ -343,6 +355,7 @@ interface ExtractedContent {
 async function extractContentAsync(
   msg: WhatsAppMessage,
   tenantId: string,
+  signal?: AbortSignal,
 ): Promise<ExtractedContent> {
   switch (msg.type) {
     case 'text':
@@ -352,7 +365,7 @@ async function extractContentAsync(
     case 'voice': {
       const id = msg.audio?.id || msg.voice?.id;
       if (!id) return { content: '[Audio no disponible]', messageType: 'audio' };
-      const r = await mediaProcessor.transcribeAudio(id, tenantId);
+      const r = await mediaProcessor.transcribeAudio(id, tenantId, signal);
       if (!r.ok || !r.text) {
         return { content: '[No pude entender el audio. ¿Puedes escribirlo?]', messageType: 'audio' };
       }
@@ -370,7 +383,7 @@ async function extractContentAsync(
           messageType: 'image',
         };
       }
-      const r = await mediaProcessor.describeImage(msg.image.id, tenantId, msg.image.caption);
+      const r = await mediaProcessor.describeImage(msg.image.id, tenantId, msg.image.caption, signal);
       if (!r.ok || !r.text) {
         return {
           content: msg.image?.caption ? sanitizeInput(msg.image.caption) : '[Imagen recibida — no pude analizarla]',
@@ -397,7 +410,7 @@ async function extractContentAsync(
           messageType: 'document',
         };
       }
-      const r = await mediaProcessor.extractPdfText(msg.document.id, tenantId, msg.document.filename);
+      const r = await mediaProcessor.extractPdfText(msg.document.id, tenantId, msg.document.filename, signal);
       if (!r.ok || !r.text) {
         return {
           content: `[PDF ${msg.document.filename || ''} — no pude leerlo]`,
@@ -637,8 +650,14 @@ async function handleSingleMessage(
   // dejamos que él procese (Meta reintentará si nada se persiste).
   const lock = await acquireConversationLock(tenant.id as string, senderPhone);
   if (!lock.acquired) {
-    console.info('[processor] conversation locked, skipping concurrent message:', maskPhone(senderPhone));
-    return;
+    // AUDIT-R10 MED: antes hacíamos `return` silencioso → el mensaje se perdía.
+    // Ahora lanzamos error para que:
+    //   - QStash worker retorne 500 y reintente con backoff
+    //   - Si está en waitUntil, el catch del route maneja el throw
+    // El lock tiene TTL 30s; el segundo intento de QStash (5s después) ya
+    // encontrará el lock liberado.
+    console.info('[processor] conversation locked, rejecting for retry:', maskPhone(senderPhone));
+    throw new ConversationLockedError(senderPhone);
   }
 
   try {
@@ -674,15 +693,19 @@ async function handleSingleMessageInner(
   // mate la función con 504. Si la extracción tarda >25s, fallback a
   // un placeholder y seguimos adelante (mensaje ya está idempotente-checked
   // y el inbound se persistirá; el LLM tratará el placeholder).
+  // AUDIT-R10 MED: AbortController propagado para que las HTTP requests a
+  // Deepgram/Whisper/Gemini se CANCELEN al timeout — sin esto quedaban
+  // dangling en memoria consumiendo compute serverless.
+  const extractAbort = new AbortController();
   let extracted: ExtractedContent;
   try {
     extracted = await Promise.race([
-      extractContentAsync(msg, tenant.id),
+      extractContentAsync(msg, tenant.id, extractAbort.signal),
       new Promise<never>((_, rej) =>
-        setTimeout(
-          () => rej(new Error(`extractContentAsync timeout after ${EXTRACT_CONTENT_TIMEOUT_MS}ms`)),
-          EXTRACT_CONTENT_TIMEOUT_MS,
-        ),
+        setTimeout(() => {
+          extractAbort.abort(); // cancela las HTTP reales
+          rej(new Error(`extractContentAsync timeout after ${EXTRACT_CONTENT_TIMEOUT_MS}ms`));
+        }, EXTRACT_CONTENT_TIMEOUT_MS),
       ),
     ]);
   } catch (err) {
@@ -1053,8 +1076,17 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   //     registrada. Resultado: dashboard lo muestra como "en riesgo" cuando
   //     ya confirmó. El regex es conservador: solo mensajes que son claramente
   //     confirmación (no una pregunta que incluya "sí").
-  const confirmRegex = /^\s*(s[ií]+|confirmo|confirmado|ah[íi]\s*(voy|estar[eé])|asisto|asistir[eé]|cuento\s*con(\s*usted)?|voy)\s*[.!]?\s*$/i;
-  if (confirmRegex.test(content)) {
+  // AUDIT-R10 BAJO: regex flexible — antes requería que el mensaje fuera
+  // EXACTAMENTE la palabra ("sí" sola). Ahora acepta "Sí voy, muchas
+  // gracias!!!", "Confirmo mi cita, saludos" y similares.
+  //
+  // Estrategia: \b en los alternativos + length<120 para evitar falsos
+  // positivos en mensajes largos donde "sí" aparece de pasada.
+  // Además: el mensaje NO debe tener pregunta ("?" o palabras-pregunta) para
+  // evitar interpretar "¿sí voy?" como confirmación.
+  const confirmRegex = /\b(s[ií]+|confirmo|confirmado|ah[íi]\s*(voy|estar[eé])|asisto|asistir[eé]|cuento\s*con(\s*usted)?|ah[íí]\s*voy|claro\s*que\s*s[ií]+|por\s*supuesto)\b/i;
+  const hasQuestion = /\?|¿|cu[áa]ndo|d[óo]nde|qu[ée]|c[óo]mo|por\s*qu[ée]/i.test(content);
+  if (confirmRegex.test(content) && !hasQuestion && content.length < 120) {
     const { data: pendingAppt } = await supabaseAdmin
       .from('appointments')
       .select('id, datetime')

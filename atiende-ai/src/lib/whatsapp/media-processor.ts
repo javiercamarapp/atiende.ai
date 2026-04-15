@@ -92,14 +92,20 @@ interface MediaUrlResponse {
 
 export async function downloadWhatsAppMedia(
   mediaId: string,
+  signal?: AbortSignal,
 ): Promise<{ buffer: Buffer; mimeType: string } | null> {
   try {
+    // AUDIT-R10 MED: AbortSignal propagado a axios para que, si el caller
+    // tiene un timeout global (ej. processor.ts EXTRACT_CONTENT_TIMEOUT_MS=25s)
+    // y aborta, la request HTTP real se CANCELA — ya no queda dangling en
+    // memoria de Vercel ni nos facturan el cómputo.
     // 1) Resolver URL temporal del binario
     const meta = await axios.get<MediaUrlResponse>(
       `${WA_API}/${mediaId}`,
       {
         headers: { Authorization: `Bearer ${process.env.WA_SYSTEM_TOKEN}` },
         timeout: DOWNLOAD_TIMEOUT_MS,
+        signal,
       },
     );
     if (!meta.data?.url) return null;
@@ -110,6 +116,7 @@ export async function downloadWhatsAppMedia(
       responseType: 'arraybuffer',
       timeout: DOWNLOAD_TIMEOUT_MS,
       maxContentLength: 25 * 1024 * 1024, // 25MB hard cap
+      signal,
     });
 
     return {
@@ -127,13 +134,14 @@ export async function downloadWhatsAppMedia(
 export async function transcribeAudio(
   mediaId: string,
   tenantId: string,
+  signal?: AbortSignal,
 ): Promise<MediaResult> {
   const rl = await checkMediaRateLimit(tenantId, 'audio');
   if (!rl.allowed) {
     return { ok: false, mediaType: 'audio', errorCode: 'RATE_LIMITED', errorMessage: 'Demasiadas notas de voz esta hora.' };
   }
 
-  const dl = await downloadWhatsAppMedia(mediaId);
+  const dl = await downloadWhatsAppMedia(mediaId, signal);
   if (!dl) return { ok: false, mediaType: 'audio', errorCode: 'DOWNLOAD_FAILED' };
 
   try {
@@ -176,13 +184,14 @@ export async function describeImage(
   mediaId: string,
   tenantId: string,
   caption?: string,
+  signal?: AbortSignal,
 ): Promise<MediaResult> {
   const rl = await checkMediaRateLimit(tenantId, 'image');
   if (!rl.allowed) {
     return { ok: false, mediaType: 'image', errorCode: 'RATE_LIMITED' };
   }
 
-  const dl = await downloadWhatsAppMedia(mediaId);
+  const dl = await downloadWhatsAppMedia(mediaId, signal);
   if (!dl) return { ok: false, mediaType: 'image', errorCode: 'DOWNLOAD_FAILED' };
 
   try {
@@ -225,13 +234,14 @@ export async function extractPdfText(
   mediaId: string,
   tenantId: string,
   filename?: string,
+  signal?: AbortSignal,
 ): Promise<MediaResult> {
   const rl = await checkMediaRateLimit(tenantId, 'document');
   if (!rl.allowed) {
     return { ok: false, mediaType: 'document', errorCode: 'RATE_LIMITED' };
   }
 
-  const dl = await downloadWhatsAppMedia(mediaId);
+  const dl = await downloadWhatsAppMedia(mediaId, signal);
   if (!dl) return { ok: false, mediaType: 'document', errorCode: 'DOWNLOAD_FAILED' };
 
   // 1) Intento nativo con pdf-parse (dynamic import — solo lo cargamos si
