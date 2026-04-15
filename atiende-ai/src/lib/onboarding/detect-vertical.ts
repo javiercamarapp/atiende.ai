@@ -10,7 +10,7 @@ import { generateResponse, MODELS } from '@/lib/llm/openrouter';
 import { ALL_VERTICALS, VERTICAL_NAMES, VERTICAL_CATEGORY, getVerticalQuestions } from '@/lib/verticals';
 import type { VerticalEnum, DetectionResult } from '@/lib/verticals/types';
 
-const DETECTION_PROMPT = `Eres el sistema de clasificacion de atiende.ai.
+const DETECTION_PROMPT = `Eres el sistema de clasificacion de useatiende.ai.
 El usuario describio su negocio. Clasificalo en UNA de estas 43 categorias:
 
 SALUD: dental, medico, nutriologa, psicologo, dermatologo, ginecologo, pediatra, oftalmologo, farmacia, veterinaria

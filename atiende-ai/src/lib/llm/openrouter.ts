@@ -18,8 +18,8 @@ export function getOpenRouter(): OpenAI {
     baseURL: 'https://openrouter.ai/api/v1',
     apiKey: key,
     defaultHeaders: {
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://atiende.ai',
-      'X-Title': 'atiende.ai',
+      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://useatiende.ai',
+      'X-Title': 'useatiende.ai',
     },
   });
   return _client;

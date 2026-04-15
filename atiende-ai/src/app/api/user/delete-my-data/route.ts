@@ -8,7 +8,7 @@
 //
 // Flujo:
 //   1. Auth: el solicitante debe ser dueño del tenant (o el paciente vía
-//      token firmado, no implementado aún — se delega al support@atiende.ai).
+//      token firmado, no implementado aún — se delega al ventas@useatiende.ai).
 //   2. Recibe { phone: string }
 //   3. Borra: messages, appointments, contacts, conversations.
 //   4. Retorna conteos.

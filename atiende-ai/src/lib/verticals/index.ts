@@ -1,6 +1,6 @@
-// Master registry of verticals for atiende.ai.
+// Master registry of verticals for useatiende.ai.
 //
-// ⚠️  MVP SCOPE: atiende.ai v1 se enfoca exclusivamente en agentes de reservas
+// ⚠️  MVP SCOPE: useatiende.ai v1 se enfoca exclusivamente en agentes de reservas
 // para los sectores de Salud y Estética — los verticales cuyo pilar operativo
 // es el dashboard de Citas. El resto de verticales esta en `src/despues/`
 // a la espera de ser reactivado en futuras iteraciones.

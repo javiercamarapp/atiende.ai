@@ -70,7 +70,7 @@ export default function LoginPage() {
       title={
         <span className="font-light tracking-tighter">
           Bienvenido a{' '}
-          <span className="font-semibold">atiende.ai</span>
+          <span className="font-semibold">useatiende.ai</span>
         </span>
       }
       description="Inicia sesión y automatiza tu negocio con inteligencia artificial"
