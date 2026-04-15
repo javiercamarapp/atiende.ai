@@ -75,6 +75,7 @@ const SendInstructionsArgs = z
   .strict();
 
 registerTool('send_post_visit_instructions', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -138,6 +139,7 @@ const ScheduleReminderArgs = z
   .strict();
 
 registerTool('schedule_next_appointment_reminder', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -181,6 +183,7 @@ const RequestPaymentArgs = z
   .strict();
 
 registerTool('request_payment_if_pending', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

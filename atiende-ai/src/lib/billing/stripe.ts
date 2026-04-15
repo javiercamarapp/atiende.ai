@@ -86,9 +86,40 @@ export async function createPortalSession(customerId: string) {
 export async function reportVoiceOverageToStripe(
   subscriptionItemId: string,
   overageMinutes: number,
+  /**
+   * AUDIT R14 BUG-011: identificador ESTABLE del periodo de facturación que se
+   * está cerrando (ej. "2026-03" = cerramos marzo). Se usa como componente
+   * determinístico de la idempotency key de Stripe.
+   *
+   * Antes usábamos `new Date().toISOString().substring(0,7)` — el problema:
+   * si el cron dispara a las 23:59 del 31 de Enero (reportando Enero) y falla,
+   * y retry dispara a las 00:01 del 1 de Febrero, la key cambia de "2026-01"
+   * a "2026-02" → Stripe NO deduplica → doble cargo.
+   *
+   * Pasar el periodo explícito (el caller sabe qué mes está cerrando) hace la
+   * key 100% determinística. Fallback al comportamiento anterior solo si el
+   * caller no lo provee (retrocompatibilidad; logueamos un warning).
+   */
+  periodKey?: string,
 ): Promise<{ success: boolean; recordId?: string; error?: string }> {
   if (!subscriptionItemId || overageMinutes <= 0) {
     return { success: true };
+  }
+
+  // Computar idempotency key determinística — prioridad al periodKey del caller.
+  let resolvedPeriod: string;
+  if (periodKey && /^\d{4}-\d{2}$/.test(periodKey)) {
+    resolvedPeriod = periodKey;
+  } else {
+    // Fallback wall-clock (legacy). Log warning en non-prod para cazar callers.
+    resolvedPeriod = new Date().toISOString().substring(0, 7);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[stripe] reportVoiceOverageToStripe called without periodKey — ' +
+        `falling back to wall-clock "${resolvedPeriod}". This is fragile on ` +
+        'month-boundary retries. Pass row.year_month from the caller.',
+      );
+    }
   }
 
   // AUDIT-R8 MEDIO: retry con backoff exponencial sobre 429 / 5xx.
@@ -116,7 +147,10 @@ export async function reportVoiceOverageToStripe(
           'Content-Type': 'application/x-www-form-urlencoded',
           // Idempotency key — Stripe deduplica internamente si reintentamos
           // dentro de 24h con la misma key. Garantía contra doble-cobro.
-          'Idempotency-Key': `voice-overage:${subscriptionItemId}:${new Date().toISOString().substring(0, 7)}`,
+          // AUDIT R14 BUG-011: key determinística basada en el periodo que se
+          // cierra (no en wall-clock), para que retry cross-month-boundary
+          // mantenga la misma key.
+          'Idempotency-Key': `voice-overage:${subscriptionItemId}:${resolvedPeriod}`,
         },
         body: params.toString(),
       });

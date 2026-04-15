@@ -141,6 +141,7 @@ const SendRetentionArgs = z
   .strict();
 
 registerTool('send_retention_message', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -217,6 +218,7 @@ const MarkReactivatedArgs = z
   .strict();
 
 registerTool('mark_patient_reactivated', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

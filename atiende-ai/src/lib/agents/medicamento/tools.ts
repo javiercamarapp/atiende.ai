@@ -94,6 +94,7 @@ const ScheduleMedRemArgs = z
   .strict();
 
 registerTool('schedule_medication_reminders', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -166,6 +167,7 @@ const SendMedRemArgs = z
   .strict();
 
 registerTool('send_medication_reminder', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -218,6 +220,7 @@ const MarkRemArgs = z
   .strict();
 
 registerTool('mark_reminder_completed', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

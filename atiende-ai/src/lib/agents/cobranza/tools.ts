@@ -80,6 +80,7 @@ const SendPaymentArgs = z
   .strict();
 
 registerTool('send_payment_reminder', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -158,6 +159,7 @@ const MarkPaidArgs = z
   .strict();
 
 registerTool('mark_payment_received', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

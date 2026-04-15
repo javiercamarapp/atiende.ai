@@ -174,6 +174,7 @@ const SendGapArgs = z
   .strict();
 
 registerTool('send_gap_fill_message', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
