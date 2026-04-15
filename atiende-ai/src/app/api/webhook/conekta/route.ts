@@ -67,15 +67,25 @@ export async function POST(req: NextRequest) {
           console.warn('[conekta-webhook] order.paid missing tenant_id or plan in metadata');
           break;
         }
+        // AUDIT-R9 CRÍT: incluir voice_minutes_included al upgrade.
+        // Antes los tenants premium via OXXO/SPEI quedaban con
+        // voice_minutes_included=0 y todo el uso era overage retroactivo.
+        // NOTA: Conekta es one-time-pay (no subscription), así que NO podemos
+        // poblar stripe_subscription_item_voice_id. El cron de overage
+        // skip-eará a estos tenants — el cobro de excedentes vía OXXO
+        // requiere un flujo aparte (ej. crear nuevo order al final del mes).
+        const voicePatch = plan === 'premium'
+          ? { voice_minutes_included: 200 }
+          : { voice_minutes_included: 0 };
         const { error } = await supabaseAdmin
           .from('tenants')
-          .update({ plan, updated_at: new Date().toISOString() })
+          .update({ plan, ...voicePatch, updated_at: new Date().toISOString() })
           .eq('id', tenantId);
         if (error) {
           console.error('[conekta-webhook] Failed to update tenant plan:', error.message);
           return NextResponse.json({ error: 'DB update failed' }, { status: 500 });
         }
-        console.warn(`[conekta-webhook] Tenant ${tenantId} upgraded to ${plan}`);
+        console.warn(`[conekta-webhook] Tenant ${tenantId} upgraded to ${plan}` + (plan === 'premium' ? ' (200 min voz incluidos; overage NO se cobra automático via Conekta)' : ''));
         break;
       }
 

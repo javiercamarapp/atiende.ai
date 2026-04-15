@@ -19,6 +19,7 @@ import { Redis } from '@upstash/redis';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { reportVoiceOverageToStripe } from '@/lib/billing/stripe';
 import { requireCronAuth, logCronRun } from '@/lib/agents/internal/cron-helpers';
+import { VOICE_OVERAGE_MONTHLY_CAP } from '@/lib/config';
 
 // AUDIT-R8 ALTO: lock Redis para idempotency a nivel cron run.
 // Vercel ocasionalmente dispara crons 2× el mismo día. Si pasa, sin este
@@ -114,6 +115,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let succeeded = 0;
   let failed = 0;
   let skipped = 0;
+  let cappedAlerts = 0;
   const failedIds: string[] = [];
 
   for (const row of rows) {
@@ -126,7 +128,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       continue;
     }
 
-    const result = await reportVoiceOverageToStripe(itemId, Number(row.overage_minutes));
+    // AUDIT-R9 CRÍT: cap mensual contra abuse / mal-config.
+    // Si un tenant acumula más de VOICE_OVERAGE_MONTHLY_CAP min (default
+    // 1000 = $5,000 MXN), capamos el cobro y alertamos al equipo. Evita
+    // facturas catastróficas si bot recibe spam o staff calling loop.
+    let billableMinutes = Number(row.overage_minutes);
+    if (billableMinutes > VOICE_OVERAGE_MONTHLY_CAP) {
+      console.error(
+        `[cron/billing-overage] CAP HIT — tenant ${row.tenant_id} (${row.tenants?.name}) ` +
+        `acumuló ${billableMinutes} min overage en ${row.year_month}. ` +
+        `Capado a ${VOICE_OVERAGE_MONTHLY_CAP} min. Revisar manual.`,
+      );
+      billableMinutes = VOICE_OVERAGE_MONTHLY_CAP;
+      cappedAlerts++;
+    }
+
+    const result = await reportVoiceOverageToStripe(itemId, billableMinutes);
 
     if (result.success) {
       await supabaseAdmin
@@ -156,6 +173,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       succeeded,
       failed,
       skipped,
+      capped_alerts: cappedAlerts,
       failed_ids: failedIds,
     },
   });

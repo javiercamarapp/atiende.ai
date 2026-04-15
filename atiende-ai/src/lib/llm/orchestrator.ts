@@ -223,11 +223,22 @@ export async function runOrchestrator(
       primaryModel = primaryErr.partialModel;
     }
 
-    // Detectar mutaciones ya ejecutadas exitosamente
+    // Detectar mutaciones ya ejecutadas exitosamente.
+    // AUDIT-R9 self-fix: además de !tc.error (no throw), filtramos por
+    // result.success !== false. Una tool puede retornar {success:false,
+    // error_code:'SLOT_TAKEN'} sin throw — eso NO es mutación exitosa, fue
+    // rechazada antes del INSERT. Si lo tratáramos como mutación, el
+    // fallback creería que ya se hizo y no reintentaría.
     const MUTATION_PREFIXES = ['book_', 'cancel_', 'modify_', 'mark_', 'send_', 'save_', 'schedule_', 'track_', 'parse_', 'request_', 'generate_'];
-    const successfulMutations = primaryPartialCalls.filter(
-      (tc) => !tc.error && MUTATION_PREFIXES.some((p) => tc.toolName.startsWith(p)),
-    );
+    const successfulMutations = primaryPartialCalls.filter((tc) => {
+      if (tc.error) return false; // tool throw
+      if (!MUTATION_PREFIXES.some((p) => tc.toolName.startsWith(p))) return false;
+      const r = tc.result as { success?: boolean } | null;
+      // Si la tool devolvió explícitamente success:false (ej. SLOT_TAKEN),
+      // NO es mutación real — fue rechazada antes del INSERT.
+      if (r && r.success === false) return false;
+      return true;
+    });
 
     // CASO ESPECIAL: si una mutación devolvió un `summary` o success, podemos
     // construir la respuesta SIN llamar al fallback (evita gastar tokens y
