@@ -17,7 +17,7 @@ export async function sendEmail(params: {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: params.from || 'atiende.ai <no-reply@atiende.ai>',
+      from: params.from || 'useatiende.ai <no-reply@useatiende.ai>',
       to: params.to,
       subject: params.subject,
       html: params.html,

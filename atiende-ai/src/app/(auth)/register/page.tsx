@@ -77,7 +77,7 @@ export default function RegisterPage() {
             </Link>
 
             <h1 className="animate-element animate-delay-200 text-4xl md:text-5xl font-semibold leading-tight">
-              <span className="font-light tracking-tighter">Crea tu cuenta en <span className="font-semibold">atiende.ai</span></span>
+              <span className="font-light tracking-tighter">Crea tu cuenta en <span className="font-semibold">useatiende.ai</span></span>
             </h1>
             <p className="animate-element animate-delay-300 text-muted-foreground">14 días gratis. Sin tarjeta de crédito.</p>
 

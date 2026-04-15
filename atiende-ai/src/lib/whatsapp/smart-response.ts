@@ -62,7 +62,7 @@ type DetectedLanguage = 'es' | 'en';
 /**
  * Detect whether a customer message is in Spanish or English.
  * Uses keyword matching with a bias toward Spanish (since most
- * atiende.ai users are Mexican businesses).
+ * useatiende.ai users are Mexican businesses).
  *
  * Returns 'es' (Spanish) by default when ambiguous.
  */
