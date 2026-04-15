@@ -16,8 +16,17 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
+          // AUDIT-VC R11: cookies hardenadas (SameSite=lax + Secure + HttpOnly).
+          // Supabase SSR ya setea HttpOnly por default, pero aquí somos
+          // explícitos para defensa en profundidad. `lax` (no strict) para que
+          // el flujo de OAuth redirect funcione.
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options));
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              httpOnly: options?.httpOnly ?? true,
+              secure: options?.secure ?? process.env.NODE_ENV === 'production',
+              sameSite: options?.sameSite ?? 'lax',
+            }));
         },
       },
     }
@@ -44,12 +53,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // OWASP Security Headers (CSP removed — Next.js requires inline scripts)
+  // OWASP Security Headers
   supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff');
   supabaseResponse.headers.set('X-Frame-Options', 'DENY');
   supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // AUDIT-VC R11: HSTS forza HTTPS por 1 año + includeSubDomains.
+  // Solo en producción para no romper localhost http.
+  if (process.env.NODE_ENV === 'production') {
+    supabaseResponse.headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains; preload',
+    );
+  }
 
   return supabaseResponse;
 }
