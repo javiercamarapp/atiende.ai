@@ -31,6 +31,40 @@ export interface ToolContext {
   conversationId: string;
   customerPhone: string;
   tenant: Record<string, unknown>;
+  /**
+   * AUDIT R18: defense-in-depth contra ghost mutations (BUG R14).
+   *
+   * Cache de tool calls exitosos ya ejecutados en el MISMO turno del
+   * orquestador. El orchestrator lo popula con `registerSuccessfulCall()`
+   * tras ejecutar el primario; cuando el fallback ejecuta una tool, primero
+   * verificamos si ya hay un resultado cacheado con los MISMOS args, y lo
+   * devolvemos sin re-invocar el handler.
+   *
+   * Esto es defensa explícita a nivel CÓDIGO (no prompt) que complementa
+   * el `tool_choice: 'none'` ya aplicado cuando hay mutations previas.
+   * Si algún día cambiamos a `tool_choice: 'auto'` para el fallback, esta
+   * cache previene doble-ejecución.
+   *
+   * Map key = `${toolName}:${stableArgsHash}`. Opcional: si no se provee,
+   * executeTool se comporta como antes (backwards-compat con llamadores
+   * de tests o pipelines que no usan orquestador).
+   */
+  successfulCallCache?: Map<string, ToolExecutionResult>;
+}
+
+/**
+ * AUDIT R18: construye la clave del cache para un (toolName, args).
+ * Usamos JSON.stringify estable; si args tiene orden de keys distinto
+ * entre calls, el LLM los reproduce en el mismo orden 99% del tiempo,
+ * y los edge cases (distinto orden) son aceptables para una cache de
+ * defense-in-depth (fail-open: no encontrar en cache → re-ejecuta).
+ */
+export function buildToolCallCacheKey(name: string, args: unknown): string {
+  try {
+    return `${name}:${JSON.stringify(args)}`;
+  } catch {
+    return `${name}:[unserializable]`;
+  }
 }
 
 /**
@@ -228,15 +262,45 @@ export async function executeTool(
     };
   }
 
+  // AUDIT R18: defense-in-depth — si esta misma (tool, args) ya se ejecutó
+  // exitosamente como MUTATION en este turno del orchestrator, devuelve el
+  // resultado cacheado sin re-invocar el handler. Previene doble-ejecución
+  // aún si el fallback LLM ignora el bloqueo a nivel prompt/tool_choice.
+  // Solo aplica a mutations (read-only es idempotente, no hay daño en
+  // re-ejecutar — y evitamos stale reads en el cache).
+  if (ctx.successfulCallCache && def.isMutation) {
+    const cacheKey = buildToolCallCacheKey(name, args);
+    const cached = ctx.successfulCallCache.get(cacheKey);
+    if (cached) {
+      console.info(
+        `[tool-executor] blocked duplicate mutation ${name} via cache hit — returning cached result`,
+      );
+      return {
+        ...cached,
+        durationMs: 0, // cached; no new work done
+      };
+    }
+  }
+
   const start = Date.now();
   try {
     const rawResult = await withToolTimeout(def.handler(args, ctx), TOOL_TIMEOUT_MS, name);
     const result = truncateToolResult(rawResult, name);
-    return {
+    const execResult: ToolExecutionResult = {
       success: true,
       result,
       durationMs: Date.now() - start,
     };
+    // Persistir en cache solo si es mutation exitosa (no aplica a read-only).
+    if (ctx.successfulCallCache && def.isMutation) {
+      const r = result as { success?: boolean } | null;
+      // No cachear si la tool devolvió explícitamente success:false (ej.
+      // SLOT_TAKEN antes del INSERT). Ese es un "try again" válido.
+      if (!r || r.success !== false) {
+        ctx.successfulCallCache.set(buildToolCallCacheKey(name, args), execResult);
+      }
+    }
+    return execResult;
   } catch (err) {
     return {
       success: false,
