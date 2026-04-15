@@ -8,6 +8,22 @@ vi.mock('@/lib/whatsapp/processor', () => ({
 
 vi.mock('@/lib/webhook-logger', () => ({
   logWebhook: vi.fn(),
+  // AUDIT R17: size cap helpers. Mockeamos con delegación a los reales para
+  // no duplicar la lógica; los tests de unit viven en webhook-logger.test.ts.
+  enforceWebhookSize: (req: Request, maxBytes: number) => {
+    const cl = Number(req.headers.get('content-length') || '0');
+    if (cl > 0 && cl > maxBytes) {
+      return { ok: false, response: new Response('Payload too large', { status: 413 }) };
+    }
+    return { ok: true };
+  },
+  enforceWebhookSizePostRead: (byteLength: number, maxBytes: number) => {
+    if (byteLength > maxBytes) {
+      return { ok: false, response: new Response('Payload too large', { status: 413 }) };
+    }
+    return { ok: true };
+  },
+  WEBHOOK_MAX_BYTES: 2 * 1024 * 1024,
 }));
 
 const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => ({ then: vi.fn((cb: Function) => cb()) })) }));
@@ -108,6 +124,18 @@ describe('/api/webhook/whatsapp', () => {
         headers: { 'x-hub-signature-256': sig, ...headers },
       }) as any;
     }
+
+    // AUDIT R17 BUG-002: size cap en la puerta
+    it('rechaza payload con content-length > 2MB (413) sin invocar processor', async () => {
+      const req = new Request('http://localhost/api/webhook/whatsapp', {
+        method: 'POST',
+        body: '{}',
+        headers: { 'content-length': String(3 * 1024 * 1024) },
+      }) as any;
+      const res = await POST(req);
+      expect(res.status).toBe(413);
+      expect(processIncomingMessage).not.toHaveBeenCalled();
+    });
 
     it('processes valid signed message and returns 200', async () => {
       const req = postWithSignature(messagePayload);

@@ -539,11 +539,23 @@ async function handleSingleMessage(
   //    insertadas. Validamos contra wa_message_id que Meta garantiza único
   //    por mensaje inbound.
   if (messageId) {
-    const { data: existing } = await supabaseAdmin
+    const { data: existing, error: idempErr } = await supabaseAdmin
       .from('messages')
       .select('id')
       .eq('wa_message_id', messageId)
       .maybeSingle();
+    // AUDIT R17 BUG-030: si la DB responde error (transient connection, RLS
+    // misconfig), antes lo silenciábamos y procedíamos — potencial
+    // desperdicio de compute si era un duplicado no detectable. Ahora
+    // loguamos pero seguimos: la UNIQUE constraint en wa_message_id +
+    // atomicInboundUpsert es la autoridad final (fail-closed en su propia
+    // capa).
+    if (idempErr) {
+      console.warn(
+        '[processor] idempotency check DB error — continuing; UNIQUE constraint will catch duplicates:',
+        idempErr.message,
+      );
+    }
     if (existing) {
       // Already processed — silent skip (don't log as error).
       return;

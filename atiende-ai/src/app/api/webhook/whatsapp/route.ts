@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { processIncomingMessage } from '@/lib/whatsapp/processor';
-import { logWebhook } from '@/lib/webhook-logger';
+import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { publishMessage, isQStashConfigured } from '@/lib/queue/qstash';
 import crypto from 'crypto';
@@ -55,11 +55,22 @@ export async function POST(req: NextRequest) {
     }
 
     const signature = req.headers.get('x-hub-signature-256');
+
+    // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear. Rechaza payloads
+    // >2MB (Meta payloads típicamente <10KB) para evitar OOM en el worker
+    // antes de llegar a la validación HMAC.
+    const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'whatsapp', startTime);
+    if (!sizeCheck.ok) return sizeCheck.response;
+
     // AUDIT-R8 CRÍT: req.text() puede re-codificar UTF-8 (emojis compuestos,
     // acentos español) cambiando los bytes originales — el HMAC fallaría
     // intermitentemente con mensajes que tengan ñ, á, é, emojis compuestos.
     // Usamos arrayBuffer() para preservar bytes EXACTOS que firmó Meta.
     const rawBuffer = Buffer.from(await req.arrayBuffer());
+
+    // Post-read sanity: content-length puede faltar/mentir.
+    const postRead = enforceWebhookSizePostRead(rawBuffer.byteLength, WEBHOOK_MAX_BYTES, 'whatsapp', startTime);
+    if (!postRead.ok) return postRead.response;
 
     if (!signature) {
       console.error('Missing x-hub-signature-256 header');
