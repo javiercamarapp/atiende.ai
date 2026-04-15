@@ -121,8 +121,18 @@ export async function reportVoiceOverageToStripe(
         body: params.toString(),
       });
 
+      // AUDIT R12 BUG-004: validar que el JSON tenga `id` (= usage record
+      // creado). Si Stripe devuelve 200 pero response malformado (network
+      // proxy / cache), retornamos failure para que el cron marque el row
+      // como NO billed y reintente el próximo run en vez de dar por válido
+      // un cobro potencialmente fantasma.
       if (res.ok) {
-        const json = (await res.json()) as { id?: string };
+        const json = (await res.json()) as { id?: string; object?: string };
+        if (!json.id || typeof json.id !== 'string') {
+          const err = `Stripe 200 but malformed response (no id field): ${JSON.stringify(json).slice(0, 200)}`;
+          console.error('[stripe]', err);
+          return { success: false, error: err };
+        }
         return { success: true, recordId: json.id };
       }
 

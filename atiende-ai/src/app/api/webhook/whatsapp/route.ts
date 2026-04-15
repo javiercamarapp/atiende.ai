@@ -159,7 +159,13 @@ export async function POST(req: NextRequest) {
     if (isQStashConfigured()) {
       // AUDIT-R8 ALTO: misma URL base que el worker usa para verificar firma.
       // Si difieren, QStash firma con base A pero el worker valida contra base B.
-      const baseUrl = process.env.WORKER_URL_BASE || req.nextUrl.origin;
+      // AUDIT R12 BUG-002: triple fallback. WORKER_URL_BASE > NEXT_PUBLIC_APP_URL
+      // > req.nextUrl.origin. En Vercel preview/edge, nextUrl.origin puede ser
+      // interno (localhost, *.vercel.app sin custom domain) y QStash firmaría
+      // con una URL que el worker valida con origen diferente → 401.
+      const baseUrl = process.env.WORKER_URL_BASE
+        || process.env.NEXT_PUBLIC_APP_URL
+        || req.nextUrl.origin;
       const workerUrl = `${baseUrl}/api/worker/process-message`;
       const pub = await publishMessage(workerUrl, body);
       if (!pub.ok) {

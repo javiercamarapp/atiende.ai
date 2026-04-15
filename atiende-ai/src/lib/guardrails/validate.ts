@@ -24,6 +24,42 @@ function normalizePrices(ctx: string): string {
   );
 }
 
+/**
+ * AUDIT R12 BUG-005: refuerzo anti-alucinación de precios.
+ *
+ * Extrae TODOS los precios del RAG + calcula sumas válidas de hasta 3 ítems.
+ * El LLM puede legítimamente sumar precios (ej. "Limpieza $500 + Extracción $300 = $800")
+ * y antes el regex lo rechazaba como "inventado". Ahora aceptamos si el
+ * número existe directo O es suma válida de 2-3 precios del catálogo.
+ *
+ * Trade-off: complejidad O(n³) para n=10 precios = 1,000 ops = <1ms. Seguro
+ * dentro del hot path. Mejor que agregar un LLM judge (+500ms +$0.0005).
+ */
+function extractAllValidPrices(ctx: string): Set<string> {
+  const valid = new Set<string>();
+  const prices: number[] = [];
+  const matches = ctx.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g);
+  for (const m of matches) {
+    const can = canonicalizePrice(m[1]);
+    if (!can) continue;
+    const num = Number(can);
+    if (num < 50 || num > 1_000_000) continue; // filtro: solo precios razonables
+    prices.push(num);
+    valid.add(can);
+  }
+  // Añadir sumas de 2 y 3 ítems (límite para no explotar combinatoria)
+  const limit = Math.min(prices.length, 10);
+  for (let i = 0; i < limit; i++) {
+    for (let j = i + 1; j < limit; j++) {
+      valid.add(String(prices[i] + prices[j]));
+      for (let k = j + 1; k < limit; k++) {
+        valid.add(String(prices[i] + prices[j] + prices[k]));
+      }
+    }
+  }
+  return valid;
+}
+
 const CRISIS_MESSAGE =
   'Entiendo que estás pasando por un momento muy difícil. Tu vida importa. ' +
   'Por favor contacta la Línea de la Vida: 800 911 2000 (24/7) o SAPTEL: 55 5259 8121. ' +
@@ -46,6 +82,10 @@ export function validateResponse(
   // si el número entero no existe en el RAG (ni en texto ni normalizado),
   // la respuesta se reemplaza.
   const normalizedContext = normalizePrices(ragContext);
+  // AUDIT R12 BUG-005: además de lookup literal, calculamos sumas válidas
+  // (2-3 ítems) del catálogo para que "Limpieza $500 + Extracción $300 = $800"
+  // no se marque como alucinación si esos 2 precios están en el RAG.
+  const validPriceSet = extractAllValidPrices(ragContext);
   const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
   for (const match of priceMatches) {
     const raw = match[0];
@@ -60,7 +100,8 @@ export function validateResponse(
 
     const found = normalizedContext.includes(canonical)
       || ragContext.includes(raw.trim())
-      || ragContext.includes(num);
+      || ragContext.includes(num)
+      || validPriceSet.has(canonical); // suma válida del catálogo
 
     if (!found) {
       return {

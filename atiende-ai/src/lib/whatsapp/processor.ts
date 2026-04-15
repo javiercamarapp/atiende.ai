@@ -255,20 +255,15 @@ async function checkGates(
   }
 
   // Monthly message cap
+  // AUDIT R12 BUG-003: counter en Redis (hot path), fallback DB solo una vez
+  // por mes cuando Redis no tiene el valor aún. Evita COUNT(*) sobre messages
+  // en cada webhook (N+1 que saturaba connection pool a escala).
   const planMsgLimits: Record<string, number> = { free_trial: 50, basic: 500, pro: 2000, premium: 10000 };
   const monthlyLimit = planMsgLimits[tenant.plan] || 50;
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-  const { count: monthlyCount } = await supabaseAdmin
-    .from('messages')
-    .select('*', { count: 'exact', head: true })
-    .eq('tenant_id', tenant.id)
-    .eq('direction', 'outbound')
-    .eq('sender_type', 'bot')
-    .gte('created_at', monthStart.toISOString());
+  const { getMonthlyMessageCount } = await import('@/lib/rate-limit-monthly');
+  const monthlyCount = await getMonthlyMessageCount(tenant.id as string);
 
-  if ((monthlyCount ?? 0) >= monthlyLimit) {
+  if (monthlyCount >= monthlyLimit) {
     await sendTextMessage(
       phoneNumberId,
       senderPhone,
@@ -618,11 +613,38 @@ async function handleSingleMessage(
 
   // 1. Identify tenant — buscamos primero SIN filtro de status para poder
   // dar respuesta amigable si está inactivo (FIX 6 audit Round 2).
-  const { data: tenant } = await supabaseAdmin
+  // AUDIT R12 BUG-001: .single() falla con PGRST116 si hay duplicados. La
+  // migración tenants_wa_unique.sql agrega UNIQUE constraint para prevenir
+  // que esto ocurra. Si aun así pasa, loggear explícitamente para alerting.
+  const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
     .select('*')
     .eq('wa_phone_number_id', phoneNumberId)
     .single();
+
+  if (tenantErr && tenantErr.code === 'PGRST116') {
+    // Múltiples tenants o ninguno — investigar cuál caso.
+    const { data: dupCheck } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name')
+      .eq('wa_phone_number_id', phoneNumberId);
+    if (dupCheck && dupCheck.length > 1) {
+      console.error(
+        `[processor] CRITICAL: ${dupCheck.length} tenants comparten wa_phone_number_id=${phoneNumberId}. IDs:`,
+        dupCheck.map((t) => t.id),
+      );
+      // Intenta registrar como error crítico (fallback Sentry + Supabase)
+      try {
+        const { captureError } = await import('@/lib/observability/error-tracker');
+        await captureError(
+          new Error(`Duplicate wa_phone_number_id: ${phoneNumberId}`),
+          { route: 'processor.tenant_resolve', phone: phoneNumberId },
+          'fatal',
+        );
+      } catch { /* no-op */ }
+    }
+    return;
+  }
 
   if (!tenant) {
     console.warn('Tenant no encontrado para:', phoneNumberId);
@@ -960,6 +982,13 @@ async function handleSingleMessageInner(
     response_time_ms: response.responseTimeMs,
     confidence: response.confidence,
   });
+
+  // AUDIT R12 BUG-003: incrementar contador Redis para rate-limit mensual.
+  // Fire-and-forget — si Redis falla, el próximo check cae a DB fallback.
+  try {
+    const { incrementMonthlyMessages } = await import('@/lib/rate-limit-monthly');
+    await incrementMonthlyMessages(tenant.id as string);
+  } catch { /* no-op */ }
 
   // 16. Update conversation timestamp
   await supabaseAdmin
