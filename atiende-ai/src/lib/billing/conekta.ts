@@ -5,11 +5,16 @@ const headers = () => ({
   'Content-Type':'application/json',
   'Accept':'application/vnd.conekta-v2.2.0+json',
 });
-// Precios (centavos MXN) — DEBEN coincidir con Stripe (src/lib/billing/stripe.ts):
+// Precios (centavos MXN) — leídos de env vars para evitar drift con Stripe.
+// Fallback a los defaults actuales si las env vars no están configuradas.
 //   basic   $599   = WhatsApp Básico (sin voz)
 //   pro     $999   = legacy
 //   premium $1,499 = WhatsApp + Voz (200 min incluidos + $5/min overage)
-const AMOUNTS:Record<string,number> = { basic:59900, pro:99900, premium:149900 };
+const AMOUNTS:Record<string,number> = {
+  basic:   Number(process.env.CONEKTA_AMOUNT_BASIC   || 59900),
+  pro:     Number(process.env.CONEKTA_AMOUNT_PRO     || 99900),
+  premium: Number(process.env.CONEKTA_AMOUNT_PREMIUM || 149900),
+};
 
 export async function createOxxoPayment(tenantId:string, email:string, plan:string, name:string) {
   const { data } = await axios.post(`${API}/orders`, {
