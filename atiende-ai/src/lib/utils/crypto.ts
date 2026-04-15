@@ -61,16 +61,28 @@ function assertKeyOrFailClosed(): Buffer | null {
 }
 
 /**
- * Cifra un string con AES-256-GCM. Si la llave no está configurada,
- * devuelve el texto sin cambios (fail-open en dev). En producción debes
- * exigir la key vía env check al boot.
+ * Cifra un string con AES-256-GCM. NUNCA lanza excepciones — la decisión
+ * de fail-closed en producción se toma en BOOT (ver assertEncryptionConfigured),
+ * no por-llamada. Así evitamos matar abruptamente el waitUntil de Vercel si
+ * algo raro pasa a mitad del pipeline.
+ *
+ * AUDIT-R5 MEDIO: antes encryptPII propagaba throw si faltaba la key en prod,
+ * lo que mataba la función de Vercel a mitad del procesamiento de un mensaje.
+ * Ahora la defensa contra key-missing es solo al boot (fail-fast deploy),
+ * y el runtime siempre es resiliente.
  */
 export function encryptPII(plaintext: string | null | undefined): string | null {
   if (plaintext == null) return null;
   if (plaintext === '') return '';
-  // BUG 2 FIX: en producción, fail-closed si no hay key.
-  const key = assertKeyOrFailClosed();
-  if (!key) return plaintext;
+  const key = getKey();
+  if (!key) {
+    // En producción esto NO debería ocurrir porque assertEncryptionConfigured
+    // se llamó al boot; si pasa, loggeamos para alertar pero no rompemos.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[crypto] CRITICAL: encryption key missing in production runtime — storing plaintext fallback. Redeploy with MESSAGES_ENCRYPTION_KEY set.');
+    }
+    return plaintext;
+  }
   try {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv(ALG, key, iv);
