@@ -5,7 +5,8 @@
 
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { sendTextMessage } from '@/lib/whatsapp/send';
+import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
+void sendTextMessage; // referenced for typing; cron path uses sendTextMessageSafe
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
 // ─── Tool 1: get_pending_payments ───────────────────────────────────────────
@@ -133,7 +134,13 @@ registerTool('send_payment_reminder', {
     }
 
     try {
-      await sendTextMessage(phoneNumberId, args.patient_phone, body);
+      // FIX 3 (audit Round 2): valida ventana 24h antes de enviar free-form.
+      // Si el paciente no nos escribió en las últimas 24h, Meta bloquea el
+      // mensaje y puede marcar la cuenta como spam → usar template.
+      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, body, { tenantId: ctx.tenantId });
+      if (!r.ok && r.windowExpired) {
+        return { sent: false, error: 'OUTSIDE_24H_WINDOW', next_step: 'Use a Meta-approved template via sendTemplate.' };
+      }
     } catch (err) {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }

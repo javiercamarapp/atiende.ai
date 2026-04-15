@@ -746,7 +746,13 @@ registerTool('get_my_appointments', {
 // ─── Tool 4: modify_appointment ──────────────────────────────────────────────
 const ModifyArgs = z
   .object({
-    appointment_id: z.string().uuid().optional(),
+    appointment_id: z
+      .string()
+      .optional()
+      .refine((val) => !val || UUID_RE.test(val), {
+        message:
+          'appointment_id debe ser UUID. Para códigos cortos como ABC12345 usa el campo confirmation_code.',
+      }),
     confirmation_code: z.string().regex(/^[A-Z0-9]{6,10}$/).optional(),
     patient_phone: z.string().min(6).max(20).optional(),
     new_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -992,9 +998,20 @@ registerTool('modify_appointment', {
 });
 
 // ─── Tool 5: cancel_appointment ──────────────────────────────────────────────
+// FIX 5 (audit Round 2): si el LLM mete un código corto en `appointment_id`
+// (UUID), Zod fallaba con un mensaje genérico y el LLM podía reintentar
+// con el mismo error en bucle. Ahora lo redirige explícitamente a usar
+// `confirmation_code` en el mensaje de error.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CancelArgs = z
   .object({
-    appointment_id: z.string().uuid().optional(),
+    appointment_id: z
+      .string()
+      .optional()
+      .refine((val) => !val || UUID_RE.test(val), {
+        message:
+          'appointment_id debe ser UUID. Para códigos cortos como ABC12345 usa el campo confirmation_code.',
+      }),
     confirmation_code: z.string().regex(/^[A-Z0-9]{6,10}$/).optional(),
     patient_phone: z.string().min(6).max(20).optional(),
     reason: z.string().min(1).max(500).optional(),
