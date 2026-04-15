@@ -591,24 +591,23 @@ registerTool('book_appointment', {
     }
 
     // 8. notifyOwner — FIX 5 (audit R4): si falla, persistimos
-    // `owner_notified=false` en la fila de la cita para que un cron de
-    // reintento (ver src/app/api/cron/notify-retry) pueda reprocesar.
-    // Sin esto, el dueño podía perderse citas importantes si Resend/Twilio
-    // se caen momentáneamente.
+    // `owner_notified=false` en la fila de la cita para que el cron
+    // `/api/cron/notify-retry` pueda reprocesar con backoff exponencial.
     const { dateFmt, timeFmt } = formatDateTimeMx(datetime, timezone);
     let ownerNotified = false;
     let ownerNotifyError: string | undefined;
     try {
       const { notifyOwner } = await import('@/lib/actions/notifications');
-      await notifyOwner({
+      const res = await notifyOwner({
         tenantId: ctx.tenantId,
         event: 'new_appointment',
         details: `${args.patient_name} (${args.patient_phone})\n${matchedService?.name || args.service_type} con ${staffMember.name}\n${dateFmt} ${timeFmt}\nCódigo: ${confirmationCode}`,
       });
-      ownerNotified = true;
+      ownerNotified = res.ok;
+      if (!res.ok) ownerNotifyError = res.error;
     } catch (err) {
       ownerNotifyError = err instanceof Error ? err.message : String(err);
-      console.warn('[book_appointment] notifyOwner failed:', ownerNotifyError);
+      console.warn('[book_appointment] notifyOwner threw:', ownerNotifyError);
     }
     // Persistir resultado en la cita para visibilidad + retry posterior.
     // Si las columnas no existen aún (schema antiguo), el UPDATE falla en
