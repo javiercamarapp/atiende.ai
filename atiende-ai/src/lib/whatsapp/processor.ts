@@ -19,9 +19,24 @@ import {
   getSystemPrompt,
   routeToAgent,
   handleFAQ,
+  initializeAllAgents,
 } from '@/lib/agents';
+
+// Boot-time verification — corre UNA VEZ al cargar el módulo. Si algún
+// agente falló al registrar sus tools, mejor saberlo en el cold start que
+// al recibir el primer mensaje del paciente.
+const __agentsInit = initializeAllAgents();
+if (!__agentsInit.ok) {
+  console.error('[processor] agents init incomplete — missing:', __agentsInit.missing);
+}
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
 import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
+import {
+  acquireConversationLock,
+  releaseConversationLock,
+} from '@/lib/whatsapp/conversation-lock';
+import { maskPhone } from '@/lib/utils/logger';
+import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool calling pipeline (Fase 1) — feature flag
@@ -61,15 +76,19 @@ interface WhatsAppMessage {
   from: string;
   type: string;
   text?: { body: string };
-  audio?: { id: string };
-  image?: { caption?: string };
-  document?: { filename?: string };
+  audio?: { id: string; mime_type?: string };
+  voice?: { id: string; mime_type?: string };
+  image?: { id?: string; caption?: string };
+  document?: { id?: string; filename?: string; mime_type?: string; caption?: string };
+  video?: { id?: string; caption?: string };
   location?: { latitude: number; longitude: number };
   interactive?: {
     type: string;
     button_reply?: { title: string };
     list_reply?: { title: string };
   };
+  reaction?: { message_id: string; emoji: string };
+  sticker?: { id: string };
   contacts?: Array<{ profile?: { name?: string } }>;
 }
 
@@ -170,6 +189,9 @@ async function checkGates(
 }
 
 // -- Extract text content from any WhatsApp message type --
+//
+// Versión legacy (sin tenantId, usa Deepgram para audio). Mantenida para no
+// romper otros callers; nueva pipeline usa extractContentAsync abajo.
 
 async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; messageType: string }> {
   let content = '';
@@ -207,6 +229,125 @@ async function extractContent(msg: WhatsAppMessage): Promise<{ content: string; 
   }
 
   return { content: sanitizeInput(content), messageType };
+}
+
+// -- Multimedia extractor (MISIÓN 2) --
+//
+// Procesa audio (Whisper), imagen (Gemini Vision), PDF (pdf-parse + Gemini
+// fallback). Retorna además metadata para persistir en messages.media_*.
+
+interface ExtractedContent {
+  content: string;
+  messageType: string;
+  mediaTranscription?: string;
+  mediaDescription?: string;
+}
+
+async function extractContentAsync(
+  msg: WhatsAppMessage,
+  tenantId: string,
+): Promise<ExtractedContent> {
+  switch (msg.type) {
+    case 'text':
+      return { content: sanitizeInput(msg.text?.body || ''), messageType: 'text' };
+
+    case 'audio':
+    case 'voice': {
+      const id = msg.audio?.id || msg.voice?.id;
+      if (!id) return { content: '[Audio no disponible]', messageType: 'audio' };
+      const r = await mediaProcessor.transcribeAudio(id, tenantId);
+      if (!r.ok || !r.text) {
+        return { content: '[No pude entender el audio. ¿Puedes escribirlo?]', messageType: 'audio' };
+      }
+      return {
+        content: sanitizeInput(r.text),
+        messageType: 'audio',
+        mediaTranscription: r.text,
+      };
+    }
+
+    case 'image': {
+      if (!msg.image?.id) {
+        return {
+          content: msg.image?.caption ? sanitizeInput(msg.image.caption) : '[Imagen]',
+          messageType: 'image',
+        };
+      }
+      const r = await mediaProcessor.describeImage(msg.image.id, tenantId, msg.image.caption);
+      if (!r.ok || !r.text) {
+        return {
+          content: msg.image?.caption ? sanitizeInput(msg.image.caption) : '[Imagen recibida — no pude analizarla]',
+          messageType: 'image',
+        };
+      }
+      const captionPart = msg.image.caption ? `${msg.image.caption}\n` : '';
+      return {
+        content: sanitizeInput(`${captionPart}[Imagen: ${r.text}]`),
+        messageType: 'image',
+        mediaDescription: r.text,
+      };
+    }
+
+    case 'document': {
+      if (!msg.document?.id) {
+        return { content: `[Documento: ${msg.document?.filename || 'archivo'}]`, messageType: 'document' };
+      }
+      const isPdf = (msg.document.mime_type || '').includes('pdf')
+        || (msg.document.filename || '').toLowerCase().endsWith('.pdf');
+      if (!isPdf) {
+        return {
+          content: `[Documento ${msg.document.filename || 'archivo'} — solo proceso PDFs por ahora]`,
+          messageType: 'document',
+        };
+      }
+      const r = await mediaProcessor.extractPdfText(msg.document.id, tenantId, msg.document.filename);
+      if (!r.ok || !r.text) {
+        return {
+          content: `[PDF ${msg.document.filename || ''} — no pude leerlo]`,
+          messageType: 'document',
+        };
+      }
+      return {
+        content: sanitizeInput(r.text),
+        messageType: 'document',
+        mediaDescription: r.text,
+      };
+    }
+
+    case 'location':
+      return {
+        content: `[Ubicación compartida: ${msg.location?.latitude},${msg.location?.longitude}]`,
+        messageType: 'location',
+      };
+
+    case 'interactive': {
+      let content = '';
+      if (msg.interactive?.type === 'button_reply') {
+        content = msg.interactive.button_reply?.title || '';
+      } else if (msg.interactive?.type === 'list_reply') {
+        content = msg.interactive.list_reply?.title || '';
+      }
+      return { content: sanitizeInput(content), messageType: 'interactive' };
+    }
+
+    case 'sticker':
+      return { content: '[Sticker]', messageType: 'sticker' };
+
+    case 'reaction':
+      return {
+        content: `[Reacción ${msg.reaction?.emoji || ''}]`,
+        messageType: 'reaction',
+      };
+
+    case 'video':
+      return {
+        content: `[Video recibido${msg.video?.caption ? `: ${msg.video.caption}` : ''} — no proceso video aún]`,
+        messageType: 'video',
+      };
+
+    default:
+      return { content: `[${msg.type} recibido]`, messageType: msg.type };
+  }
 }
 
 // -- Post-response side effects (actions, scoring, notifications) --
@@ -378,16 +519,47 @@ async function handleSingleMessage(
     return;
   }
 
+  // 1.5. Conversation lock — serializa el procesamiento de mensajes del mismo
+  // (tenant, paciente). Sin esto, dos webhooks paralelos pueden disparar dos
+  // pipelines simultáneos y crear citas duplicadas (carrera entre hasConflict
+  // checks). Si no se obtiene el lock, otro pipeline ya está corriendo —
+  // dejamos que él procese (Meta reintentará si nada se persiste).
+  const lock = await acquireConversationLock(tenant.id as string, senderPhone);
+  if (!lock.acquired) {
+    console.info('[processor] conversation locked, skipping concurrent message:', maskPhone(senderPhone));
+    return;
+  }
+
+  try {
+    await handleSingleMessageInner(msg, metadata, tenant as TenantRecord, senderPhone, phoneNumberId, messageId);
+  } finally {
+    if (lock.token) {
+      await releaseConversationLock(tenant.id as string, senderPhone, lock.token).catch(() => {});
+    }
+  }
+}
+
+async function handleSingleMessageInner(
+  msg: WhatsAppMessage,
+  _metadata: { phone_number_id: string; display_phone_number: string },
+  tenant: TenantRecord,
+  senderPhone: string,
+  phoneNumberId: string,
+  messageId: string | undefined,
+) {
   // 2. Gate checks
-  if (!(await checkGates(tenant as TenantRecord, senderPhone, phoneNumberId))) return;
+  if (!(await checkGates(tenant, senderPhone, phoneNumberId))) return;
 
   // 3. Mark as read (non-critical)
-  await markAsRead(phoneNumberId, messageId).catch((err) => {
-    if (process.env.NODE_ENV !== 'production') console.error('markAsRead failed:', err);
-  });
+  if (messageId) {
+    await markAsRead(phoneNumberId, messageId).catch((err) => {
+      if (process.env.NODE_ENV !== 'production') console.error('markAsRead failed:', err);
+    });
+  }
 
   // 4. Extract content
-  const { content, messageType } = await extractContent(msg);
+  const extracted = await extractContentAsync(msg, tenant.id);
+  const { content, messageType, mediaTranscription, mediaDescription } = extracted;
   if (!content || content.length < 1) return;
 
   // 5. Upsert contact
@@ -463,6 +635,9 @@ async function handleSingleMessage(
     content,
     message_type: messageType,
     wa_message_id: messageId,
+    media_type: ['audio', 'image', 'document', 'video'].includes(messageType) ? messageType : null,
+    media_transcription: mediaTranscription || null,
+    media_description: mediaDescription || null,
   });
   if (insertErr) {
     // PostgreSQL 23505 = unique_violation. Significa race con otro webhook
