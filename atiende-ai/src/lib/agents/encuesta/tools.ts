@@ -21,6 +21,7 @@ const SendSurveyArgs = z
   .strict();
 
 registerTool('send_satisfaction_survey', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -79,6 +80,7 @@ const SaveSurveyArgs = z
   .strict();
 
 registerTool('save_survey_response', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

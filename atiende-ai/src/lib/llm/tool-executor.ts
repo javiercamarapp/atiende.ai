@@ -46,6 +46,22 @@ export interface ToolDefinition {
    * Debe retornar un valor serializable a JSON (irá en el rol=tool message).
    */
   handler: (args: unknown, ctx: ToolContext) => Promise<unknown>;
+  /**
+   * AUDIT R14 BUG-010: flag explícito de mutación (escritura externa).
+   * Antes se inferían mutaciones por prefijo del nombre (`book_*`, `cancel_*`).
+   * Ese heurístico era frágil — cualquier rename (ej. `book_appointment` →
+   * `schedule_appointment`) rompía el "ghost mutation guard" del fallback.
+   *
+   * true:  la tool causa efectos externos irreversibles / caros (DB INSERT,
+   *        envío de mensaje, cargo a Stripe, llamada a Conekta).
+   * false: read-only o cálculo puro (check_availability, get_services).
+   *
+   * Default = false (read-only) por seguridad: si olvidas marcar una mutación,
+   * el fallback podría re-ejecutarla — pero es strictly safer que el lado
+   * opuesto (olvidar marcarla como read-only y skipear el fallback a tool
+   * crítica).
+   */
+  isMutation?: boolean;
 }
 
 /**
@@ -104,6 +120,19 @@ export function registerTool(name: string, def: ToolDefinition): void {
  */
 export function listRegisteredTools(): string[] {
   return Array.from(toolRegistry.keys());
+}
+
+/**
+ * AUDIT R14 BUG-010: devuelve si una tool está marcada como mutación.
+ * Usado por el orchestrator para decidir si una tool ejecutada por el primario
+ * debe evitarse en el fallback (anti ghost-mutation).
+ *
+ * Retorna false para tools no registradas (conservador; el fallback puede
+ * re-intentarlas sin consecuencias externas).
+ */
+export function isMutationTool(name: string): boolean {
+  const def = toolRegistry.get(name);
+  return def?.isMutation === true;
 }
 
 /**

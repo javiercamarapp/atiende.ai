@@ -382,6 +382,7 @@ function generateConfirmationCode(): string {
 }
 
 registerTool('book_appointment', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -806,6 +807,7 @@ const ModifyArgs = z
   });
 
 registerTool('modify_appointment', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {
@@ -1103,6 +1105,7 @@ const CancelArgs = z
   });
 
 registerTool('cancel_appointment', {
+  isMutation: true,
   schema: {
     type: 'function',
     function: {

@@ -170,6 +170,24 @@ vi.mock('@/lib/rate-limit', () => ({
   checkTenantRateLimit: mockCheckTenantLimit,
 }));
 
+// AUDIT R14 BUG-002: el gate mensual ahora usa reserveMonthlyMessage (INCR
+// atómico en Redis). En tests sin Redis, simulamos el contador con la misma
+// variable `monthlyCountResult` que antes usaba el path DB-count, para
+// preservar el comportamiento de los tests existentes.
+vi.mock('@/lib/rate-limit-monthly', () => ({
+  reserveMonthlyMessage: vi.fn((_tenantId: string, planLimit: number) => {
+    const count = (monthlyCountResult as { count?: number })?.count ?? 0;
+    const next = count + 1;
+    if (next > planLimit) {
+      return Promise.resolve({ allowed: false, count, usingRedis: true });
+    }
+    return Promise.resolve({ allowed: true, count: next, usingRedis: true });
+  }),
+  releaseMonthlyReservation: vi.fn(() => Promise.resolve()),
+  getMonthlyMessageCount: vi.fn(() => Promise.resolve(0)),
+  incrementMonthlyMessages: vi.fn(() => Promise.resolve(1)),
+}));
+
 import { processIncomingMessage } from '../processor';
 
 // ── Helpers ─────────────────────────────────────────────────

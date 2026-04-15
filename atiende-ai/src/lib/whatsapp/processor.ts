@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { waitUntil } from '@vercel/functions';
 import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
 import { checkRateLimit, checkTenantLimit, checkTenantRateLimit } from '@/lib/rate-limit';
@@ -258,12 +259,19 @@ async function checkGates(
   // AUDIT R12 BUG-003: counter en Redis (hot path), fallback DB solo una vez
   // por mes cuando Redis no tiene el valor aún. Evita COUNT(*) sobre messages
   // en cada webhook (N+1 que saturaba connection pool a escala).
+  //
+  // AUDIT R14 BUG-002: PRE-RESERVE atómico en la puerta (INCR de Redis).
+  // Antes usábamos `getMonthlyMessageCount` (read lag) y luego incrementábamos
+  // POST-LLM. Resultado: bajo ráfaga, N webhooks pasaban el gate con el mismo
+  // count y todos disparaban LLM → sobregiro del presupuesto. Ahora el INCR
+  // es atómico; si supera el límite hacemos rollback y rechazamos ANTES de
+  // tocar el modelo. El increment post-LLM se elimina (ahora se hace aquí).
   const planMsgLimits: Record<string, number> = { free_trial: 50, basic: 500, pro: 2000, premium: 10000 };
   const monthlyLimit = planMsgLimits[tenant.plan] || 50;
-  const { getMonthlyMessageCount } = await import('@/lib/rate-limit-monthly');
-  const monthlyCount = await getMonthlyMessageCount(tenant.id as string);
+  const { reserveMonthlyMessage } = await import('@/lib/rate-limit-monthly');
+  const reservation = await reserveMonthlyMessage(tenant.id as string, monthlyLimit);
 
-  if (monthlyCount >= monthlyLimit) {
+  if (!reservation.allowed) {
     await sendTextMessage(
       phoneNumberId,
       senderPhone,
@@ -760,7 +768,15 @@ async function handleSingleMessageInner(
     );
     return;
   }
-  if (!content || content.length < 1) return;
+  if (!content || content.length < 1) {
+    // AUDIT R14 BUG-002 rollback: reservamos un slot en checkGates pero no
+    // vamos a consumir (no hay contenido procesable, no se envía respuesta).
+    try {
+      const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
+      await releaseMonthlyReservation(tenant.id as string);
+    } catch { /* no-op */ }
+    return;
+  }
 
   // 5. Upsert contact
   let { data: contact } = await supabaseAdmin
@@ -820,6 +836,12 @@ async function handleSingleMessageInner(
       message_type: messageType,
       wa_message_id: messageId,
     });
+    // AUDIT R14 BUG-002 rollback: humano toma control, no hay mensaje de bot
+    // que cuente contra el cap mensual. Liberamos la reserva hecha en gates.
+    try {
+      const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
+      await releaseMonthlyReservation(tenant.id as string);
+    } catch { /* no-op */ }
     return;
   }
 
@@ -848,6 +870,13 @@ async function handleSingleMessageInner(
       if (process.env.NODE_ENV !== 'production') {
         console.info('[processor] duplicate wa_message_id, skipping', { messageId });
       }
+      // AUDIT R14 BUG-002 rollback: webhook duplicado, el original ya se
+      // contabilizó en su reserva. Liberamos esta reserva extra para no
+      // doble-cobrar la cuota mensual.
+      try {
+        const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
+        await releaseMonthlyReservation(tenant.id as string);
+      } catch { /* no-op */ }
       return;
     }
     // BUG 1 FIX: cualquier otro error (DB caída, timeout, RLS) NO debe
@@ -923,7 +952,10 @@ async function handleSingleMessageInner(
   }
 
   // 11. Typing indicator (fire-and-forget)
-  sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
+  // AUDIT R14 BUG-030: waitUntil evita que Vercel mate la HTTP request al
+  // regresar el handler — sin esto, si la respuesta principal termina antes
+  // de que Meta reciba el typing POST, el runtime puede cortarlo.
+  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
   // 12. Generate and validate response
   const response = await generateAndValidateResponse({
@@ -983,12 +1015,11 @@ async function handleSingleMessageInner(
     confidence: response.confidence,
   });
 
-  // AUDIT R12 BUG-003: incrementar contador Redis para rate-limit mensual.
-  // Fire-and-forget — si Redis falla, el próximo check cae a DB fallback.
-  try {
-    const { incrementMonthlyMessages } = await import('@/lib/rate-limit-monthly');
-    await incrementMonthlyMessages(tenant.id as string);
-  } catch { /* no-op */ }
+  // AUDIT R14 BUG-002: el contador mensual se PRE-RESERVA en checkGates
+  // (reserveMonthlyMessage). Ya no incrementamos aquí — si llegamos hasta
+  // este punto el slot ya fue contado. El rollback en caso de error se hace
+  // en el catch del caller (handleSingleMessageInner) vía
+  // releaseMonthlyReservation.
 
   // AUDIT R13: métricas per-tenant para dashboard.
   try {
@@ -1062,7 +1093,9 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   } = args;
 
   // 1. Typing indicator (fire-and-forget)
-  sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {});
+  // AUDIT R14 BUG-030: wrap en waitUntil para que el runtime serverless
+  // mantenga viva la petición aunque el handler principal termine antes.
+  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
   // 2. Construir tenantCtx (Mexico TZ + fechas + servicios)
   const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
