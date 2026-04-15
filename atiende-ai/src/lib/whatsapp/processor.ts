@@ -19,16 +19,24 @@ import {
   getSystemPrompt,
   routeToAgent,
   handleFAQ,
+  ensureToolsRegistered,
   initializeAllAgents,
 } from '@/lib/agents';
 
-// Boot-time verification — corre UNA VEZ al cargar el módulo. Si algún
-// agente falló al registrar sus tools, mejor saberlo en el cold start que
-// al recibir el primer mensaje del paciente.
-const __agentsInit = initializeAllAgents();
-if (!__agentsInit.ok) {
-  console.error('[processor] agents init incomplete — missing:', __agentsInit.missing);
+// FIX 3 (audit R4): ensureToolsRegistered() es FAIL-FAST al boot — si el
+// code-splitting de Vercel dejó algún módulo de agente sin cargar, el
+// proceso crashea aquí en vez de atender al primer paciente con tools
+// faltantes (que devolvería "Tool not registered" al LLM y respuestas
+// alucinadas). initializeAllAgents se mantiene para logging histórico.
+try {
+  ensureToolsRegistered();
+} catch (err) {
+  // En producción queremos fail-fast; en dev/test solo loguear para no
+  // romper `vitest` si los side-effect imports corren en orden distinto.
+  if (process.env.NODE_ENV === 'production') throw err;
+  console.error('[processor]', err instanceof Error ? err.message : err);
 }
+void initializeAllAgents;
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
 import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
 import {

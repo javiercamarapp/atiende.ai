@@ -61,10 +61,26 @@ export interface ToolExecutionResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Registry global del proceso
+// Registry global del proceso — SINGLETON via globalThis
+//
+// FIX 3 (audit R4): en Vercel / Next.js el módulo a veces se re-evalúa
+// (HMR en dev, o en casos raros de cold-start con code-splitting). Si cada
+// re-evaluación crea un Map nuevo, las tools registradas en la instancia
+// vieja desaparecen. Colgar el Map de `globalThis` hace que sobreviva a
+// cualquier re-import del módulo dentro del mismo V8 isolate.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const toolRegistry = new Map<string, ToolDefinition>();
+const REGISTRY_SYMBOL = Symbol.for('atiende.toolRegistry');
+
+type GlobalWithRegistry = typeof globalThis & {
+  [REGISTRY_SYMBOL]?: Map<string, ToolDefinition>;
+};
+
+const g = globalThis as GlobalWithRegistry;
+if (!g[REGISTRY_SYMBOL]) {
+  g[REGISTRY_SYMBOL] = new Map<string, ToolDefinition>();
+}
+const toolRegistry: Map<string, ToolDefinition> = g[REGISTRY_SYMBOL];
 
 /**
  * Registra una tool en el registry global. Idempotente — si la tool ya está

@@ -204,10 +204,35 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'get_my_appointments',
     'modify_appointment',
     'cancel_appointment',
+    // no-show worker tools (cron deberá llamarlas)
+    'get_appointments_tomorrow',
+    'send_confirmation_request',
+    'mark_confirmed',
+    'mark_no_show',
+    'notify_risk',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {
     console.error('[agents] CRITICAL: missing required tools after init:', missing);
   }
   return { ok: missing.length === 0, tools: registered, missing };
+}
+
+/**
+ * ensureToolsRegistered — FIX 3 (audit R4): alias explícito de
+ * `initializeAllAgents()` que además LANZA si faltan tools mínimas. Usado
+ * al boot de processor.ts para fail-fast si el code-split de Vercel dejó
+ * algún módulo de agente sin cargar.
+ *
+ * Este archivo ya importa `./agenda` y `./no-show` al inicio (side effects),
+ * así que llamar aquí garantiza que esos módulos fueron evaluados.
+ */
+export function ensureToolsRegistered(): void {
+  const r = initializeAllAgents();
+  if (!r.ok) {
+    throw new Error(
+      `[agents] Tool registry incomplete at boot — missing: ${r.missing.join(', ')}. ` +
+      `Este proceso no puede atender mensajes con seguridad.`,
+    );
+  }
 }
