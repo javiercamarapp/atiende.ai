@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook } from '@/lib/webhook-logger';
+import { trackVoiceCall } from '@/lib/billing/voice-tracker';
+import { sendTextMessage } from '@/lib/whatsapp/send';
+import { VOICE_ALERT_THRESHOLD_PERCENT, VOICE_OVERAGE_PRICE_MXN } from '@/lib/config';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -67,13 +70,63 @@ async function handleCallStarted(body: Record<string, unknown>) {
 }
 
 async function handleCallEnded(body: Record<string, unknown>) {
+  const durationSeconds = body.duration_ms
+    ? Math.round((body.duration_ms as number) / 1000)
+    : (body.duration_seconds as number) || 0;
   const updateData: Record<string, unknown> = {
-    duration_seconds: body.duration_ms
-      ? Math.round((body.duration_ms as number) / 1000)
-      : body.duration_seconds,
+    duration_seconds: durationSeconds,
     ended_at: new Date().toISOString(),
     cost_usd: body.cost,
   };
+
+  // ─── Billing: trackear minutos de voz + alertar al dueño ──────────────────
+  const metadata = body.metadata as Record<string, unknown> | undefined;
+  const tenantId = metadata?.tenant_id as string | undefined;
+  const callId = body.call_id as string | undefined;
+  if (tenantId && callId && durationSeconds > 0) {
+    const usage = await trackVoiceCall(tenantId, callId, durationSeconds).catch((err) => {
+      console.error('[retell-webhook] trackVoiceCall failed:', err);
+      return null;
+    });
+
+    // Alerta al dueño si cruza umbral (default 80%) o ya está en overage.
+    if (usage && (usage.percentUsed >= VOICE_ALERT_THRESHOLD_PERCENT || usage.isOverage)) {
+      const { data: tenant } = await supabaseAdmin
+        .from('tenants')
+        .select('wa_phone_number_id, phone, name')
+        .eq('id', tenantId)
+        .maybeSingle();
+
+      if (tenant?.wa_phone_number_id && tenant?.phone) {
+        try {
+          if (usage.isOverage) {
+            const extraMin = Math.ceil(usage.overage);
+            const extraCost = extraMin * VOICE_OVERAGE_PRICE_MXN;
+            await sendTextMessage(
+              tenant.wa_phone_number_id as string,
+              tenant.phone as string,
+              `📊 *useatiende.ai — Minutos adicionales activos*\n` +
+              `Ha superado los ${usage.included} minutos incluidos.\n` +
+              `Minutos extra este mes: ${extraMin}\n` +
+              `Costo adicional: $${extraCost} MXN\n` +
+              `Se cargará automáticamente al final del mes.`,
+            );
+          } else {
+            await sendTextMessage(
+              tenant.wa_phone_number_id as string,
+              tenant.phone as string,
+              `⚠️ *useatiende.ai — Aviso de uso de voz*\n` +
+              `Ha usado el ${usage.percentUsed}% de sus minutos.\n` +
+              `Le quedan ${usage.remaining} minutos incluidos.\n` +
+              `Minutos extra: $${VOICE_OVERAGE_PRICE_MXN} MXN c/u.`,
+            );
+          }
+        } catch (err) {
+          console.warn('[retell-webhook] owner alert failed:', err instanceof Error ? err.message : err);
+        }
+      }
+    }
+  }
 
   // Transcript completo
   if (body.transcript) {
