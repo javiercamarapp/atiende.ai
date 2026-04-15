@@ -433,7 +433,7 @@ export async function generateWithTools(opts: {
   model: string;
   system: string;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
-  tools: OpenAI.Chat.ChatCompletionTool[];
+  tools: OpenAI.Chat.ChatCompletionTool[] | undefined;
   toolExecutor: ToolExecutorCallback;
   tool_choice?: 'auto' | 'none' | 'required';
   maxTokens?: number;
@@ -488,8 +488,8 @@ export async function generateWithTools(opts: {
       {
         model: opts.model,
         messages: conversation,
-        tools: opts.tools.length > 0 ? opts.tools : undefined,
-        tool_choice: opts.tools.length > 0 ? (opts.tool_choice ?? 'auto') : undefined,
+        tools: (opts.tools && opts.tools.length > 0) ? opts.tools : undefined,
+        tool_choice: (opts.tools && opts.tools.length > 0) ? (opts.tool_choice ?? 'auto') : undefined,
         max_tokens: opts.maxTokens || 800,
         temperature: opts.temperature ?? 0.5,
       },

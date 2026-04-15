@@ -281,9 +281,13 @@ export async function runOrchestrator(
           model: MODELS.ORCHESTRATOR_FALLBACK,
           system: fallbackSystemPrompt,
           messages: ctx.messages,
-          // Si ya hubo mutación, NO pasamos tools al fallback — solo debe
-          // generar el texto final. Esto hace IMPOSIBLE re-ejecutar.
-          tools: successfulMutations.length > 0 ? [] : ctx.tools,
+          // AUDIT-R10 CRÍT: si pasamos `[]` algunos providers (OpenAI 400
+          // "tools array too short"). OpenRouter se comporta distinto según
+          // el modelo destino. Safest: omitir la propiedad via `undefined`.
+          // openrouter.ts:491 también normaliza `[]` → undefined pero mejor
+          // aquí por claridad y porque tools:undefined + tool_choice:'none'
+          // deja al SDK completamente sin noción de tools.
+          tools: successfulMutations.length > 0 ? undefined : ctx.tools,
           toolExecutor,
           tool_choice: successfulMutations.length > 0 ? 'none' : 'auto',
           maxTokens: ctx.tools.length > 0 ? 2000 : 800,
