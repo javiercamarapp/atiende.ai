@@ -440,6 +440,13 @@ export async function generateWithTools(opts: {
     ...opts.messages,
   ];
 
+  // TC-2/TC-8: dedup CROSS-ROUND para tools de lectura (get_/check_/list_).
+  // Los mutadores (book_/cancel_/modify_) NUNCA se deduplican: el LLM puede
+  // re-ejecutar legítimamente con args corregidos.
+  const READ_PREFIXES = ['get_', 'check_', 'list_', 'find_', 'search_'];
+  const isReadOnly = (name: string) => READ_PREFIXES.some((p) => name.startsWith(p));
+  const crossRoundCache = new Map<string, { success: boolean; result: unknown; error?: string; durationMs: number }>();
+
   for (let round = 0; round < maxRounds; round++) {
     const response = await client.chat.completions.create({
       model: opts.model,
@@ -531,6 +538,29 @@ export async function generateWithTools(opts: {
 
         // Dedup key: name + args ordenados
         const dedupKey = `${call.function.name}:${JSON.stringify(parsedArgs)}`;
+
+        // 1) Cross-round dedup para read-only tools — evita N consultas
+        //    idénticas al check_availability cuando el LLM "olvida" lo que
+        //    ya preguntó.
+        if (isReadOnly(call.function.name) && crossRoundCache.has(dedupKey)) {
+          const cached = crossRoundCache.get(dedupKey)!;
+          console.warn(`[tool-dedup] cross-round cache hit for ${call.function.name}`);
+          toolCallsExecuted.push({
+            toolName: call.function.name,
+            args: parsedArgs,
+            result: cached.result,
+            durationMs: cached.durationMs,
+            error: cached.error,
+          });
+          return {
+            role: 'tool' as const,
+            tool_call_id: call.id,
+            content: JSON.stringify(cached.success ? cached.result : { error: cached.error }),
+          };
+        }
+
+        // 2) In-round dedup (todas las tools, incluido mutaciones — evita
+        //    doble-INSERT por una alucinación instantánea del LLM).
         let execPromise = dedupCache.get(dedupKey) as
           | Promise<{ success: boolean; result: unknown; error?: string; durationMs: number }>
           | undefined;
@@ -541,6 +571,9 @@ export async function generateWithTools(opts: {
           console.warn(`[tool-dedup] Reusing result for ${call.function.name}`);
         }
         const exec = await execPromise;
+        if (isReadOnly(call.function.name)) {
+          crossRoundCache.set(dedupKey, exec);
+        }
         toolCallsExecuted.push({
           toolName: call.function.name,
           args: parsedArgs,

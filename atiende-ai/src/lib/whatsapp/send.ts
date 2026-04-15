@@ -61,7 +61,31 @@ export async function sendTextMessage(
     );
     return { ok: true };
   } catch (err) {
-    return inspectAxiosError(err, 'sendTextMessage');
+    const result = inspectAxiosError(err, 'sendTextMessage');
+    // WA-1: persistir el último error de envío en contacts para que el dueño
+    // del consultorio pueda ver desde el dashboard qué pacientes ya no son
+    // contactables (bloquearon el WhatsApp business, número inválido, etc.)
+    if (!result.ok && result.errorCode) {
+      void persistContactSendError(to, result.errorCode, result.errorLabel || 'unknown');
+    }
+    return result;
+  }
+}
+
+async function persistContactSendError(
+  phone: string, errorCode: number, errorLabel: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('contacts')
+      .update({
+        last_send_error_code: errorCode,
+        last_send_error_label: errorLabel,
+        last_send_error_at: new Date().toISOString(),
+      })
+      .eq('phone', phone);
+  } catch {
+    /* best effort — no romper el flujo si la columna no existe */
   }
 }
 
