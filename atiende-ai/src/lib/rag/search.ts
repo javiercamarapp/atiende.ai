@@ -17,13 +17,37 @@ export async function searchKnowledge(
   });
   const queryEmbedding = embResponse.data[0].embedding;
 
-  // 2. Buscar chunks mas relevantes de ESE negocio
-  const { data, error } = await supabaseAdmin.rpc('search_knowledge', {
+  // 2. Hybrid search (pgvector + tsvector con RRF) — AUDIT R13 rubro AI/ML.
+  // Mejor recall para queries cortas en español ("cita muela" matchea
+  // "extracción dental" vía vector Y "muela" vía tsvector).
+  // Fallback automático a search_knowledge legacy si el RPC no existe
+  // (tenant sin la migración hybrid_search.sql aplicada).
+  type ChunkRow = { content: string; category: string; similarity: number };
+  let data: ChunkRow[] | null = null;
+  let error: { message: string } | null = null;
+
+  const hybrid = await supabaseAdmin.rpc('search_knowledge_hybrid', {
     p_tenant: tenantId,
     p_query: queryEmbedding,
-    p_threshold: 0.35, // minimo de similitud
-    p_limit: 5,        // max chunks a devolver
+    p_query_text: query,
+    p_threshold: 0.30,
+    p_limit: 5,
   });
+
+  const hybridData = hybrid.data as ChunkRow[] | null;
+  if (!hybrid.error && hybridData && hybridData.length > 0) {
+    data = hybridData;
+  } else {
+    // Fallback: vector-only legacy
+    const legacy = await supabaseAdmin.rpc('search_knowledge', {
+      p_tenant: tenantId,
+      p_query: queryEmbedding,
+      p_threshold: 0.35,
+      p_limit: 5,
+    });
+    data = legacy.data as ChunkRow[] | null;
+    error = legacy.error;
+  }
 
   if (error || !data || data.length === 0) {
     return 'No hay informacion especifica disponible para esta consulta.';
