@@ -39,7 +39,11 @@ function makeRequest(body: unknown): Request {
 const defaultAgentResult = {
   vertical: 'dental' as const,
   updatedFields: {},
-  assistantMessages: ['ok'],
+  // AUDIT R15: messages must include `?` o `¿` para evitar el "dead-end
+  // recovery" que inyecta la siguiente pregunta pendiente automáticamente
+  // (feature legítimo del route). Tests afectados usan un default con
+  // question mark para simular un turno bien formado del LLM.
+  assistantMessages: ['ok, ¿en qué más le puedo ayudar?'],
   done: false,
   clarificationOf: null,
   cost: 0.0001,
@@ -83,7 +87,7 @@ describe('POST /api/onboarding/chat', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.vertical).toBe('dental');
-    expect(json.assistantMessages).toEqual(['ok']);
+    expect(json.assistantMessages).toEqual(['ok, ¿en qué más le puedo ayudar?']);
     expect(json.done).toBe(false);
   });
 
@@ -293,7 +297,10 @@ describe('POST /api/onboarding/chat', () => {
       vertical: 'dental',
       assistantMessages: [
         'mensaje 1 del agente',
-        'mensaje 2 del agente',
+        // AUDIT R15: msg2 debe incluir `?` porque tras slice(0,3) se vuelve
+        // el último visible (msg3 se descarta) y sin `?` dispararía el
+        // "dead-end recovery" del route que inyecta una pregunta extra.
+        'mensaje 2 del agente ¿ok?',
         'mensaje 3 del agente', // would overflow with insight prepended
       ],
     });
@@ -311,7 +318,7 @@ describe('POST /api/onboarding/chat', () => {
     // Insight is first, then first 2 agent msgs
     expect(json.assistantMessages[0]).toContain('dentales');
     expect(json.assistantMessages[1]).toBe('mensaje 1 del agente');
-    expect(json.assistantMessages[2]).toBe('mensaje 2 del agente');
+    expect(json.assistantMessages[2]).toBe('mensaje 2 del agente ¿ok?');
   });
 
   it('passes incoming history into agent', async () => {
