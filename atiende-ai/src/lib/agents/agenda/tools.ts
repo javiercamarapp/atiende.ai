@@ -101,7 +101,29 @@ async function findNextAvailableDate(opts: {
   durationMinutes: number;
   staffList: StaffSlim[];
 }): Promise<string | null> {
+  // PERF-2: 1 query batch trayendo TODAS las citas del rango (14 días) en vez
+  // de hacer (14 días) × (N staff) queries individuales. Con 5 staff ahorra
+  // 70 round-trips a Supabase y el TOOL_TIMEOUT_MS = 4_000 ya no se agota.
   const start = new Date(opts.startDate + 'T00:00:00Z');
+  const rangeStart = new Date(start.getTime() + 86_400_000).toISOString();
+  const rangeEnd = new Date(start.getTime() + 15 * 86_400_000).toISOString();
+
+  const { data: bookings } = await supabaseAdmin
+    .from('appointments')
+    .select('staff_id, datetime, end_datetime')
+    .eq('tenant_id', opts.tenantId)
+    .in('status', ['scheduled', 'confirmed'])
+    .gte('datetime', rangeStart)
+    .lt('datetime', rangeEnd);
+
+  // Index local: staffId → array de [startMs, endMs]
+  const idx = new Map<string, Array<[number, number]>>();
+  for (const b of (bookings || []) as Array<{ staff_id: string; datetime: string; end_datetime: string }>) {
+    const arr = idx.get(b.staff_id) || [];
+    arr.push([new Date(b.datetime).getTime(), new Date(b.end_datetime).getTime()]);
+    idx.set(b.staff_id, arr);
+  }
+
   for (let i = 1; i <= 14; i++) {
     const d = new Date(start.getTime() + i * 86_400_000);
     const iso = d.toISOString().slice(0, 10);
@@ -109,25 +131,16 @@ async function findNextAvailableDate(opts: {
     const win = parseHoursWindow(opts.businessHours[dayKey]);
     if (!win) continue;
 
-    // Sondeo barato: 1 slot al open + duración; si no hay conflicto para algún
-    // staff → esa fecha tiene al menos 1 hueco.
     const firstOpen = `${String(Math.floor(win.openMin / 60)).padStart(2, '0')}:${String(win.openMin % 60).padStart(2, '0')}`;
     const dtIso = buildLocalIso(iso, firstOpen, opts.timezone);
-    const endIso = new Date(
-      new Date(dtIso).getTime() + opts.durationMinutes * 60_000,
-    ).toISOString();
+    const slotStart = new Date(dtIso).getTime();
+    const slotEnd = slotStart + opts.durationMinutes * 60_000;
 
-    // ¿Hay al menos un staff libre en ese primer slot?
+    // ¿Hay al menos un staff libre en ese primer slot? (in-memory check)
     for (const staff of opts.staffList) {
-      const { count } = await supabaseAdmin
-        .from('appointments')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', opts.tenantId)
-        .eq('staff_id', staff.id)
-        .in('status', ['scheduled', 'confirmed'])
-        .lt('datetime', endIso)
-        .gt('end_datetime', dtIso);
-      if ((count ?? 0) === 0) return iso;
+      const conflicts = idx.get(staff.id) || [];
+      const hasConflict = conflicts.some(([s, e]) => s < slotEnd && e > slotStart);
+      if (!hasConflict) return iso;
     }
   }
   return null;
@@ -470,6 +483,18 @@ registerTool('book_appointment', {
       args.service_type,
     );
 
+    // FIX 7: rechaza servicios mal configurados (precio ≤ 0). Cobrar $0 sin
+    // intención del owner es peor que pedirle que corrija el catálogo —
+    // silenciar el bug llevaría a citas gratis indebidas.
+    if (matchedService && (matchedService.price === null || matchedService.price === undefined || Number(matchedService.price) <= 0)) {
+      return {
+        success: false,
+        error_code: 'SERVICE_PRICE_INVALID',
+        message:
+          'Ese servicio no tiene precio configurado. Por favor pídale al consultorio que actualice el catálogo antes de agendar.',
+      };
+    }
+
     const duration = matchedService?.duration_minutes
       || staffMember.default_duration
       || 30;
@@ -721,13 +746,23 @@ registerTool('get_my_appointments', {
 // ─── Tool 4: modify_appointment ──────────────────────────────────────────────
 const ModifyArgs = z
   .object({
-    appointment_id: z.string().uuid(),
-    patient_phone: z.string().min(6).max(20),
+    appointment_id: z
+      .string()
+      .optional()
+      .refine((val) => !val || UUID_RE.test(val), {
+        message:
+          'appointment_id debe ser UUID. Para códigos cortos como ABC12345 usa el campo confirmation_code.',
+      }),
+    confirmation_code: z.string().regex(/^[A-Z0-9]{6,10}$/).optional(),
+    patient_phone: z.string().min(6).max(20).optional(),
     new_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     new_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
     reason: z.string().max(500).optional(),
   })
   .strict()
+  .refine((d) => d.appointment_id || d.confirmation_code, {
+    message: 'Provee appointment_id o confirmation_code.',
+  })
   .refine((d) => d.new_date || d.new_time, {
     message: 'Debes proveer new_date o new_time (o ambos).',
   });
@@ -742,13 +777,14 @@ registerTool('modify_appointment', {
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string', description: 'UUID de la cita.' },
-          patient_phone: { type: 'string', description: 'Número WhatsApp del paciente.' },
+          appointment_id: { type: 'string', description: 'UUID de la cita (opcional si se da confirmation_code).' },
+          confirmation_code: { type: 'string', description: 'Código corto (6-10 alfanumérico) — opcional si se da appointment_id.' },
+          patient_phone: { type: 'string', description: 'IGNORADO — el sistema usa el WhatsApp autenticado del sender.' },
           new_date: { type: 'string', description: 'YYYY-MM-DD — opcional si solo cambia la hora.' },
           new_time: { type: 'string', description: 'HH:MM (24h) — opcional si solo cambia el día.' },
           reason: { type: 'string', description: 'Opcional: motivo del cambio.' },
         },
-        required: ['appointment_id', 'patient_phone'],
+        required: [],
         additionalProperties: false,
       },
     },
@@ -771,13 +807,34 @@ registerTool('modify_appointment', {
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
+    // Resolver appointment_id desde confirmation_code si es necesario.
+    let resolvedId = args.appointment_id;
+    if (!resolvedId && args.confirmation_code) {
+      const { data: byCode } = await supabaseAdmin
+        .from('appointments')
+        .select('id')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('customer_phone', ownerPhone)
+        .eq('confirmation_code', args.confirmation_code.toUpperCase())
+        .gt('datetime', new Date().toISOString())
+        .maybeSingle();
+      if (!byCode) {
+        return {
+          success: false,
+          error_code: 'NOT_FOUND',
+          message: 'No encontré ninguna cita futura con ese código a su nombre.',
+        };
+      }
+      resolvedId = byCode.id as string;
+    }
+
     // 1. SELECT scoped por (id, tenant_id, customer_phone del SENDER REAL)
     const { data: apt, error: readErr } = await supabaseAdmin
       .from('appointments')
       .select(
         'id, staff_id, datetime, end_datetime, duration_minutes, status, google_event_id, notes',
       )
-      .eq('id', args.appointment_id)
+      .eq('id', resolvedId!)
       .eq('tenant_id', ctx.tenantId)
       .eq('customer_phone', ownerPhone)
       .single();
@@ -919,7 +976,7 @@ registerTool('modify_appointment', {
       await notifyOwner({
         tenantId: ctx.tenantId,
         event: 'new_appointment', // reuse closest existing event
-        details: `Reagendamiento: ${args.patient_phone}\nAntes: ${oldDateFmt} ${oldTimeFmt}\nAhora: ${newDateFmt} ${newTimeFmt}${args.reason ? `\nMotivo: ${args.reason}` : ''}`,
+        details: `Reagendamiento: ${ownerPhone}\nAntes: ${oldDateFmt} ${oldTimeFmt}\nAhora: ${newDateFmt} ${newTimeFmt}${args.reason ? `\nMotivo: ${args.reason}` : ''}`,
       });
     } catch {
       /* best effort */
@@ -941,13 +998,28 @@ registerTool('modify_appointment', {
 });
 
 // ─── Tool 5: cancel_appointment ──────────────────────────────────────────────
+// FIX 5 (audit Round 2): si el LLM mete un código corto en `appointment_id`
+// (UUID), Zod fallaba con un mensaje genérico y el LLM podía reintentar
+// con el mismo error en bucle. Ahora lo redirige explícitamente a usar
+// `confirmation_code` en el mensaje de error.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CancelArgs = z
   .object({
-    appointment_id: z.string().uuid(),
-    patient_phone: z.string().min(6).max(20),
+    appointment_id: z
+      .string()
+      .optional()
+      .refine((val) => !val || UUID_RE.test(val), {
+        message:
+          'appointment_id debe ser UUID. Para códigos cortos como ABC12345 usa el campo confirmation_code.',
+      }),
+    confirmation_code: z.string().regex(/^[A-Z0-9]{6,10}$/).optional(),
+    patient_phone: z.string().min(6).max(20).optional(),
     reason: z.string().min(1).max(500).optional(),
   })
-  .strict();
+  .strict()
+  .refine((d) => d.appointment_id || d.confirmation_code, {
+    message: 'Provee appointment_id o confirmation_code.',
+  });
 
 registerTool('cancel_appointment', {
   schema: {
@@ -975,13 +1047,34 @@ registerTool('cancel_appointment', {
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
+    // Si dieron confirmation_code, resolver el appointment_id real
+    let resolvedId = args.appointment_id;
+    if (!resolvedId && args.confirmation_code) {
+      const { data: byCode } = await supabaseAdmin
+        .from('appointments')
+        .select('id')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('customer_phone', ownerPhone)
+        .eq('confirmation_code', args.confirmation_code.toUpperCase())
+        .gt('datetime', new Date().toISOString())
+        .maybeSingle();
+      if (!byCode) {
+        return {
+          success: false,
+          error_code: 'NOT_FOUND',
+          message: 'No encontré ninguna cita futura con ese código a su nombre.',
+        };
+      }
+      resolvedId = byCode.id as string;
+    }
+
     // 1. Verificar existencia + ownership + futura — un solo query scoped por
     //    tenantId + customer_phone para que el LLM no pueda cancelar una cita
     //    de otro paciente inyectándole un appointment_id arbitrario.
     const { data: apt, error: readErr } = await supabaseAdmin
       .from('appointments')
       .select('id, datetime, status, google_event_id, customer_phone')
-      .eq('id', args.appointment_id)
+      .eq('id', resolvedId!)
       .eq('tenant_id', ctx.tenantId)
       .eq('customer_phone', ownerPhone)
       .single();

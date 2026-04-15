@@ -167,6 +167,7 @@ vi.mock('@/lib/voice/deepgram', () => ({
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: mockCheckRateLimit,
   checkTenantLimit: mockCheckTenantLimit,
+  checkTenantRateLimit: mockCheckTenantLimit,
 }));
 
 import { processIncomingMessage } from '../processor';

@@ -185,3 +185,29 @@ export function routeToAgent(message: string, _ctx: TenantContext): FastRoute {
 
 // Re-export del FAQ handler para que processor lo importe del barrel.
 export { handleFAQ } from './faq';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// initializeAllAgents — verifica que todos los side-effect imports realmente
+// hayan registrado sus tools. Llamar al boot del proceso (top-level del
+// processor.ts) garantiza que cualquier error de carga de módulo crashea
+// fail-fast en lugar de manifestarse como tool 'not registered' al primer
+// mensaje real.
+// ─────────────────────────────────────────────────────────────────────────────
+import { listRegisteredTools } from '@/lib/llm/tool-executor';
+
+export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: string[] } {
+  const registered = listRegisteredTools();
+  // Tools mínimas que DEBEN existir si los side-effect imports cargaron OK.
+  const required = [
+    'check_availability',
+    'book_appointment',
+    'get_my_appointments',
+    'modify_appointment',
+    'cancel_appointment',
+  ];
+  const missing = required.filter((n) => !registered.includes(n));
+  if (missing.length > 0) {
+    console.error('[agents] CRITICAL: missing required tools after init:', missing);
+  }
+  return { ok: missing.length === 0, tools: registered, missing };
+}

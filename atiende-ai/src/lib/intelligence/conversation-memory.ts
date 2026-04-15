@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { decryptPII } from '@/lib/utils/crypto';
 
 // ═══════════════════════════════════════════════════════════
 // MULTI-TURN CONVERSATION MEMORY
@@ -39,11 +40,13 @@ export async function getConversationContext(
 
   if (!messages?.length) return [];
 
+  // PRIV-2: el content puede venir cifrado con prefijo `v1:` — decryptPII
+  // detecta el prefijo y descifra; si no, devuelve el texto plano legacy.
   return messages
     .filter((m: { direction: string; content: string | null }) => m.content)
     .map((m: { direction: string; content: string | null }) => ({
       role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
-      content: m.content!,
+      content: decryptPII(m.content)!,
     }));
 }
 

@@ -8,7 +8,8 @@
 
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { sendTextMessage } from '@/lib/whatsapp/send';
+import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
+void sendTextMessage;
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
 // ─── Tool 1: get_appointment_details ─────────────────────────────────────────
@@ -111,7 +112,10 @@ registerTool('send_post_visit_instructions', {
     const text = lines.join('\n');
 
     try {
-      await sendTextMessage(phoneNumberId, args.patient_phone, text);
+      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      if (!r.ok && r.windowExpired) {
+        return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
+      }
     } catch (err) {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -201,7 +205,10 @@ registerTool('request_payment_if_pending', {
 
     const text = `Le recordamos amablemente que tiene un saldo pendiente de $${args.amount_due} MXN por su consulta. Si ya realizó el pago, ignore este mensaje. Para cualquier duda estamos a sus órdenes 🙏`;
     try {
-      await sendTextMessage(phoneNumberId, args.patient_phone, text);
+      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      if (!r.ok && r.windowExpired) {
+        return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
+      }
     } catch (err) {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }
