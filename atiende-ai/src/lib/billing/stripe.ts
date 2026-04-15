@@ -12,23 +12,114 @@ export function getStripe(): Stripe {
   return _stripe;
 }
 
-const PLAN_PRICES: Record<string,string> = {
-  basic:'price_basic_499_mxn', pro:'price_pro_999_mxn', premium:'price_premium_1499_mxn',
+// Stripe price IDs por plan.
+// PREFERIDO: leer de env vars (STRIPE_PRICE_BASIC, STRIPE_PRICE_PREMIUM)
+// para poder rotar precios sin redeployar. Fallback legacy a los placeholders
+// originales para que los tests/dev sigan funcionando.
+//
+// Planes actuales (2026-04):
+//   - basic   ($599 MXN)   WhatsApp Básico, sin voz
+//   - pro     ($999 MXN)   Legacy — mantener solo para tenants existentes
+//   - premium ($1,499 MXN) WhatsApp + Voz con 200 min incluidos + $5 MXN/min overage
+const PLAN_PRICES: Record<string, string> = {
+  basic: process.env.STRIPE_PRICE_BASIC || 'price_basic_599_mxn',
+  pro: process.env.STRIPE_PRICE_PRO || 'price_pro_999_mxn',
+  premium: process.env.STRIPE_PRICE_PREMIUM || 'price_premium_1499_mxn',
 };
 
-export async function createCheckoutSession(tenantId:string, email:string, plan:string) {
+// Price metered para minutos de voz excedentes ($5 MXN/min, agregación SUM)
+const VOICE_OVERAGE_PRICE_ID = process.env.STRIPE_VOICE_OVERAGE_PRICE_ID ?? '';
+
+export async function createCheckoutSession(tenantId: string, email: string, plan: string) {
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+    { price: PLAN_PRICES[plan], quantity: 1 },
+  ];
+  // Premium incluye el item metered de voice overage (cantidad 0 al inicio —
+  // Stripe agrega los usageRecords reportados por el cron mensual).
+  if (plan === 'premium' && VOICE_OVERAGE_PRICE_ID) {
+    lineItems.push({ price: VOICE_OVERAGE_PRICE_ID });
+  }
+
   return getStripe().checkout.sessions.create({
-    customer_email:email, mode:'subscription',
-    line_items:[{price:PLAN_PRICES[plan],quantity:1}],
-    success_url:`${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?success=true`,
-    cancel_url:`${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?cancelled=true`,
-    metadata:{tenant_id:tenantId,plan}, currency:'mxn', allow_promotion_codes:true,
+    customer_email: email,
+    mode: 'subscription',
+    line_items: lineItems,
+    success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?success=true`,
+    cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?cancelled=true`,
+    metadata: { tenant_id: tenantId, plan },
+    currency: 'mxn',
+    allow_promotion_codes: true,
   });
 }
 
-export async function createPortalSession(customerId:string) {
+export async function createPortalSession(customerId: string) {
   return getStripe().billingPortal.sessions.create({
-    customer:customerId,
-    return_url:`${process.env.NEXT_PUBLIC_APP_URL}/settings/billing`,
+    customer: customerId,
+    return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing`,
   });
+}
+
+/**
+ * Reporta los minutos de overage de voz a Stripe como usage record.
+ *
+ * Se usa desde el cron mensual (src/app/api/cron/billing-overage/route.ts)
+ * el primer día del mes para cerrar el ciclo del mes anterior.
+ *
+ * Stripe agrega los usageRecords al item metered; al generarse la factura
+ * del siguiente ciclo, el overage aparece como línea adicional:
+ *   "Minutos de Voz Adicionales × 47 = $235 MXN"
+ *
+ * action='set' (no 'increment') porque acumulamos nosotros en Postgres y
+ * Stripe solo necesita el total final — evita doble-conteo si el cron
+ * se ejecuta más de una vez.
+ */
+export async function reportVoiceOverageToStripe(
+  subscriptionItemId: string,
+  overageMinutes: number,
+): Promise<{ success: boolean; recordId?: string; error?: string }> {
+  if (!subscriptionItemId || overageMinutes <= 0) {
+    return { success: true };
+  }
+
+  try {
+    // Stripe SDK v21 movió createUsageRecord fuera del namespace tipado.
+    // Llamamos al endpoint REST directo (public, estable desde v2018) con el
+    // mismo API key. La firma oficial aún funciona — solo los tipos TS no la
+    // exponen.
+    //   POST /v1/subscription_items/{item}/usage_records
+    //   body: quantity, timestamp, action=set
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) return { success: false, error: 'STRIPE_SECRET_KEY missing' };
+
+    const params = new URLSearchParams({
+      quantity: String(Math.ceil(overageMinutes)),
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      action: 'set',
+    });
+
+    const res = await fetch(
+      `https://api.stripe.com/v1/subscription_items/${subscriptionItemId}/usage_records`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[stripe] reportVoiceOverageToStripe HTTP', res.status, text);
+      return { success: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+    }
+
+    const json = (await res.json()) as { id?: string };
+    return { success: true, recordId: json.id };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[stripe] reportVoiceOverageToStripe failed:', msg);
+    return { success: false, error: msg };
+  }
 }
