@@ -358,7 +358,16 @@ const BookArgs = z
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date debe ser YYYY-MM-DD'),
     time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time debe ser HH:MM 24h'),
     service_type: z.string().min(1).max(120),
-    patient_name: z.string().min(1).max(200),
+    // AUDIT-R6 BAJO: nombres mexicanos largos (ej. 5+ apellidos compuestos)
+    // pueden llegar a ~120 chars. Aceptamos hasta 300 como red de seguridad,
+    // pero TRUNCAMOS a 120 + limpiamos saltos de línea / spam de espacios
+    // antes de persistir. Así un LLM que pase "Nombre\n\n\n(...)" no rompe el
+    // catálogo de pacientes.
+    patient_name: z
+      .string()
+      .min(1)
+      .max(300)
+      .transform((s) => s.replace(/\s+/g, ' ').trim().slice(0, 120)),
     patient_phone: z.string().min(6).max(20),
     staff_id: z.string().uuid().optional(),
     notes: z.string().max(500).optional(),
