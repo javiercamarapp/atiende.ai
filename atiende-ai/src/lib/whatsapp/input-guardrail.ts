@@ -11,6 +11,8 @@
 // nunca es legítimo.
 // ═════════════════════════════════════════════════════════════════════════════
 
+import { MAX_USER_INPUT_CHARS_GUARDED } from '@/lib/config';
+
 const INJECTION_PATTERNS: RegExp[] = [
   // Español
   /ignora?\s+(todas?\s+)?(tus|sus|las)\s+(instrucciones|reglas|restricciones)/i,
@@ -38,6 +40,6 @@ export function sanitizeUserInput(content: string): string {
   // Remover caracteres de control excepto newline / CR / tab
   // eslint-disable-next-line no-control-regex
   clean = clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
-  // Truncar a 2000 chars máximo
-  return clean.substring(0, 2000);
+  // Truncar a MAX_USER_INPUT_CHARS_GUARDED máximo
+  return clean.substring(0, MAX_USER_INPUT_CHARS_GUARDED);
 }

@@ -1,0 +1,39 @@
+// ═════════════════════════════════════════════════════════════════════════════
+// CONFIG — constantes mágicas centralizadas.
+//
+// Esto evita que 4096, 8000, 40000, 25000 estén regados por el codebase.
+// Si necesitas ajustar un límite para un tenant especial o una promo, solo
+// cambias aquí.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── Input / sanitización ──────────────────────────────────────────────────
+export const MAX_USER_INPUT_CHARS = 4096;
+export const MAX_USER_INPUT_CHARS_GUARDED = 2000; // input-guardrail (más agresivo)
+
+// ─── History para LLM ──────────────────────────────────────────────────────
+export const HISTORY_MAX_MESSAGES = 40;
+export const HISTORY_MAX_CHARS = 40_000;
+export const HISTORY_KEEP_RECENT = 5;
+
+// ─── LLM orchestrator ──────────────────────────────────────────────────────
+export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 10_000;
+export const ORCHESTRATOR_FALLBACK_TIMEOUT_MS = 10_000;
+export const ORCHESTRATOR_MAX_TOOL_ROUNDS = 5;
+export const ORCHESTRATOR_MAX_TOKENS_WITH_TOOLS = 2000;
+export const ORCHESTRATOR_MAX_TOKENS_NO_TOOLS = 800;
+
+// ─── Tool executor ─────────────────────────────────────────────────────────
+export const TOOL_TIMEOUT_MS = 4_000;
+export const TOOL_RESULT_MAX_CHARS = 8_000;
+
+// ─── Multimedia ────────────────────────────────────────────────────────────
+export const EXTRACT_CONTENT_TIMEOUT_MS = 25_000; // Whisper + Gemini budget
+export const MEDIA_DOWNLOAD_TIMEOUT_MS = 15_000;
+export const MEDIA_DOWNLOAD_MAX_BYTES = 25 * 1024 * 1024; // 25MB
+
+// ─── Conversation lock ─────────────────────────────────────────────────────
+export const CONV_LOCK_TTL_SECONDS = 30;
+
+// ─── WhatsApp API ──────────────────────────────────────────────────────────
+export const WA_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const WA_SEND_TIMEOUT_MS = 10_000;
