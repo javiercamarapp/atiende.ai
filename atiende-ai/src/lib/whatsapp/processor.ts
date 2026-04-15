@@ -70,6 +70,33 @@ function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
 }
 
+// BUG 7 FIX: presupuesto de caracteres para el historial que mandamos al LLM.
+// Con 40 mensajes largos (audio + imágenes + PDFs transcritos) se puede
+// desbordar la ventana de Grok; cuando pasa, el modelo trunca el tool_call
+// a la mitad y falla el orquestador. Esta función conserva SIEMPRE los
+// últimos `keepRecent` turnos (contexto inmediato) y agrega más antiguos
+// mientras quepan en `maxChars`.
+function truncateHistoryByChars<T extends { content: string }>(
+  messages: T[],
+  maxChars: number,
+  keepRecent = 5,
+): T[] {
+  if (messages.length <= keepRecent) return messages;
+  const recent = messages.slice(-keepRecent);
+  const older = messages.slice(0, -keepRecent);
+  const recentChars = recent.reduce((s, m) => s + (m.content?.length || 0), 0);
+  let budget = maxChars - recentChars;
+  if (budget <= 0) return recent;
+  const kept: T[] = [];
+  for (let i = older.length - 1; i >= 0; i--) {
+    const len = older[i].content?.length || 0;
+    if (len > budget) break;
+    kept.unshift(older[i]);
+    budget -= len;
+  }
+  return [...kept, ...recent];
+}
+
 // SEC-1: Wrapper que aplica el guardrail anti-prompt-injection además de
 // la sanitización HTML. Usado al construir el mensaje para el LLM.
 import { guardUserInput } from '@/lib/guardrails/input-guard';
@@ -711,8 +738,21 @@ async function handleSingleMessageInner(
       }
       return;
     }
-    console.error('[processor] insert inbound message failed:', insertErr);
-    // No retornamos — mejor intentar responder al cliente que silencio total
+    // BUG 1 FIX: cualquier otro error (DB caída, timeout, RLS) NO debe
+    // continuar a LLM. Si persistimos la respuesta del bot pero no el
+    // mensaje inbound, el historial queda desincronizado para siempre.
+    // Abortamos la pipeline con aviso al paciente — Meta reintentará
+    // (somos idempotentes) y cuando la DB vuelva el mensaje se guardará.
+    console.error(
+      '[processor] CRITICAL inbound insert failed — aborting pipeline to preserve history integrity:',
+      insertErr,
+    );
+    await sendTextMessage(
+      phoneNumberId,
+      senderPhone,
+      'Tuvimos un problema técnico. Por favor intente de nuevo en un momento.',
+    ).catch(() => { /* best effort */ });
+    return;
   }
 
   // 8. Welcome message for new conversations
@@ -889,10 +929,14 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
 
   // ── FAST PATH 0: OPT-OUT (LFPDPPP compliance + WhatsApp policy) ─────────
-  // Si el paciente responde STOP/BAJA, marcar contacts.opted_out=true.
-  // Todos los crons (no-show, retention, etc.) filtran por opted_out=false.
-  const optOutRegex = /^\s*(stop|baja|cancelar\s+suscripci[óo]n|d(é|e)me\s+de\s+baja|no\s+me\s+manden(\s+m[áa]s)?(\s+mensajes?)?|unsuscribe)\s*[.!]?\s*$/i;
-  if (optOutRegex.test(content)) {
+  // Si el paciente responde STOP/BAJA (o frases equivalentes), marcar
+  // contacts.opted_out=true. Todos los crons filtran por opted_out=false.
+  // BUG 5 FIX: regex flexible con \b (no anclado a ^$) para aceptar
+  // "Quiero darme de baja por favor" o "Stop a estos mensajes". Guard de
+  // longitud <150 chars evita falsos positivos en mensajes largos que
+  // solo mencionan "baja" de pasada.
+  const optOutRegex = /\b(stop|baja|unsubscribe|unsuscribe|d[eé]me\s+de\s+baja|darme\s+de\s+baja|quiero\s+darme\s+de\s+baja|no\s+(quiero|m[áa]s)\s+(mensajes|notificaci[oó]n(es)?)|no\s+me\s+manden(\s+m[áa]s)?(\s+mensajes?)?|cancelar\s+(mi\s+)?(suscripci[oó]n|cuenta)|dejar\s+de\s+recibir|qu[ií]t[ae]me\s+de\s+(la\s+)?lista)\b/i;
+  if (optOutRegex.test(content) && content.length < 150) {
     if (contactId) {
       await supabaseAdmin
         .from('contacts')
@@ -914,8 +958,9 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     return;
   }
 
-  // ── FAST PATH 0.5: OPT-IN (reactivar) ───────────────────────────────────
-  if (/^\s*start\s*[.!]?\s*$/i.test(content) && contactId) {
+  // ── FAST PATH 0.5: OPT-IN (reactivar) — también fuzzy por consistencia.
+  const optInRegex = /\b(start|inicio|iniciar|alta|quiero\s+(recibir\s+)?mensajes|activar\s+(mis\s+)?(notificaci[oó]n(es)?|mensajes)|reactivar)\b/i;
+  if (optInRegex.test(content) && content.length < 150 && contactId) {
     await supabaseAdmin
       .from('contacts')
       .update({ opted_out: false, opted_out_at: null })
@@ -1064,8 +1109,14 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     // FAQ regex matchó pero handler retornó null (data missing) → cae al LLM
   }
 
-  // 4. Cargar historial conversacional (MT-1: 40 mensajes en vez de 20)
-  const history = await getConversationContext(conversationId, 40);
+  // 4. Cargar historial conversacional (MT-1: 40 mensajes en vez de 20).
+  // BUG 7 FIX: presupuesto de caracteres para evitar que un historial con
+  // audios transcritos + imágenes descritas + PDFs desborde la ventana de
+  // contexto de Grok y trunque el tool_call a mitad. Siempre preservamos
+  // los 5 últimos turnos (contexto inmediato) y agregamos más antiguos
+  // hasta llegar al presupuesto.
+  const rawHistory = await getConversationContext(conversationId, 40);
+  const history = truncateHistoryByChars(rawHistory, 40_000);
 
   // 5. Componer messages: history + último mensaje del usuario
   // SEC-1: aplicamos guardrail anti-prompt-injection al último mensaje;
