@@ -145,8 +145,11 @@ export async function runOrchestrator(
         tools: ctx.tools,
         toolExecutor,
         tool_choice: 'auto',
-        // Prompt + history pueden ser largos; damos margen al output.
-        maxTokens: 800,
+        // BUG 7 FIX: tool-calling requiere espacio para que el modelo emita
+        // el JSON del tool_call + razonamiento intermedio + respuesta final.
+        // Con 800 tokens Grok truncaba tool_calls en conversaciones con
+        // mucho historial. 2000 da margen y sigue siendo barato.
+        maxTokens: ctx.tools.length > 0 ? 2000 : 800,
         temperature: 0.5,
         maxToolRounds: 5,
       }),
