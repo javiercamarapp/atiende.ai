@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { logWebhook } from '@/lib/webhook-logger';
+import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 import { parseRappiOrder, parseUberEatsOrder, parseDidiOrder } from '@/lib/integrations/delivery';
 
 type DeliveryProvider = 'rappi' | 'uber_eats' | 'didi_food';
@@ -34,6 +34,10 @@ function verifyProviderAuth(req: NextRequest, provider: DeliveryProvider): boole
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   try {
+    // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+    const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'delivery', startTime);
+    if (!sizeCheck.ok) return sizeCheck.response;
+
     const provider = identifyProvider(req);
     if (!provider) {
       logWebhook({ provider: 'delivery', eventType: 'unknown_provider', statusCode: 400, error: 'Could not identify delivery provider', durationMs: Date.now() - startTime });
@@ -45,7 +49,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const payload = await req.json();
+    const rawText = await req.text();
+    const postRead = enforceWebhookSizePostRead(Buffer.byteLength(rawText, 'utf8'), WEBHOOK_MAX_BYTES, 'delivery', startTime);
+    if (!postRead.ok) return postRead.response;
+
+    const payload = JSON.parse(rawText);
 
     let order: ReturnType<typeof parseRappiOrder> | ReturnType<typeof parseUberEatsOrder> | ReturnType<typeof parseDidiOrder>;
     switch (provider) {

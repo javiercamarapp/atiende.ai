@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Redis } from '@upstash/redis';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { logWebhook } from '@/lib/webhook-logger';
+import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 import { trackVoiceCall } from '@/lib/billing/voice-tracker';
 import { sendTextMessageSafe } from '@/lib/whatsapp/send';
 import { VOICE_ALERT_THRESHOLD_PERCENT, VOICE_OVERAGE_PRICE_MXN } from '@/lib/config';
@@ -38,6 +38,10 @@ async function shouldSendAlert(tenantId: string, type: 'warning' | 'overage'): P
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
+  // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+  const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'retell', startTime);
+  if (!sizeCheck.ok) return sizeCheck.response;
+
   // Support both Bearer token (official Retell webhook signature) and legacy x-retell-api-key header
   const authHeader = req.headers.get('authorization');
   const legacyApiKey = req.headers.get('x-retell-api-key');
@@ -51,7 +55,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const rawText = await req.text();
+    const postRead = enforceWebhookSizePostRead(Buffer.byteLength(rawText, 'utf8'), WEBHOOK_MAX_BYTES, 'retell', startTime);
+    if (!postRead.ok) return postRead.response;
+
+    const body = JSON.parse(rawText);
     const event = body.event;
     const tenantId = body.metadata?.tenant_id;
 

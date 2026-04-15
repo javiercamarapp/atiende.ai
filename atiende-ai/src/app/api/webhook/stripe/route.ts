@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStripe } from '@/lib/billing/stripe';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { logWebhook } from '@/lib/webhook-logger';
+import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
+
+  // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+  const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'stripe', startTime);
+  if (!sizeCheck.ok) return sizeCheck.response;
+
   const body = await req.text();
+
+  const postRead = enforceWebhookSizePostRead(Buffer.byteLength(body, 'utf8'), WEBHOOK_MAX_BYTES, 'stripe', startTime);
+  if (!postRead.ok) return postRead.response;
   const sig = req.headers.get('stripe-signature')!;
   let event;
 
