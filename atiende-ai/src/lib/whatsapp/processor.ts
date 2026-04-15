@@ -44,7 +44,26 @@ import {
   releaseConversationLock,
 } from '@/lib/whatsapp/conversation-lock';
 import { maskPhone, redactHistoryForLLM } from '@/lib/utils/logger';
-import { encryptPII } from '@/lib/utils/crypto';
+import { encryptPII, assertEncryptionConfigured } from '@/lib/utils/crypto';
+
+// AUDIT-R5 MEDIO: fail-fast CHECK (lazy, se dispara en la primera request
+// real, NO en el build de Next). Una vez arrancado el pipeline, si la
+// assertion pasa una vez, no se vuelve a ejecutar. encryptPII() sigue
+// siendo resiliente por-llamada (nunca throws) para no matar waitUntil.
+let _encCheckDone = false;
+function ensureEncryptionAtRequestTime(): void {
+  if (_encCheckDone) return;
+  _encCheckDone = true;
+  try {
+    assertEncryptionConfigured();
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[processor] CRITICAL:', err instanceof Error ? err.message : err);
+      throw err;
+    }
+    console.warn('[processor]', err instanceof Error ? err.message : err);
+  }
+}
 import { detectPromptInjection, sanitizeUserInput } from '@/lib/whatsapp/input-guardrail';
 import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
@@ -66,8 +85,10 @@ function tenantHasToolCallingEnabled(tenant: Record<string, unknown>): boolean {
   return features?.tool_calling === true;
 }
 
+import { MAX_USER_INPUT_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MAX_CHARS, EXTRACT_CONTENT_TIMEOUT_MS } from '@/lib/config';
+
 function sanitizeInput(input: string): string {
-  return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
+  return input.replace(/<[^>]*>/g, '').trim().slice(0, MAX_USER_INPUT_CHARS);
 }
 
 // BUG 7 FIX: presupuesto de caracteres para el historial que mandamos al LLM.
@@ -76,11 +97,28 @@ function sanitizeInput(input: string): string {
 // a la mitad y falla el orquestador. Esta función conserva SIEMPRE los
 // últimos `keepRecent` turnos (contexto inmediato) y agrega más antiguos
 // mientras quepan en `maxChars`.
+//
+// AUDIT-R5 BAJO: también colapsa reacciones consecutivas (mismo emoji y/o
+// múltiples [Reacción ...] seguidos) en una sola entrada para no desperdiciar
+// tokens. Las reacciones son señal UX, no contexto semántico para el LLM.
 function truncateHistoryByChars<T extends { content: string }>(
   messages: T[],
   maxChars: number,
   keepRecent = 5,
 ): T[] {
+  // Paso 0: colapsar reacciones consecutivas.
+  const collapsed: T[] = [];
+  for (const m of messages) {
+    const isReaction = /^\[Reacci[oó]n\b/.test(m.content || '');
+    const prev = collapsed[collapsed.length - 1];
+    const prevIsReaction = prev && /^\[Reacci[oó]n\b/.test(prev.content || '');
+    if (isReaction && prevIsReaction) {
+      // ya tenemos una reacción previa — saltamos (colapsamos)
+      continue;
+    }
+    collapsed.push(m);
+  }
+  messages = collapsed;
   if (messages.length <= keepRecent) return messages;
   const recent = messages.slice(-keepRecent);
   const older = messages.slice(0, -keepRecent);
@@ -156,6 +194,7 @@ interface TenantRecord {
 }
 
 export async function processIncomingMessage(body: WhatsAppWebhookBody) {
+  ensureEncryptionAtRequestTime();
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value;
@@ -630,7 +669,35 @@ async function handleSingleMessageInner(
   }
 
   // 4. Extract content
-  const extracted = await extractContentAsync(msg, tenant.id);
+  // AUDIT-R5 ALTO: timeout global sobre extractContentAsync para evitar
+  // que Whisper/Gemini colgados bloqueen el waitUntil hasta que Vercel
+  // mate la función con 504. Si la extracción tarda >25s, fallback a
+  // un placeholder y seguimos adelante (mensaje ya está idempotente-checked
+  // y el inbound se persistirá; el LLM tratará el placeholder).
+  let extracted: ExtractedContent;
+  try {
+    extracted = await Promise.race([
+      extractContentAsync(msg, tenant.id),
+      new Promise<never>((_, rej) =>
+        setTimeout(
+          () => rej(new Error(`extractContentAsync timeout after ${EXTRACT_CONTENT_TIMEOUT_MS}ms`)),
+          EXTRACT_CONTENT_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+  } catch (err) {
+    console.warn('[processor] media extraction failed — using placeholder:', err instanceof Error ? err.message : err);
+    extracted = {
+      content: msg.type === 'audio' || msg.type === 'voice'
+        ? '[Audio que no pude procesar. ¿Puede escribirlo?]'
+        : msg.type === 'image'
+        ? '[Imagen que no pude analizar]'
+        : msg.type === 'document'
+        ? '[Documento que no pude leer]'
+        : `[${msg.type} no procesado]`,
+      messageType: msg.type,
+    };
+  }
   const { messageType, mediaTranscription, mediaDescription } = extracted;
   // FIX 2 (audit Round 2): sanitize + block prompt-injection ANTES del LLM.
   // Si el mensaje claramente intenta romper el system prompt, respondemos
@@ -1115,8 +1182,8 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   // contexto de Grok y trunque el tool_call a mitad. Siempre preservamos
   // los 5 últimos turnos (contexto inmediato) y agregamos más antiguos
   // hasta llegar al presupuesto.
-  const rawHistory = await getConversationContext(conversationId, 40);
-  const history = truncateHistoryByChars(rawHistory, 40_000);
+  const rawHistory = await getConversationContext(conversationId, HISTORY_MAX_MESSAGES);
+  const history = truncateHistoryByChars(rawHistory, HISTORY_MAX_CHARS);
 
   // 5. Componer messages: history + último mensaje del usuario
   // SEC-1: aplicamos guardrail anti-prompt-injection al último mensaje;
