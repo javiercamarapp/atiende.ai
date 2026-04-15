@@ -387,6 +387,27 @@ export class LoopGuardError extends Error {
 }
 
 /**
+ * AUDIT-R8 CRÍT (Bug 1 fallback ghost mutations):
+ * Wrapper que adjunta `toolCallsExecuted` parciales a CUALQUIER error que
+ * se lance desde el ciclo de generateWithTools. Sin esto, si el primario
+ * ejecutó una mutación (book_appointment, mark_no_show, etc.) y luego se
+ * colgó, el fallback no sabía qué se había hecho y reejecutaba.
+ */
+export class PartialExecutionError extends Error {
+  constructor(
+    message: string,
+    public readonly cause: unknown,
+    public readonly partialToolCalls: ToolCallRecord[],
+    public readonly partialTokensIn: number,
+    public readonly partialTokensOut: number,
+    public readonly partialModel: string,
+  ) {
+    super(message);
+    this.name = 'PartialExecutionError';
+  }
+}
+
+/**
  * Resultado de una corrida completa del ciclo de tool calling.
  */
 export interface GenerateWithToolsResult {
@@ -454,6 +475,11 @@ export async function generateWithTools(opts: {
   const isReadOnly = (name: string) => READ_PREFIXES.some((p) => name.startsWith(p));
   const crossRoundCache = new Map<string, { success: boolean; result: unknown; error?: string; durationMs: number }>();
 
+  // AUDIT-R8 CRÍT: try/catch externo para envolver CUALQUIER throw del loop
+  // (timeout HTTP, abort signal, error de OpenAI) con los toolCalls que ya
+  // se ejecutaron antes del crash. El orchestrator usa esto para evitar que
+  // el fallback re-ejecute mutaciones que el primario ya cometió.
+  try {
   for (let round = 0; round < maxRounds; round++) {
     // AUDIT-R7 ALTO: segundo arg `{ signal }` propaga AbortController al
     // fetch interno del SDK de OpenAI. Si el orchestrator.withTimeoutAbort
@@ -610,4 +636,18 @@ export async function generateWithTools(opts: {
   // Si llegamos aquí es porque el modelo siguió pidiendo tools sin emitir
   // texto final. Eso indica un loop — abortamos con error explícito.
   throw new LoopGuardError(maxRounds);
+  } catch (err) {
+    // AUDIT-R8 CRÍT: re-lanzamos como PartialExecutionError con el contexto
+    // de toolCalls ya ejecutados. El orchestrator puede inspeccionar
+    // partialToolCalls y NO re-ejecutar mutaciones en el fallback.
+    if (err instanceof PartialExecutionError) throw err; // ya wrappeado
+    throw new PartialExecutionError(
+      err instanceof Error ? err.message : String(err),
+      err,
+      toolCallsExecuted,
+      totalTokensIn,
+      totalTokensOut,
+      modelUsed,
+    );
+  }
 }

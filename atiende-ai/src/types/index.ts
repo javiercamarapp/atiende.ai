@@ -10,6 +10,9 @@ export interface Tenant {
   temperature: number; bot_name: string; timezone: string;
   business_hours: Record<string,string>; config: Record<string, unknown>;
   stripe_customer_id: string|null; conekta_customer_id: string|null;
+  // Voice billing (plan premium) — populados al checkout de premium o manual.
+  voice_minutes_included: number;            // 0 = sin voz, 200 = premium
+  stripe_subscription_item_voice_id: string|null;
   trial_ends_at: string|null; created_at: string;
 }
 

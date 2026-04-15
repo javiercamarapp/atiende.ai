@@ -55,7 +55,11 @@ export async function POST(req: NextRequest) {
     }
 
     const signature = req.headers.get('x-hub-signature-256');
-    const rawBody = await req.text();
+    // AUDIT-R8 CRÍT: req.text() puede re-codificar UTF-8 (emojis compuestos,
+    // acentos español) cambiando los bytes originales — el HMAC fallaría
+    // intermitentemente con mensajes que tengan ñ, á, é, emojis compuestos.
+    // Usamos arrayBuffer() para preservar bytes EXACTOS que firmó Meta.
+    const rawBuffer = Buffer.from(await req.arrayBuffer());
 
     if (!signature) {
       console.error('Missing x-hub-signature-256 header');
@@ -65,7 +69,7 @@ export async function POST(req: NextRequest) {
 
     const expectedSig = 'sha256=' + crypto
       .createHmac('sha256', process.env.WA_APP_SECRET)
-      .update(rawBody)
+      .update(rawBuffer)
       .digest('hex');
 
     // Length mismatch = guaranteed invalid; timingSafeEqual throws otherwise.
@@ -85,7 +89,10 @@ export async function POST(req: NextRequest) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    const body = JSON.parse(rawBody);
+    // Decodificamos el buffer a string UTF-8 para parseo JSON. Notar que
+    // este toString es POSTERIOR a la verificación HMAC, así que cualquier
+    // re-codificación interna no afecta la integridad criptográfica.
+    const body = JSON.parse(rawBuffer.toString('utf8'));
 
     // Extract event type from WhatsApp payload
     const entry = body?.entry?.[0];
@@ -150,8 +157,10 @@ export async function POST(req: NextRequest) {
     //   - Decouple total: webhook responde a Meta sin depender del LLM
     //   - Observabilidad: dashboard de QStash muestra errores/retries
     if (isQStashConfigured()) {
-      const origin = req.nextUrl.origin;
-      const workerUrl = `${origin}/api/worker/process-message`;
+      // AUDIT-R8 ALTO: misma URL base que el worker usa para verificar firma.
+      // Si difieren, QStash firma con base A pero el worker valida contra base B.
+      const baseUrl = process.env.WORKER_URL_BASE || req.nextUrl.origin;
+      const workerUrl = `${baseUrl}/api/worker/process-message`;
       const pub = await publishMessage(workerUrl, body);
       if (!pub.ok) {
         // Publicación falló — fallback a waitUntil para no perder el mensaje.
