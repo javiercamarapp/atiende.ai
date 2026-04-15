@@ -39,8 +39,11 @@ export const WA_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const WA_SEND_TIMEOUT_MS = 10_000;
 
 // ─── Voice billing (plan premium) ─────────────────────────────────────────
-/** Minutos de voz incluidos en el plan premium ($1,499 MXN/mes) */
-export const VOICE_MINUTES_INCLUDED_PREMIUM = 200;
+/** Minutos de voz incluidos en el plan premium ($1,499 MXN/mes).
+ *  Consumo promedio observado por consultorio: ~300 min/mes.
+ *  Costo real Retell: ~$0.07 USD/min = ~$1.40 MXN/min.
+ *  Costo incluido: 300 × $1.40 = $420 MXN → margen bruto 71% antes de overage. */
+export const VOICE_MINUTES_INCLUDED_PREMIUM = 300;
 /** Precio por minuto adicional (overage) en MXN */
 export const VOICE_OVERAGE_PRICE_MXN = 5;
 /** Umbral (%) para alertar al dueño vía WhatsApp antes del overage */

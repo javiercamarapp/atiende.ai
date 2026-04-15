@@ -20,7 +20,7 @@ export function getStripe(): Stripe {
 // Planes actuales (2026-04):
 //   - basic   ($599 MXN)   WhatsApp Básico, sin voz
 //   - pro     ($999 MXN)   Legacy — mantener solo para tenants existentes
-//   - premium ($1,499 MXN) WhatsApp + Voz con 200 min incluidos + $5 MXN/min overage
+//   - premium ($1,499 MXN) WhatsApp + Voz con 300 min incluidos + $5 MXN/min overage
 const PLAN_PRICES: Record<string, string> = {
   basic: process.env.STRIPE_PRICE_BASIC || 'price_basic_599_mxn',
   pro: process.env.STRIPE_PRICE_PRO || 'price_pro_999_mxn',

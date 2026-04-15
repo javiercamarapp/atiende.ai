@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
               (it) => it.price?.recurring?.usage_type === 'metered',
             );
             voicePatch = {
-              voice_minutes_included: 200,
+              voice_minutes_included: 300,
               stripe_subscription_item_voice_id: meteredItem?.id ?? null,
             };
             if (!meteredItem) {

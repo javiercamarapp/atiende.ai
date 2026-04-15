@@ -17,6 +17,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { VOICE_MINUTES_INCLUDED_PREMIUM } from '@/lib/config';
 
 export interface VoiceTrackResult {
   minutesUsed: number;        // minutos de ESTA llamada
@@ -39,11 +40,11 @@ export async function trackVoiceCall(
     return {
       minutesUsed: 0,
       totalThisMonth: 0,
-      included: 200,
+      included: VOICE_MINUTES_INCLUDED_PREMIUM,
       overage: 0,
       isOverage: false,
       percentUsed: 0,
-      remaining: 200,
+      remaining: VOICE_MINUTES_INCLUDED_PREMIUM,
     };
   }
 
