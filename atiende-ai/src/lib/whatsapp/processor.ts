@@ -990,6 +990,26 @@ async function handleSingleMessageInner(
     await incrementMonthlyMessages(tenant.id as string);
   } catch { /* no-op */ }
 
+  // AUDIT R13: métricas per-tenant para dashboard.
+  try {
+    const { emit, cost } = await import('@/lib/observability/metrics');
+    emit({
+      name: 'message.processed',
+      value: 1,
+      unit: 'count',
+      tenantId: tenant.id as string,
+      tags: { intent, model: response.model },
+    });
+    emit({
+      name: 'llm.latency',
+      value: response.responseTimeMs,
+      unit: 'ms',
+      tenantId: tenant.id as string,
+      tags: { model: response.model },
+    });
+    if (response.cost) cost(response.cost, tenant.id as string, response.model);
+  } catch { /* no-op */ }
+
   // 16. Update conversation timestamp
   await supabaseAdmin
     .from('conversations')
