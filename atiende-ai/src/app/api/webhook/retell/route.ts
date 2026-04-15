@@ -1,9 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Redis } from '@upstash/redis';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook } from '@/lib/webhook-logger';
 import { trackVoiceCall } from '@/lib/billing/voice-tracker';
-import { sendTextMessage } from '@/lib/whatsapp/send';
+import { sendTextMessageSafe } from '@/lib/whatsapp/send';
 import { VOICE_ALERT_THRESHOLD_PERCENT, VOICE_OVERAGE_PRICE_MXN } from '@/lib/config';
+
+// Redis para cooldown de alertas — fail-open si no está configurado.
+let _redis: Redis | null = null;
+function getRedis(): Redis | null {
+  if (_redis) return _redis;
+  const url = process.env.UPSTASH_REDIS_URL;
+  const token = process.env.UPSTASH_REDIS_TOKEN;
+  if (!url || !token) return null;
+  _redis = new Redis({ url, token });
+  return _redis;
+}
+
+/**
+ * AUDIT-R8 ALTO: cooldown anti-spam de alertas al dueño.
+ * Sin esto, un consultorio con 5 llamadas overage en 1h recibe 5 mensajes.
+ * TTL = 6h por tipo (warning vs overage). El owner recibe máximo 1 alerta
+ * de cada tipo cada 6h por mes.
+ */
+async function shouldSendAlert(tenantId: string, type: 'warning' | 'overage'): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return true; // fail-open en CI/dev
+  const key = `voice_alert:${type}:${tenantId}`;
+  try {
+    const result = await redis.set(key, '1', { nx: true, ex: 6 * 3600 });
+    return result === 'OK';
+  } catch {
+    return true; // fail-open si Redis falla
+  }
+}
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -98,31 +128,43 @@ async function handleCallEnded(body: Record<string, unknown>) {
         .maybeSingle();
 
       if (tenant?.wa_phone_number_id && tenant?.phone) {
-        try {
-          if (usage.isOverage) {
-            const extraMin = Math.ceil(usage.overage);
-            const extraCost = extraMin * VOICE_OVERAGE_PRICE_MXN;
-            await sendTextMessage(
+        const alertType: 'warning' | 'overage' = usage.isOverage ? 'overage' : 'warning';
+        const allowed = await shouldSendAlert(tenantId, alertType);
+        if (allowed) {
+          try {
+            const text = usage.isOverage
+              ? (() => {
+                  const extraMin = Math.ceil(usage.overage);
+                  const extraCost = extraMin * VOICE_OVERAGE_PRICE_MXN;
+                  return (
+                    `📊 *useatiende.ai — Minutos adicionales activos*\n` +
+                    `Ha superado los ${usage.included} minutos incluidos.\n` +
+                    `Minutos extra este mes: ${extraMin}\n` +
+                    `Costo adicional: $${extraCost} MXN\n` +
+                    `Se cargará automáticamente al final del mes.`
+                  );
+                })()
+              : (
+                  `⚠️ *useatiende.ai — Aviso de uso de voz*\n` +
+                  `Ha usado el ${usage.percentUsed}% de sus minutos.\n` +
+                  `Le quedan ${usage.remaining} minutos incluidos.\n` +
+                  `Minutos extra: $${VOICE_OVERAGE_PRICE_MXN} MXN c/u.`
+                );
+
+            // AUDIT-R8 ALTO: usar sendTextMessageSafe para respetar la
+            // ventana 24h de Meta. Si está cerrada, no rompe (solo no envía).
+            const r = await sendTextMessageSafe(
               tenant.wa_phone_number_id as string,
               tenant.phone as string,
-              `📊 *useatiende.ai — Minutos adicionales activos*\n` +
-              `Ha superado los ${usage.included} minutos incluidos.\n` +
-              `Minutos extra este mes: ${extraMin}\n` +
-              `Costo adicional: $${extraCost} MXN\n` +
-              `Se cargará automáticamente al final del mes.`,
+              text,
+              { tenantId },
             );
-          } else {
-            await sendTextMessage(
-              tenant.wa_phone_number_id as string,
-              tenant.phone as string,
-              `⚠️ *useatiende.ai — Aviso de uso de voz*\n` +
-              `Ha usado el ${usage.percentUsed}% de sus minutos.\n` +
-              `Le quedan ${usage.remaining} minutos incluidos.\n` +
-              `Minutos extra: $${VOICE_OVERAGE_PRICE_MXN} MXN c/u.`,
-            );
+            if (!r.ok && r.windowExpired) {
+              console.warn('[retell-webhook] alert skipped — 24h window closed for owner');
+            }
+          } catch (err) {
+            console.warn('[retell-webhook] owner alert failed:', err instanceof Error ? err.message : err);
           }
-        } catch (err) {
-          console.warn('[retell-webhook] owner alert failed:', err instanceof Error ? err.message : err);
         }
       }
     }

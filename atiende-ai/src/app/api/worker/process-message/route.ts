@@ -26,8 +26,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const signature = req.headers.get('upstash-signature');
   const rawBody = await req.text();
 
-  // Reconstruir la URL exacta que QStash firmó (incluye host)
-  const url = `${req.nextUrl.origin}${req.nextUrl.pathname}`;
+  // AUDIT-R8 ALTO: la firma QStash se hace contra la URL exacta que se
+  // pasó a publishMessage. Si Vercel cambia el host (preview vs prod), la
+  // firma falla. Usamos WORKER_URL_BASE env var como fuente de verdad.
+  // Fallback: req.nextUrl.origin para dev local sin env.
+  const baseUrl = process.env.WORKER_URL_BASE || req.nextUrl.origin;
+  const url = `${baseUrl}${req.nextUrl.pathname}`;
 
   const valid = await verifyQStashSignature(signature, rawBody, url);
   if (!valid) {

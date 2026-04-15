@@ -81,45 +81,64 @@ export async function reportVoiceOverageToStripe(
     return { success: true };
   }
 
-  try {
-    // Stripe SDK v21 movió createUsageRecord fuera del namespace tipado.
-    // Llamamos al endpoint REST directo (public, estable desde v2018) con el
-    // mismo API key. La firma oficial aún funciona — solo los tipos TS no la
-    // exponen.
-    //   POST /v1/subscription_items/{item}/usage_records
-    //   body: quantity, timestamp, action=set
-    const key = process.env.STRIPE_SECRET_KEY;
-    if (!key) return { success: false, error: 'STRIPE_SECRET_KEY missing' };
+  // AUDIT-R8 MEDIO: retry con backoff exponencial sobre 429 / 5xx.
+  // Stripe rate-limit es 100 r/s en write — improbable saturarlo, pero un
+  // 5xx transitorio del provider sin retry = pérdida del cobro del mes.
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return { success: false, error: 'STRIPE_SECRET_KEY missing' };
 
-    const params = new URLSearchParams({
-      quantity: String(Math.ceil(overageMinutes)),
-      timestamp: String(Math.floor(Date.now() / 1000)),
-      action: 'set',
-    });
+  const params = new URLSearchParams({
+    quantity: String(Math.ceil(overageMinutes)),
+    timestamp: String(Math.floor(Date.now() / 1000)),
+    action: 'set',
+  });
 
-    const res = await fetch(
-      `https://api.stripe.com/v1/subscription_items/${subscriptionItemId}/usage_records`,
-      {
+  const url = `https://api.stripe.com/v1/subscription_items/${subscriptionItemId}/usage_records`;
+  const maxAttempts = 4;
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/x-www-form-urlencoded',
+          // Idempotency key — Stripe deduplica internamente si reintentamos
+          // dentro de 24h con la misma key. Garantía contra doble-cobro.
+          'Idempotency-Key': `voice-overage:${subscriptionItemId}:${new Date().toISOString().substring(0, 7)}`,
         },
         body: params.toString(),
-      },
-    );
+      });
 
-    if (!res.ok) {
+      if (res.ok) {
+        const json = (await res.json()) as { id?: string };
+        return { success: true, recordId: json.id };
+      }
+
       const text = await res.text();
-      console.error('[stripe] reportVoiceOverageToStripe HTTP', res.status, text);
-      return { success: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
-    }
+      lastError = `HTTP ${res.status}: ${text.slice(0, 200)}`;
 
-    const json = (await res.json()) as { id?: string };
-    return { success: true, recordId: json.id };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[stripe] reportVoiceOverageToStripe failed:', msg);
-    return { success: false, error: msg };
+      // 4xx (excepto 429) son errores permanentes — no reintentamos.
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+        console.error('[stripe] reportVoiceOverageToStripe permanent error:', lastError);
+        return { success: false, error: lastError };
+      }
+
+      // 429 / 5xx → backoff exponencial (1s, 2s, 4s)
+      if (attempt < maxAttempts) {
+        const waitMs = Math.pow(2, attempt - 1) * 1000;
+        console.warn(`[stripe] retry ${attempt}/${maxAttempts} after ${waitMs}ms (${lastError})`);
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, Math.pow(2, attempt - 1) * 1000));
+      }
+    }
   }
+
+  console.error('[stripe] reportVoiceOverageToStripe exhausted retries:', lastError);
+  return { success: false, error: lastError };
 }

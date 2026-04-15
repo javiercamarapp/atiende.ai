@@ -22,6 +22,8 @@ import {
   generateWithTools,
   LoopGuardError,
   MODELS,
+  PartialExecutionError,
+  calculateCost,
   type ToolCallRecord,
 } from '@/lib/llm/openrouter';
 import { executeTool, type ToolContext } from '@/lib/llm/tool-executor';
@@ -201,29 +203,78 @@ export async function runOrchestrator(
       tokensOut: result.tokensOut,
     };
   } catch (primaryErr) {
-    // Loggeamos pero continuamos a fallback. Tipos de error esperados:
-    //  - OrchestratorTimeoutError: provider lento
-    //  - LoopGuardError: el modelo no convergió en 5 rounds
-    //  - Cualquier error de OpenRouter SDK (5xx, network)
     const errName = primaryErr instanceof Error ? primaryErr.name : 'unknown';
     const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
     console.warn(
       `[orchestrator] primary model (${MODELS.ORCHESTRATOR}) failed → ${errName}: ${errMsg}. Trying fallback.`,
     );
 
-    // ── Intento 2: modelo fallback CON timeout + AbortController ──
-    // Crítico: sin este timeout, una degradación de GPT-4.1-mini colgaría
-    // el request indefinidamente (el usuario no recibe respuesta jamás).
+    // AUDIT-R8 CRÍT: rescatar tools ya ejecutados por el primario antes del crash.
+    // Sin esto, el fallback re-ejecutaba mutaciones (book_appointment, etc)
+    // causando doble reserva.
+    let primaryPartialCalls: ToolCallRecord[] = [];
+    let primaryTokensIn = 0;
+    let primaryTokensOut = 0;
+    let primaryModel: string = MODELS.ORCHESTRATOR;
+    if (primaryErr instanceof PartialExecutionError) {
+      primaryPartialCalls = primaryErr.partialToolCalls;
+      primaryTokensIn = primaryErr.partialTokensIn;
+      primaryTokensOut = primaryErr.partialTokensOut;
+      primaryModel = primaryErr.partialModel;
+    }
+
+    // Detectar mutaciones ya ejecutadas exitosamente
+    const MUTATION_PREFIXES = ['book_', 'cancel_', 'modify_', 'mark_', 'send_', 'save_', 'schedule_', 'track_', 'parse_', 'request_', 'generate_'];
+    const successfulMutations = primaryPartialCalls.filter(
+      (tc) => !tc.error && MUTATION_PREFIXES.some((p) => tc.toolName.startsWith(p)),
+    );
+
+    // CASO ESPECIAL: si una mutación devolvió un `summary` o success, podemos
+    // construir la respuesta SIN llamar al fallback (evita gastar tokens y
+    // garantiza no doble-ejecución).
+    for (const tc of successfulMutations) {
+      const r = tc.result as { success?: boolean; summary?: string } | null;
+      if (r?.success && r?.summary) {
+        console.info(`[orchestrator] primary executed ${tc.toolName} OK — using its summary, skipping fallback`);
+        return {
+          responseText: r.summary,
+          toolCallsExecuted: primaryPartialCalls,
+          agentUsed,
+          modelUsed: primaryModel,
+          fallbackUsed: false,
+          costUsd: calculateCost(primaryModel, primaryTokensIn, primaryTokensOut),
+          tokensIn: primaryTokensIn,
+          tokensOut: primaryTokensOut,
+        };
+      }
+    }
+
+    // ── Intento 2: modelo fallback CON contexto de mutaciones previas ──
+    // Si hay mutaciones ya ejecutadas, inyectamos un mensaje system extra
+    // ordenando NO re-ejecutar (idempotency a nivel prompt).
+    const fallbackSystemPrompt = successfulMutations.length > 0
+      ? ctx.systemPrompt + '\n\n' +
+        '⚠️ CONTEXTO IMPORTANTE — INTENTO PREVIO PARCIAL:\n' +
+        'El modelo anterior YA EJECUTÓ las siguientes tools exitosamente. ' +
+        'NO LAS RE-EJECUTES. Solo genera la respuesta final cordial al paciente ' +
+        'basándote en estos resultados:\n' +
+        successfulMutations.map((tc) =>
+          `- ${tc.toolName}(${JSON.stringify(tc.args).slice(0, 200)}) → ${JSON.stringify(tc.result).slice(0, 300)}`,
+        ).join('\n')
+      : ctx.systemPrompt;
+
     const fallbackController = new AbortController();
     try {
       const result = await withTimeoutAbort(
         generateWithTools({
           model: MODELS.ORCHESTRATOR_FALLBACK,
-          system: ctx.systemPrompt,
+          system: fallbackSystemPrompt,
           messages: ctx.messages,
-          tools: ctx.tools,
+          // Si ya hubo mutación, NO pasamos tools al fallback — solo debe
+          // generar el texto final. Esto hace IMPOSIBLE re-ejecutar.
+          tools: successfulMutations.length > 0 ? [] : ctx.tools,
           toolExecutor,
-          tool_choice: 'auto',
+          tool_choice: successfulMutations.length > 0 ? 'none' : 'auto',
           maxTokens: ctx.tools.length > 0 ? 2000 : 800,
           temperature: 0.5,
           maxToolRounds: 5,
@@ -233,15 +284,17 @@ export async function runOrchestrator(
         FALLBACK_TIMEOUT_MS,
       );
 
+      // Mergeamos toolCalls del primario + del fallback para auditoría completa
+      const mergedCalls = [...primaryPartialCalls, ...result.toolCallsExecuted];
       return {
         responseText: result.finalText,
-        toolCallsExecuted: result.toolCallsExecuted,
+        toolCallsExecuted: mergedCalls,
         agentUsed,
         modelUsed: result.model,
         fallbackUsed: true,
-        costUsd: result.cost,
-        tokensIn: result.tokensIn,
-        tokensOut: result.tokensOut,
+        costUsd: result.cost + calculateCost(primaryModel, primaryTokensIn, primaryTokensOut),
+        tokensIn: result.tokensIn + primaryTokensIn,
+        tokensOut: result.tokensOut + primaryTokensOut,
       };
     } catch (fallbackErr) {
       // Ambos modelos fallaron — re-lanzamos para que el caller decida qué
