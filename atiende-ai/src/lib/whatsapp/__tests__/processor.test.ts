@@ -151,6 +151,7 @@ vi.mock('@/lib/rag/search', () => ({
 
 vi.mock('@/lib/guardrails/validate', () => ({
   validateResponse: mockValidateResponse,
+  appendMedicalDisclaimer: (_userMsg: string, agentResponse: string) => agentResponse,
 }));
 
 vi.mock('@/lib/whatsapp/send', () => ({

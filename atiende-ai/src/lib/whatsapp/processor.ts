@@ -21,6 +21,7 @@ import {
   handleFAQ,
 } from '@/lib/agents';
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
+import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool calling pipeline (Fase 1) — feature flag
@@ -545,11 +546,12 @@ async function handleSingleMessage(
   });
 
   // 13. Send response via WhatsApp
+  const finalText = appendMedicalDisclaimer(content, response.text);
   const { sendSmartResponse } = await import('@/lib/whatsapp/smart-response');
   await sendSmartResponse({
     phoneNumberId,
     to: senderPhone,
-    text: response.text,
+    text: finalText,
     intent,
     tenant: {
       name: tenant.name as string,
@@ -847,6 +849,10 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   }
 
   const responseTimeMs = Date.now() - startMs;
+
+  // Aplicar disclaimer médico si el mensaje del paciente contiene
+  // patrones de auto-diagnóstico (segunda capa anti-alucinación).
+  responseText = appendMedicalDisclaimer(content, responseText);
 
   // 7. Enviar la respuesta al cliente vía WhatsApp
   await sendTextMessage(phoneNumberId, senderPhone, responseText);
