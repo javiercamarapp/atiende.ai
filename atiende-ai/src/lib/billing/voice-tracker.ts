@@ -145,7 +145,14 @@ export async function trackVoiceCall(
   };
 }
 
-/** Lectura read-only del uso del mes — para dashboard del tenant. */
+/**
+ * Lectura read-only del uso del mes — para dashboard del tenant.
+ *
+ * AUDIT-R8 ALTO: si el tenant aún no tiene fila en voice_usage del mes
+ * (típico al inicio de cada mes), antes retornaba `included=0` lo cual hacía
+ * el dashboard mostrar "0/0 minutos" y `percentUsed=0`. Ahora caemos a
+ * `tenants.voice_minutes_included` para mostrar el cupo real desde el día 1.
+ */
 export async function getVoiceUsageThisMonth(tenantId: string): Promise<{
   minutesUsed: number;
   included: number;
@@ -155,15 +162,26 @@ export async function getVoiceUsageThisMonth(tenantId: string): Promise<{
 }> {
   const yearMonth = new Date().toISOString().substring(0, 7);
 
-  const { data } = await supabaseAdmin
-    .from('voice_usage')
-    .select('minutes_used, minutes_included')
-    .eq('tenant_id', tenantId)
-    .eq('year_month', yearMonth)
-    .maybeSingle();
+  const [usageRes, tenantRes] = await Promise.all([
+    supabaseAdmin
+      .from('voice_usage')
+      .select('minutes_used, minutes_included')
+      .eq('tenant_id', tenantId)
+      .eq('year_month', yearMonth)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('tenants')
+      .select('voice_minutes_included')
+      .eq('id', tenantId)
+      .maybeSingle(),
+  ]);
 
-  const minutesUsed = Number(data?.minutes_used ?? 0);
-  const included = Number(data?.minutes_included ?? 0);
+  const minutesUsed = Number(usageRes.data?.minutes_used ?? 0);
+  // Prefer voice_usage.minutes_included (snapshot del mes), fallback al plan
+  // actual del tenant. Garantiza que un tenant nuevo del mes ve su cupo real.
+  const included = Number(
+    usageRes.data?.minutes_included ?? tenantRes.data?.voice_minutes_included ?? 0,
+  );
   const remaining = Math.max(0, included - minutesUsed);
   const overage = Math.max(0, minutesUsed - included);
   const percentUsed = included > 0 ? Math.round((minutesUsed / included) * 100) : 0;

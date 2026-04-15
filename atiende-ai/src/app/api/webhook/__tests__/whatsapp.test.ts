@@ -114,7 +114,7 @@ describe('/api/webhook/whatsapp', () => {
       const res = await POST(req);
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.status).toBe('received');
+      expect(json.status).toBe('processing');
       expect(processIncomingMessage).toHaveBeenCalled();
     });
 
