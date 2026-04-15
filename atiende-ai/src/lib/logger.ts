@@ -55,7 +55,7 @@ function emit(entry: LogEntry): void {
 }
 
 /**
- * Structured logger for atiende.ai
+ * Structured logger for useatiende.ai
  *
  * Production: JSON lines for log aggregation (Vercel, Datadog, etc.)
  * Development: human-readable colored output

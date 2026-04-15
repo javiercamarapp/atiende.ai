@@ -23,7 +23,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * Prefijos de códigos de país más comunes para clientes de atiende.ai.
+ * Prefijos de códigos de país más comunes para clientes de useatiende.ai.
  * No es exhaustivo — el objetivo es detectar cuándo SÍ es MX vs cuándo
  * claramente NO lo es para preservar el número internacional tal cual.
  */

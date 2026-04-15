@@ -8,8 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { isAdminUser } from '@/lib/auth/is-admin';
 
-const ADMIN_EMAILS = ['javier@atiende.ai', 'admin@atiende.ai'];
 const Body = z.object({ id: z.string().uuid() });
 
 export const runtime = 'nodejs';
@@ -19,10 +19,7 @@ export async function POST(req: NextRequest) {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const role = (user.app_metadata as { role?: string } | undefined)?.role;
-  const isAdmin = role === 'admin' || ADMIN_EMAILS.includes(user.email || '');
-  if (!isAdmin) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!(await isAdminUser(user))) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   let body: z.infer<typeof Body>;
   try {

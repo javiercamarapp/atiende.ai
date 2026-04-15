@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
-  title: 'atiende.ai — Asistente AI para tu negocio',
+  title: 'useatiende.ai — Asistente AI para tu negocio',
   description: 'Agentes de WhatsApp y voz AI para negocios mexicanos.',
 };
 

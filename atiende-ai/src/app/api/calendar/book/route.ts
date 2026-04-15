@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
         const event = await createCalendarEvent({
           calendarId: staff.google_calendar_id,
           summary: `${service?.name || 'Cita'} - ${customerName || customerPhone}`,
-          description: `Paciente: ${customerName}\nTel: ${customerPhone}\nServicio: ${service?.name}\nAgendada via: ${source}\n\nAgendada por atiende.ai`,
+          description: `Paciente: ${customerName}\nTel: ${customerPhone}\nServicio: ${service?.name}\nAgendada via: ${source}\n\nAgendada por useatiende.ai`,
           startTime: datetime,
           endTime,
           timezone: tenant?.timezone || 'America/Merida',

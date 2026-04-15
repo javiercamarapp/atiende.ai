@@ -37,7 +37,7 @@ const STORAGE_KEY = 'atiende_onboarding_v2';
 // separate chat bubbles (Valeria's persona is the agent defined in
 // src/lib/onboarding/chat-agent.ts).
 const INITIAL_AI_MESSAGES: readonly string[] = [
-  '¡Hola! Soy Valeria, de atiende.ai. Voy a ayudarte a configurar tu agente de inteligencia artificial para que atienda tu negocio —consultorio, clínica, salón o spa— 24/7 por WhatsApp, sin que pierdas una sola cita.',
+  '¡Hola! Soy Valeria, de useatiende.ai. Voy a ayudarte a configurar tu agente de inteligencia artificial para que atienda tu negocio —consultorio, clínica, salón o spa— 24/7 por WhatsApp, sin que pierdas una sola cita.',
   'Para empezar, cuéntame de tu negocio en una frase (ej: "soy dentista en Mérida"). Si prefieres, pégame el link de tu sitio web o adjunta fotos o PDFs de tu menú, lista de precios o cédula — los leo y extraigo lo que pueda.',
 ];
 
@@ -456,7 +456,7 @@ export function OnboardingChat() {
     <div className="h-[100dvh] flex flex-col bg-white">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-        <h1 className="text-lg font-semibold tracking-tight">atiende.ai</h1>
+        <h1 className="text-lg font-semibold tracking-tight">useatiende.ai</h1>
         {phase === 'conversation' && vertical && totalRequired > 0 && (
           <ProgressIndicator
             current={capturedRequired}
@@ -472,7 +472,7 @@ export function OnboardingChat() {
           {/* Welcome header */}
           <div className="text-center mb-6 animate-element animate-delay-100">
             <h2 className="text-3xl font-light tracking-tighter mb-2">
-              Bienvenido a <span className="font-semibold">atiende.ai</span>
+              Bienvenido a <span className="font-semibold">useatiende.ai</span>
             </h2>
             <p className="text-muted-foreground text-sm">
               Configura tu agente AI en minutos
@@ -591,7 +591,7 @@ export function OnboardingChat() {
       )}
 
       {/* Footer version */}
-      <div className="text-center py-2 text-[10px] text-zinc-300">atiende.ai v2.0</div>
+      <div className="text-center py-2 text-[10px] text-zinc-300">useatiende.ai v2.0</div>
     </div>
   );
 }
