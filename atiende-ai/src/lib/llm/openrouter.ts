@@ -490,6 +490,11 @@ export async function generateWithTools(opts: {
       tool_calls: toolCalls,
     });
 
+    // Dedup: si el LLM llama el mismo tool con los MISMOS args en el mismo
+    // round, no ejecutar 2 veces. Aún así devolvemos un tool result por cada
+    // tool_call_id para no romper el contrato del LLM.
+    const dedupCache = new Map<string, Promise<unknown>>();
+
     const toolResultMessages = await Promise.all(
       toolCalls.map(async (call) => {
         // Solo manejamos function tool calls (las únicas que existen hoy).
@@ -524,7 +529,18 @@ export async function generateWithTools(opts: {
           };
         }
 
-        const exec = await opts.toolExecutor(call.function.name, parsedArgs);
+        // Dedup key: name + args ordenados
+        const dedupKey = `${call.function.name}:${JSON.stringify(parsedArgs)}`;
+        let execPromise = dedupCache.get(dedupKey) as
+          | Promise<{ success: boolean; result: unknown; error?: string; durationMs: number }>
+          | undefined;
+        if (!execPromise) {
+          execPromise = opts.toolExecutor(call.function.name, parsedArgs);
+          dedupCache.set(dedupKey, execPromise);
+        } else {
+          console.warn(`[tool-dedup] Reusing result for ${call.function.name}`);
+        }
+        const exec = await execPromise;
         toolCallsExecuted.push({
           toolName: call.function.name,
           args: parsedArgs,

@@ -114,9 +114,27 @@ export function getToolSchemas(names?: string[] | null): OpenAI.Chat.ChatComplet
   return out;
 }
 
+/** Timeout máximo por tool individual. Si una tool tarda más, se aborta para
+ * no consumir el presupuesto del orchestrator (10s total) en una sola tool. */
+const TOOL_TIMEOUT_MS = 4_000;
+
+function withToolTimeout<T>(promise: Promise<T>, ms: number, name: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Tool ${name} timeout after ${ms}ms`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 /**
- * Ejecuta una tool por nombre. Captura excepciones y mide tiempo. NUNCA tira
- * — el orchestrator necesita un resultado estructurado para pasar al LLM.
+ * Ejecuta una tool por nombre. Captura excepciones, mide tiempo y aplica
+ * timeout individual. NUNCA tira — el orchestrator necesita un resultado
+ * estructurado para pasar al LLM.
  */
 export async function executeTool(
   name: string,
@@ -135,7 +153,7 @@ export async function executeTool(
 
   const start = Date.now();
   try {
-    const result = await def.handler(args, ctx);
+    const result = await withToolTimeout(def.handler(args, ctx), TOOL_TIMEOUT_MS, name);
     return {
       success: true,
       result,
