@@ -110,6 +110,14 @@ vi.mock('@/lib/supabase/admin', () => ({
       }
       return makeChainable(() => ({ data: null }));
     },
+    // AUDIT R14 BUG-001: atomicInboundUpsert llama supabaseAdmin.rpc(
+    // 'upsert_inbound_message', ...). En tests hacemos que retorne error
+    // PGRST202 → el helper cae al legacy path (secuencial via .from()) y
+    // los tests existentes siguen funcionando.
+    rpc: vi.fn(() => Promise.resolve({
+      data: null,
+      error: { code: 'PGRST202', message: 'function does not exist (test mock)' },
+    })),
   },
 }));
 
