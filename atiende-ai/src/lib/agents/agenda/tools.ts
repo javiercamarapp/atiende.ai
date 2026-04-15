@@ -590,8 +590,14 @@ registerTool('book_appointment', {
       }
     }
 
-    // 8. notifyOwner (best effort)
+    // 8. notifyOwner — FIX 5 (audit R4): si falla, persistimos
+    // `owner_notified=false` en la fila de la cita para que un cron de
+    // reintento (ver src/app/api/cron/notify-retry) pueda reprocesar.
+    // Sin esto, el dueño podía perderse citas importantes si Resend/Twilio
+    // se caen momentáneamente.
     const { dateFmt, timeFmt } = formatDateTimeMx(datetime, timezone);
+    let ownerNotified = false;
+    let ownerNotifyError: string | undefined;
     try {
       const { notifyOwner } = await import('@/lib/actions/notifications');
       await notifyOwner({
@@ -599,8 +605,26 @@ registerTool('book_appointment', {
         event: 'new_appointment',
         details: `${args.patient_name} (${args.patient_phone})\n${matchedService?.name || args.service_type} con ${staffMember.name}\n${dateFmt} ${timeFmt}\nCódigo: ${confirmationCode}`,
       });
+      ownerNotified = true;
+    } catch (err) {
+      ownerNotifyError = err instanceof Error ? err.message : String(err);
+      console.warn('[book_appointment] notifyOwner failed:', ownerNotifyError);
+    }
+    // Persistir resultado en la cita para visibilidad + retry posterior.
+    // Si las columnas no existen aún (schema antiguo), el UPDATE falla en
+    // silencio — la migración contact_send_errors/appointments_owner_notify
+    // añade las columnas.
+    try {
+      await supabaseAdmin
+        .from('appointments')
+        .update({
+          owner_notified: ownerNotified,
+          owner_notified_at: ownerNotified ? new Date().toISOString() : null,
+          owner_notify_error: ownerNotifyError ?? null,
+        })
+        .eq('id', appointment.id);
     } catch {
-      /* best effort */
+      /* columna nueva — schema no aplicado aún */
     }
 
     // 9. Marketplace event

@@ -1,6 +1,29 @@
 // Valida que la respuesta del LLM no invente informacion
 // Se ejecuta DESPUES de cada generacion, ANTES de enviar al cliente
 
+// FIX 4 (audit R4): helpers de normalización para comparar precios del
+// LLM contra el contexto RAG eliminando variaciones de formato
+// ($800 vs $800.00 vs 800 vs $ 800 vs 800.0).
+function canonicalizePrice(raw: string): string | null {
+  const digits = raw.replace(/[^\d.]/g, '');
+  if (!digits) return null;
+  const num = Number(digits.replace(/(?<=\.\d*?)0+$/, ''));
+  if (!isFinite(num) || num <= 0) return null;
+  // Entero canonizado, sin ceros decimales innecesarios (800.00 → 800)
+  if (Number.isInteger(num)) return String(num);
+  return String(num);
+}
+
+function normalizePrices(ctx: string): string {
+  // Reemplaza cualquier "$ 1,200.00" / "$1200" / "1,200 MXN" por su forma
+  // canónica sin símbolos, para que includes() sobre el string normalizado
+  // haga match del número solo.
+  return ctx.replace(
+    /\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g,
+    (m, n: string) => canonicalizePrice(n) || m,
+  );
+}
+
 const CRISIS_MESSAGE =
   'Entiendo que estás pasando por un momento muy difícil. Tu vida importa. ' +
   'Por favor contacta la Línea de la Vida: 800 911 2000 (24/7) o SAPTEL: 55 5259 8121. ' +
@@ -16,13 +39,30 @@ export function validateResponse(
   let text = response;
 
   // ═══ CAPA 1: Verificar precios mencionados ═══
-  // Si el bot menciona un precio, DEBE existir en el contexto RAG
-  const priceMatches = [...text.matchAll(/\$([\d,\.]+)/g)];
+  // FIX 4 (audit R4): normaliza AMBOS lados antes de comparar para evitar
+  // falsos positivos por formato. "$800.00" debe match "$800"; "$1,200"
+  // debe match "1200"; símbolos de moneda, comas, ceros decimales
+  // innecesarios y espacios se eliminan. Capa 1 sigue siendo conservadora:
+  // si el número entero no existe en el RAG (ni en texto ni normalizado),
+  // la respuesta se reemplaza.
+  const normalizedContext = normalizePrices(ragContext);
+  const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
   for (const match of priceMatches) {
-    const priceStr = match[0]; // ej: "$800"
-    if (!ragContext.includes(priceStr) &&
-        !ragContext.includes(match[1])) {
-      // Precio inventado — reemplazar respuesta completa
+    const raw = match[0];
+    const num = match[1];
+    // Solo consideramos "precio" si hay $ o si el número es de >=3 dígitos
+    // (evita falsos positivos con "30 minutos", "5 días", etc.).
+    const looksLikePrice = raw.includes('$') || Number(num.replace(/[,\s]/g, '')) >= 100;
+    if (!looksLikePrice) continue;
+
+    const canonical = canonicalizePrice(num);
+    if (!canonical) continue;
+
+    const found = normalizedContext.includes(canonical)
+      || ragContext.includes(raw.trim())
+      || ragContext.includes(num);
+
+    if (!found) {
       return {
         valid: false,
         text: 'Para precios exactos y actualizados, le invito a ' +
