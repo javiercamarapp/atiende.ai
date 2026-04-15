@@ -45,12 +45,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const start = Date.now();
   const tenants = await listEligibleTenants();
-  const results: TenantIntelligenceResult[] = [];
-
-  for (const tenant of tenants) {
-    const r = await processTenant(tenant);
-    results.push(r);
-  }
+  // FIX 1 (audit R3): paralelizar tenants — con 10 tenants × 5 sub-tasks el
+  // loop serial llegaba a ~300s (timeout de Vercel). allSettled nunca falla
+  // el cron por un tenant roto; los errores se agregan al summary.
+  const settled = await Promise.allSettled(
+    tenants.map((tenant) => processTenant(tenant)),
+  );
+  const results: TenantIntelligenceResult[] = settled.map((s, i) => {
+    if (s.status === 'fulfilled') return s.value;
+    const tenant = tenants[i] as Record<string, unknown> | undefined;
+    return {
+      tenant_id: (tenant?.id as string) || 'unknown',
+      tenant_name: (tenant?.name as string) || 'unknown',
+      contacts_scored: 0,
+      appointments_risk_refreshed: 0,
+      conversations_summarized: 0,
+      unsatisfaction_flags: 0,
+      cancellation_classified: 0,
+      error: s.reason instanceof Error ? s.reason.message : String(s.reason),
+    };
+  });
 
   // Refresh materialized view UNA sola vez al final (más eficiente que por tenant)
   let viewRefreshed = false;
@@ -259,17 +273,25 @@ async function detectUnsatisfiedConversations(tenantId: string): Promise<number>
 
   if (!convs || convs.length === 0) return 0;
 
+  // FIX 2 (audit R3): reemplaza N queries COUNT por conversación por UNA sola
+  // query que trae todos los `conversation_id` de mensajes recientes y
+  // cuenta en memoria. Con 30 convs × ~50 msgs cada = 1500 rows, es trivial.
+  const conversationIds = convs.map((c) => c.id as string);
+  const { data: recentMessages } = await supabaseAdmin
+    .from('messages')
+    .select('conversation_id')
+    .in('conversation_id', conversationIds);
+
+  const countMap = new Map<string, number>();
+  for (const m of (recentMessages || []) as Array<{ conversation_id: string }>) {
+    countMap.set(m.conversation_id, (countMap.get(m.conversation_id) || 0) + 1);
+  }
+
   let flags = 0;
   for (const c of convs) {
-    // Filtrar: solo si tiene >3 mensajes
-    const { count } = await supabaseAdmin
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('conversation_id', c.id);
-
-    if ((count ?? 0) <= 3) continue;
-
-    const r = await detectUnsatisfiedPatient(c.id as string);
+    const cid = c.id as string;
+    if ((countMap.get(cid) || 0) <= 3) continue;
+    const r = await detectUnsatisfiedPatient(cid);
     if (r.unsatisfied) flags++;
   }
   return flags;
@@ -290,21 +312,35 @@ async function classifyTodayCancellations(tenantId: string): Promise<number> {
 
   if (!apts || apts.length === 0) return 0;
 
+  // FIX 2 (audit R3): reemplaza N queries por paciente por UNA query que
+  // trae todas las conversations de los phones relevantes, ordenadas por
+  // last_message_at desc. Luego armamos map phone → conversation_id (latest).
+  const phones = Array.from(new Set(
+    (apts as Array<{ customer_phone: string }>).map((a) => a.customer_phone).filter(Boolean),
+  ));
+  const phoneToConvId = new Map<string, string>();
+  if (phones.length > 0) {
+    const { data: convs } = await supabaseAdmin
+      .from('conversations')
+      .select('id, customer_phone, last_message_at')
+      .eq('tenant_id', tenantId)
+      .in('customer_phone', phones)
+      .order('last_message_at', { ascending: false });
+
+    // `order` es DESC, con in() Supabase retorna todas en ese orden — cuando
+    // vemos un phone por primera vez, esa es la conversación más reciente.
+    for (const c of (convs || []) as Array<{ id: string; customer_phone: string }>) {
+      if (!phoneToConvId.has(c.customer_phone)) {
+        phoneToConvId.set(c.customer_phone, c.id);
+      }
+    }
+  }
+
   let classified = 0;
   for (const a of apts) {
-    // Buscar la conversación más reciente de este paciente
-    const { data: conv } = await supabaseAdmin
-      .from('conversations')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('customer_phone', a.customer_phone)
-      .order('last_message_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!conv) continue;
-
-    const r = await classifyCancellationReason(conv.id as string, a.id as string);
+    const convId = phoneToConvId.get(a.customer_phone as string);
+    if (!convId) continue;
+    const r = await classifyCancellationReason(convId, a.id as string);
     if (r.confidence > 0) classified++;
   }
   return classified;
