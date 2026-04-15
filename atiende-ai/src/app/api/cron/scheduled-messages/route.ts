@@ -106,8 +106,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       continue;
     }
 
+    // Verificar opt-out del paciente antes de enviar (LFPDPPP compliance)
+    const { data: contact } = await supabaseAdmin
+      .from('contacts')
+      .select('opted_out')
+      .eq('tenant_id', msg.tenant_id)
+      .eq('phone', msg.patient_phone)
+      .maybeSingle();
+    if (contact?.opted_out === true) {
+      await supabaseAdmin
+        .from('scheduled_messages')
+        .update({
+          status: 'cancelled',
+          metadata: { ...(msg.metadata ?? {}), reason: 'patient_opted_out' },
+        })
+        .eq('id', msg.id);
+      continue;
+    }
+
     try {
-      await sendTextMessage(phoneNumberId, msg.patient_phone, msg.message_content);
+      const sendResult = await sendTextMessage(phoneNumberId, msg.patient_phone, msg.message_content);
+      if (!sendResult.ok) {
+        throw new Error(`${sendResult.errorLabel || 'send_failed'}: ${sendResult.errorMessage || 'unknown'}`);
+      }
       await supabaseAdmin
         .from('scheduled_messages')
         .update({ status: 'sent', sent_at: new Date().toISOString() })

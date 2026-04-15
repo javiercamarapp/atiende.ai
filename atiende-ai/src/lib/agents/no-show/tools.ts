@@ -73,8 +73,16 @@ registerTool('get_appointments_tomorrow', {
     const dayStartUtc = new Date(buildLocalIso(args.date, '00:00', timezone));
     const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60_000);
 
-    // Query citas del día pendientes de recordatorio
-    const { data: rows, error } = await supabaseAdmin
+    // Query citas del día pendientes de recordatorio.
+    // Excluir pacientes con opted_out=true (LFPDPPP compliance).
+    const { data: optedOutContacts } = await supabaseAdmin
+      .from('contacts')
+      .select('phone')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('opted_out', true);
+    const optedOutPhones = (optedOutContacts || []).map((c) => c.phone as string);
+
+    let rowsQuery = supabaseAdmin
       .from('appointments')
       .select(`
         id,
@@ -93,6 +101,12 @@ registerTool('get_appointments_tomorrow', {
       .eq('status', 'scheduled')
       .eq('no_show_reminded', false)
       .order('datetime', { ascending: true });
+
+    if (optedOutPhones.length > 0) {
+      rowsQuery = rowsQuery.not('customer_phone', 'in', `(${optedOutPhones.map((p) => `"${p}"`).join(',')})`);
+    }
+
+    const { data: rows, error } = await rowsQuery;
 
     if (error) {
       return {
