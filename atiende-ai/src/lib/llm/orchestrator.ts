@@ -105,6 +105,37 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * AUDIT-R7 ALTO: AbortController para cancelar la petición HTTP real al
+ * provider cuando nuestro timeout se dispara.
+ *
+ * Antes, si el modelo primario tardaba 11s y se lanzaba
+ * OrchestratorTimeoutError, la llamada HTTP SEGUÍA corriendo en el fondo
+ * (OpenRouter eventualmente procesaría y nos facturaría los tokens aunque
+ * ya hubiéramos pasado al fallback). Ahora cancelamos el request real.
+ *
+ * Usage:
+ *   const ac = new AbortController();
+ *   const p = generateWithTools({ ..., signal: ac.signal });
+ *   return await withTimeoutAbort(p, ac, 10_000);
+ */
+function withTimeoutAbort<T>(
+  promise: Promise<T>,
+  controller: AbortController,
+  ms: number,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort(); // cancela la request HTTP real
+      reject(new OrchestratorTimeoutError(ms));
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
  * Adapter: el toolExecutor que `generateWithTools` espera es una función
  * que recibe (name, args) y resuelve a un ToolExecutionResult. Aquí lo
  * componemos cerrando sobre el `ToolContext` extraído del orchestrator ctx.
@@ -137,9 +168,10 @@ export async function runOrchestrator(
   // capturarlo y responder al paciente con mensaje amigable.
   await checkOpenRouterRateLimit(ctx.tenantId);
 
-  // ── Intento 1: modelo primario con timeout ──
+  // ── Intento 1: modelo primario con timeout + AbortController ──
+  const primaryController = new AbortController();
   try {
-    const result = await withTimeout(
+    const result = await withTimeoutAbort(
       generateWithTools({
         model: MODELS.ORCHESTRATOR,
         system: ctx.systemPrompt,
@@ -149,12 +181,12 @@ export async function runOrchestrator(
         tool_choice: 'auto',
         // BUG 7 FIX: tool-calling requiere espacio para que el modelo emita
         // el JSON del tool_call + razonamiento intermedio + respuesta final.
-        // Con 800 tokens Grok truncaba tool_calls en conversaciones con
-        // mucho historial. 2000 da margen y sigue siendo barato.
         maxTokens: ctx.tools.length > 0 ? 2000 : 800,
         temperature: 0.5,
         maxToolRounds: 5,
+        signal: primaryController.signal,
       }),
+      primaryController,
       PRIMARY_TIMEOUT_MS,
     );
 
@@ -179,11 +211,12 @@ export async function runOrchestrator(
       `[orchestrator] primary model (${MODELS.ORCHESTRATOR}) failed → ${errName}: ${errMsg}. Trying fallback.`,
     );
 
-    // ── Intento 2: modelo fallback CON timeout ──
+    // ── Intento 2: modelo fallback CON timeout + AbortController ──
     // Crítico: sin este timeout, una degradación de GPT-4.1-mini colgaría
     // el request indefinidamente (el usuario no recibe respuesta jamás).
+    const fallbackController = new AbortController();
     try {
-      const result = await withTimeout(
+      const result = await withTimeoutAbort(
         generateWithTools({
           model: MODELS.ORCHESTRATOR_FALLBACK,
           system: ctx.systemPrompt,
@@ -191,10 +224,12 @@ export async function runOrchestrator(
           tools: ctx.tools,
           toolExecutor,
           tool_choice: 'auto',
-          maxTokens: 800,
+          maxTokens: ctx.tools.length > 0 ? 2000 : 800,
           temperature: 0.5,
           maxToolRounds: 5,
+          signal: fallbackController.signal,
         }),
+        fallbackController,
         FALLBACK_TIMEOUT_MS,
       );
 

@@ -29,9 +29,10 @@ export function getOpenRouter(): OpenAI {
 // Gemini 2.5 Flash como workhorse + Claude para sensible
 export const MODELS = {
   // ─── CLASIFICAR INTENT (cada mensaje) ───
-  // GPT-5 Nano: $0.05/$0.40 — el MAS barato del mercado
-  // Solo responde 1 palabra. 100K clasificaciones ≈ $4.50/mes
-  CLASSIFIER: 'openai/gpt-5-nano',
+  // GPT-4o-mini: $0.15/$0.60 — modelo real, estable, batato.
+  // Solo responde 1 palabra. 100K clasificaciones ≈ $15/mes.
+  // (Antes tenía `openai/gpt-5-nano` hardcoded — ese modelo NO existe.)
+  CLASSIFIER: 'openai/gpt-4o-mini',
 
   // ─── CHAT CASUAL / FAQ (70% del trafico) ───
   // Gemini 2.5 Flash-Lite: $0.10/$0.40 — 75% mas barato que GPT-4.1-mini
@@ -93,7 +94,7 @@ export const MODELS = {
 
 // Precios por millon de tokens [input, output]
 const MODEL_PRICES: Record<string, [number, number]> = {
-  'openai/gpt-5-nano': [0.05, 0.40],
+  'openai/gpt-4o-mini': [0.15, 0.60],
   'google/gemini-2.5-flash-lite': [0.10, 0.40],
   'google/gemini-2.5-flash': [0.30, 2.50],
   'anthropic/claude-sonnet-4-6': [3.00, 15.00],
@@ -422,6 +423,12 @@ export async function generateWithTools(opts: {
    * veces y luego DEBE emitir texto final.
    */
   maxToolRounds?: number;
+  /**
+   * Signal para cancelar la petición HTTP real cuando el timeout del
+   * orchestrator se dispare. Sin esto, una llamada lenta seguía gastando
+   * tokens en background aunque ya hubiéramos fallback-eado.
+   */
+  signal?: AbortSignal;
 }): Promise<GenerateWithToolsResult> {
   const maxRounds = opts.maxToolRounds ?? 5;
   const client = getOpenRouter();
@@ -448,14 +455,20 @@ export async function generateWithTools(opts: {
   const crossRoundCache = new Map<string, { success: boolean; result: unknown; error?: string; durationMs: number }>();
 
   for (let round = 0; round < maxRounds; round++) {
-    const response = await client.chat.completions.create({
-      model: opts.model,
-      messages: conversation,
-      tools: opts.tools.length > 0 ? opts.tools : undefined,
-      tool_choice: opts.tools.length > 0 ? (opts.tool_choice ?? 'auto') : undefined,
-      max_tokens: opts.maxTokens || 800,
-      temperature: opts.temperature ?? 0.5,
-    });
+    // AUDIT-R7 ALTO: segundo arg `{ signal }` propaga AbortController al
+    // fetch interno del SDK de OpenAI. Si el orchestrator.withTimeoutAbort
+    // aborta, esta request HTTP se cancela y dejamos de facturar tokens.
+    const response = await client.chat.completions.create(
+      {
+        model: opts.model,
+        messages: conversation,
+        tools: opts.tools.length > 0 ? opts.tools : undefined,
+        tool_choice: opts.tools.length > 0 ? (opts.tool_choice ?? 'auto') : undefined,
+        max_tokens: opts.maxTokens || 800,
+        temperature: opts.temperature ?? 0.5,
+      },
+      opts.signal ? { signal: opts.signal } : undefined,
+    );
 
     totalTokensIn += response.usage?.prompt_tokens || 0;
     totalTokensOut += response.usage?.completion_tokens || 0;
