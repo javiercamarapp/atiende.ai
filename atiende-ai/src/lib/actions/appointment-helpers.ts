@@ -105,6 +105,12 @@ export function isWithinBusinessHours(
   const cMin = ch * 60 + cm;
   const oMin = oh * 60 + om;
   const clMin = clh * 60 + clm;
+
+  // Cross-midnight handling (e.g., 20:00-06:00 night shift)
+  if (clMin < oMin) {
+    return cMin >= oMin || cMin <= clMin;
+  }
+  // Normal same-day range
   return cMin >= oMin && cMin <= clMin;
 }
 

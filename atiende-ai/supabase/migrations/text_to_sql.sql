@@ -25,7 +25,8 @@ DECLARE
   forbidden    TEXT[] := ARRAY[
     'insert', 'update', 'delete', 'drop', 'truncate', 'alter', 'create',
     'grant', 'revoke', 'replace', 'copy', 'do ', 'execute', 'listen',
-    'notify', 'lock', 'vacuum', 'analyze', 'reset', 'comment on'
+    'notify', 'lock', 'vacuum', 'analyze', 'reset', 'comment on',
+    'union', 'intersect', 'except'
   ];
   kw           TEXT;
   sanitized    TEXT;

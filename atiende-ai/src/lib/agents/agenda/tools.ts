@@ -168,6 +168,26 @@ registerTool('check_availability', {
       };
     }
 
+    // 1.5. Fecha no puede ser día festivo configurado (best effort — si tabla
+    // no existe, el query falla silenciosamente y se considera no-festivo).
+    try {
+      const { data: holiday } = await supabaseAdmin
+        .from('tenant_holidays')
+        .select('reason')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('date', args.date)
+        .maybeSingle();
+      if (holiday) {
+        return {
+          available: false,
+          reason: 'HOLIDAY',
+          message: `El consultorio no atiende esa fecha (${holiday.reason}).`,
+        };
+      }
+    } catch {
+      /* tenant_holidays no migrated yet — skip */
+    }
+
     // 2. ¿Es día laboral según business_hours?
     const businessHours =
       (ctx.tenant.business_hours as Record<string, string>) || {};
@@ -499,6 +519,17 @@ registerTool('book_appointment', {
       .single();
 
     if (error || !appointment) {
+      // 23505 = unique_violation (uniq_appointment_slot). Race condition:
+      // otro paciente ganó el slot entre nuestro hasConflict y este INSERT.
+      if ((error as { code?: string } | null)?.code === '23505') {
+        return {
+          success: false,
+          error_code: 'SLOT_TAKEN',
+          message: 'Ese horario acaba de ser ocupado por otro paciente. Pídele que elija otro.',
+          next_step:
+            'Llama check_availability de nuevo para obtener slots actualizados.',
+        };
+      }
       console.warn('[tool:book_appointment] INSERT failed:', error?.message);
       return {
         success: false,
@@ -734,10 +765,13 @@ registerTool('modify_appointment', {
       };
     }
     const args = parse.data;
-    args.patient_phone = normalizePhoneMx(args.patient_phone);
+    // CRÍTICO: usar ctx.customerPhone (del WhatsApp autenticado), NO el phone
+    // del LLM. El LLM puede inventar/inyectar phone de OTRO paciente —
+    // prompt injection IDOR. Solo el sender real puede modificar sus citas.
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
-    // 1. SELECT scoped por (id, tenant_id, customer_phone) — anti-injection
+    // 1. SELECT scoped por (id, tenant_id, customer_phone del SENDER REAL)
     const { data: apt, error: readErr } = await supabaseAdmin
       .from('appointments')
       .select(
@@ -745,7 +779,7 @@ registerTool('modify_appointment', {
       )
       .eq('id', args.appointment_id)
       .eq('tenant_id', ctx.tenantId)
-      .eq('customer_phone', args.patient_phone)
+      .eq('customer_phone', ownerPhone)
       .single();
 
     if (readErr || !apt) {
@@ -936,7 +970,9 @@ registerTool('cancel_appointment', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = CancelArgs.parse(rawArgs);
-    args.patient_phone = normalizePhoneMx(args.patient_phone);
+    // CRÍTICO: usar ctx.customerPhone (sender real), NO args.patient_phone
+    // del LLM (vulnerable a IDOR via prompt injection).
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
     const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
 
     // 1. Verificar existencia + ownership + futura — un solo query scoped por
@@ -947,7 +983,7 @@ registerTool('cancel_appointment', {
       .select('id, datetime, status, google_event_id, customer_phone')
       .eq('id', args.appointment_id)
       .eq('tenant_id', ctx.tenantId)
-      .eq('customer_phone', args.patient_phone)
+      .eq('customer_phone', ownerPhone)
       .single();
 
     if (readErr || !apt) {

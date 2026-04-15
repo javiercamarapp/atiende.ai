@@ -26,7 +26,16 @@ const Body = z.object({ question: z.string().min(3).max(500) });
 
 const ALLOWED_TABLES = ['appointments', 'contacts', 'payments', 'conversations', 'messages'];
 
-const FORBIDDEN_REGEX = /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|replace|copy|execute|listen|notify|lock|vacuum)\b/i;
+// Bloquea DML/DDL + ataques de bypass (UNION para escapar tenant_id filter,
+// OR 1=1 tautologías, comments para truncar la query).
+const FORBIDDEN_REGEX = /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|replace|copy|execute|listen|notify|lock|vacuum|union|intersect|except)\b/i;
+const SQL_INJECTION_PATTERNS = [
+  /\bor\s+\d+\s*=\s*\d+/i,        // OR 1=1
+  /\bor\s+'[^']*'\s*=\s*'[^']*'/i,  // OR 'a'='a'
+  /--/,                              // SQL comments
+  /\/\*/,                            // Block comments
+  /;.*\w/,                           // Multiple statements (más estricto)
+];
 
 const SCHEMA_CONTEXT = `
 TABLAS PERMITIDAS (todas filtran por tenant_id):
@@ -78,6 +87,13 @@ function validateSql(sql: string, tenantId: string): { ok: true } | { ok: false;
 
   if (FORBIDDEN_REGEX.test(lowered)) {
     return { ok: false, reason: 'forbidden_keyword' };
+  }
+
+  // Patrones específicos de SQL injection (bypass de tenant_id filter)
+  for (const pattern of SQL_INJECTION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { ok: false, reason: 'sql_injection_pattern' };
+    }
   }
 
   // Debe mencionar el tenant_id

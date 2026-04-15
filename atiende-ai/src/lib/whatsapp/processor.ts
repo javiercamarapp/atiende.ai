@@ -650,6 +650,53 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   // 2. Construir tenantCtx (Mexico TZ + fechas + servicios)
   const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
 
+  // ── FAST PATH 0: OPT-OUT (LFPDPPP compliance + WhatsApp policy) ─────────
+  // Si el paciente responde STOP/BAJA, marcar contacts.opted_out=true.
+  // Todos los crons (no-show, retention, etc.) filtran por opted_out=false.
+  const optOutRegex = /^\s*(stop|baja|cancelar\s+suscripci[óo]n|d(é|e)me\s+de\s+baja|no\s+me\s+manden(\s+m[áa]s)?(\s+mensajes?)?|unsuscribe)\s*[.!]?\s*$/i;
+  if (optOutRegex.test(content)) {
+    if (contactId) {
+      await supabaseAdmin
+        .from('contacts')
+        .update({ opted_out: true, opted_out_at: new Date().toISOString() })
+        .eq('id', contactId)
+        .eq('tenant_id', tenant.id);
+    }
+    const optOutMsg = 'Listo, no le enviaremos más mensajes automatizados. Si desea reactivar las notificaciones, responda START.';
+    await sendTextMessage(phoneNumberId, senderPhone, optOutMsg);
+    await supabaseAdmin.from('messages').insert({
+      conversation_id: conversationId,
+      tenant_id: tenant.id,
+      direction: 'outbound',
+      sender_type: 'bot',
+      content: optOutMsg,
+      message_type: 'text',
+      intent: 'orchestrator.opt_out',
+    });
+    return;
+  }
+
+  // ── FAST PATH 0.5: OPT-IN (reactivar) ───────────────────────────────────
+  if (/^\s*start\s*[.!]?\s*$/i.test(content) && contactId) {
+    await supabaseAdmin
+      .from('contacts')
+      .update({ opted_out: false, opted_out_at: null })
+      .eq('id', contactId)
+      .eq('tenant_id', tenant.id);
+    const optInMsg = '¡Listo! Sus notificaciones están activas de nuevo. ¿En qué le ayudo?';
+    await sendTextMessage(phoneNumberId, senderPhone, optInMsg);
+    await supabaseAdmin.from('messages').insert({
+      conversation_id: conversationId,
+      tenant_id: tenant.id,
+      direction: 'outbound',
+      sender_type: 'bot',
+      content: optInMsg,
+      message_type: 'text',
+      intent: 'orchestrator.opt_in',
+    });
+    return;
+  }
+
   // 3a. FAST PATH — confirmación a recordatorio de cita.
   //     Sin este fast-path, el paciente que responde "sí voy" queda con
   //     confirmed_at=NULL porque el orchestrator no tiene la tool mark_confirmed
