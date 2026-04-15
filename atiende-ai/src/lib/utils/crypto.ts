@@ -25,7 +25,9 @@ let _key: Buffer | null | undefined;
 
 function getKey(): Buffer | null {
   if (_key !== undefined) return _key;
-  const hex = process.env.PII_ENCRYPTION_KEY;
+  // Acepta MESSAGES_ENCRYPTION_KEY (nombre canónico) y PII_ENCRYPTION_KEY
+  // (alias legacy del primer commit). Ambos = 32 bytes hex.
+  const hex = process.env.MESSAGES_ENCRYPTION_KEY || process.env.PII_ENCRYPTION_KEY;
   if (!hex || hex.length !== 64) {
     _key = null;
     return null;

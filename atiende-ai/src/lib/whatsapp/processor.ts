@@ -37,6 +37,7 @@ import {
 } from '@/lib/whatsapp/conversation-lock';
 import { maskPhone, redactHistoryForLLM } from '@/lib/utils/logger';
 import { encryptPII } from '@/lib/utils/crypto';
+import { detectPromptInjection, sanitizeUserInput } from '@/lib/whatsapp/input-guardrail';
 import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -528,16 +529,30 @@ async function handleSingleMessage(
     }
   }
 
-  // 1. Identify tenant
+  // 1. Identify tenant — buscamos primero SIN filtro de status para poder
+  // dar respuesta amigable si está inactivo (FIX 6 audit Round 2).
   const { data: tenant } = await supabaseAdmin
     .from('tenants')
     .select('*')
     .eq('wa_phone_number_id', phoneNumberId)
-    .eq('status', 'active')
     .single();
 
   if (!tenant) {
     console.warn('Tenant no encontrado para:', phoneNumberId);
+    return;
+  }
+
+  // 1.1 Tenant inactivo (suspendido / trial expirado / pausado): contestar
+  // un mensaje cordial en vez de silencio total — la peor UX es no recibir
+  // respuesta del consultorio.
+  if (tenant.status !== 'active') {
+    try {
+      await sendTextMessage(
+        phoneNumberId,
+        senderPhone,
+        'Gracias por contactarnos. En este momento nuestro servicio no está disponible. Por favor intente más tarde o contáctenos directamente.',
+      );
+    } catch { /* best effort */ }
     return;
   }
 
@@ -581,7 +596,23 @@ async function handleSingleMessageInner(
 
   // 4. Extract content
   const extracted = await extractContentAsync(msg, tenant.id);
-  const { content, messageType, mediaTranscription, mediaDescription } = extracted;
+  const { messageType, mediaTranscription, mediaDescription } = extracted;
+  // FIX 2 (audit Round 2): sanitize + block prompt-injection ANTES del LLM.
+  // Si el mensaje claramente intenta romper el system prompt, respondemos
+  // con un texto cordial y NO consumimos LLM ni guardamos historial.
+  const content = sanitizeUserInput(extracted.content);
+  if (detectPromptInjection(content)) {
+    console.warn(
+      '[security] prompt injection blocked from:',
+      maskPhone(senderPhone),
+    );
+    await sendTextMessage(
+      phoneNumberId,
+      senderPhone,
+      'Lo siento, no puedo procesar ese mensaje. ¿En qué le puedo ayudar con su cita?',
+    );
+    return;
+  }
   if (!content || content.length < 1) return;
 
   // 5. Upsert contact
