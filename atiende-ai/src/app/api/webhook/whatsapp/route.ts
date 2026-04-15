@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions';
 import { processIncomingMessage } from '@/lib/whatsapp/processor';
 import { logWebhook } from '@/lib/webhook-logger';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { publishMessage, isQStashConfigured } from '@/lib/queue/qstash';
 import crypto from 'crypto';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,21 +140,42 @@ export async function POST(req: NextRequest) {
          interno del processor maneje el duplicado. */
     }
 
-    // Patrón "Fast Response": respondemos 200 inmediatamente y movemos
-    // TODA la lógica pesada (orquestador + LLM + WhatsApp send) al
-    // background via waitUntil. Meta Cloud API corta la conexión a los 5s
-    // y reintenta 3× si no tiene 200, lo cual generaría duplicados y
-    // saturaría el pipeline.
-    waitUntil(
-      processIncomingMessage(body).catch((err) => {
-        console.error('Error procesando mensaje WA:', err);
-        logWebhook({
-          provider: 'whatsapp',
-          eventType: 'process_error',
-          error: err instanceof Error ? err.message : 'Unknown error',
-        });
-      }),
-    );
+    // Patrón "Fast Response + async queue": respondemos 200 inmediatamente
+    // y movemos el procesamiento al worker vía QStash. Si QStash no está
+    // configurado (dev/local), fallback a waitUntil.
+    //
+    // Ventajas de QStash vs waitUntil:
+    //   - Si el worker falla, QStash reintenta con backoff (hasta 3x)
+    //   - Si Vercel mata la función a los 5min, QStash la reencola
+    //   - Decouple total: webhook responde a Meta sin depender del LLM
+    //   - Observabilidad: dashboard de QStash muestra errores/retries
+    if (isQStashConfigured()) {
+      const origin = req.nextUrl.origin;
+      const workerUrl = `${origin}/api/worker/process-message`;
+      const pub = await publishMessage(workerUrl, body);
+      if (!pub.ok) {
+        // Publicación falló — fallback a waitUntil para no perder el mensaje.
+        console.warn('[webhook] QStash publish failed, fallback to waitUntil:', pub.reason);
+        waitUntil(
+          processIncomingMessage(body).catch((err) => {
+            console.error('Error procesando mensaje WA (fallback):', err);
+            logWebhook({ provider: 'whatsapp', eventType: 'process_error', error: err instanceof Error ? err.message : 'Unknown error' });
+          }),
+        );
+      }
+    } else {
+      // Sin QStash configurado — modo legacy con waitUntil.
+      waitUntil(
+        processIncomingMessage(body).catch((err) => {
+          console.error('Error procesando mensaje WA:', err);
+          logWebhook({
+            provider: 'whatsapp',
+            eventType: 'process_error',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }),
+      );
+    }
 
     return NextResponse.json({ status: 'processing' });
   } catch (error) {
