@@ -101,7 +101,29 @@ async function findNextAvailableDate(opts: {
   durationMinutes: number;
   staffList: StaffSlim[];
 }): Promise<string | null> {
+  // PERF-2: 1 query batch trayendo TODAS las citas del rango (14 días) en vez
+  // de hacer (14 días) × (N staff) queries individuales. Con 5 staff ahorra
+  // 70 round-trips a Supabase y el TOOL_TIMEOUT_MS = 4_000 ya no se agota.
   const start = new Date(opts.startDate + 'T00:00:00Z');
+  const rangeStart = new Date(start.getTime() + 86_400_000).toISOString();
+  const rangeEnd = new Date(start.getTime() + 15 * 86_400_000).toISOString();
+
+  const { data: bookings } = await supabaseAdmin
+    .from('appointments')
+    .select('staff_id, datetime, end_datetime')
+    .eq('tenant_id', opts.tenantId)
+    .in('status', ['scheduled', 'confirmed'])
+    .gte('datetime', rangeStart)
+    .lt('datetime', rangeEnd);
+
+  // Index local: staffId → array de [startMs, endMs]
+  const idx = new Map<string, Array<[number, number]>>();
+  for (const b of (bookings || []) as Array<{ staff_id: string; datetime: string; end_datetime: string }>) {
+    const arr = idx.get(b.staff_id) || [];
+    arr.push([new Date(b.datetime).getTime(), new Date(b.end_datetime).getTime()]);
+    idx.set(b.staff_id, arr);
+  }
+
   for (let i = 1; i <= 14; i++) {
     const d = new Date(start.getTime() + i * 86_400_000);
     const iso = d.toISOString().slice(0, 10);
@@ -109,25 +131,16 @@ async function findNextAvailableDate(opts: {
     const win = parseHoursWindow(opts.businessHours[dayKey]);
     if (!win) continue;
 
-    // Sondeo barato: 1 slot al open + duración; si no hay conflicto para algún
-    // staff → esa fecha tiene al menos 1 hueco.
     const firstOpen = `${String(Math.floor(win.openMin / 60)).padStart(2, '0')}:${String(win.openMin % 60).padStart(2, '0')}`;
     const dtIso = buildLocalIso(iso, firstOpen, opts.timezone);
-    const endIso = new Date(
-      new Date(dtIso).getTime() + opts.durationMinutes * 60_000,
-    ).toISOString();
+    const slotStart = new Date(dtIso).getTime();
+    const slotEnd = slotStart + opts.durationMinutes * 60_000;
 
-    // ¿Hay al menos un staff libre en ese primer slot?
+    // ¿Hay al menos un staff libre en ese primer slot? (in-memory check)
     for (const staff of opts.staffList) {
-      const { count } = await supabaseAdmin
-        .from('appointments')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', opts.tenantId)
-        .eq('staff_id', staff.id)
-        .in('status', ['scheduled', 'confirmed'])
-        .lt('datetime', endIso)
-        .gt('end_datetime', dtIso);
-      if ((count ?? 0) === 0) return iso;
+      const conflicts = idx.get(staff.id) || [];
+      const hasConflict = conflicts.some(([s, e]) => s < slotEnd && e > slotStart);
+      if (!hasConflict) return iso;
     }
   }
   return null;

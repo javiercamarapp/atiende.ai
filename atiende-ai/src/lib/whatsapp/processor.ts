@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 import { transcribeAudio } from '@/lib/voice/deepgram';
-import { checkRateLimit, checkTenantLimit } from '@/lib/rate-limit';
+import { checkRateLimit, checkTenantLimit, checkTenantRateLimit } from '@/lib/rate-limit';
 import { resolveIntent } from '@/lib/whatsapp/classifier';
 import { buildRagContext } from '@/lib/whatsapp/rag-context';
 import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
@@ -35,7 +35,8 @@ import {
   acquireConversationLock,
   releaseConversationLock,
 } from '@/lib/whatsapp/conversation-lock';
-import { maskPhone } from '@/lib/utils/logger';
+import { maskPhone, redactHistoryForLLM } from '@/lib/utils/logger';
+import { encryptPII } from '@/lib/utils/crypto';
 import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +59,18 @@ function tenantHasToolCallingEnabled(tenant: Record<string, unknown>): boolean {
 
 function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, 4096);
+}
+
+// SEC-1: Wrapper que aplica el guardrail anti-prompt-injection además de
+// la sanitización HTML. Usado al construir el mensaje para el LLM.
+import { guardUserInput } from '@/lib/guardrails/input-guard';
+function safeUserMessage(raw: string): { content: string; flagged: boolean } {
+  const cleaned = sanitizeInput(raw);
+  const guard = guardUserInput(cleaned);
+  if (guard.flagged) {
+    console.warn('[guardrail] prompt injection patterns:', guard.reasons.slice(0, 3));
+  }
+  return { content: guard.sanitized, flagged: guard.flagged };
 }
 
 interface WhatsAppWebhookBody {
@@ -129,8 +142,17 @@ async function checkGates(
   const rateLimited = await checkRateLimit(senderPhone);
   if (!rateLimited.allowed) return false;
 
-  const tenantLimited = await checkTenantLimit(tenant.id, tenant.plan);
-  if (!tenantLimited.allowed) return false;
+  // SEC-4: ahora pasa senderPhone para tracking de fan-out (DDoS con SIM
+  // virtuales) y aplica burst-cap per-minute (1/10 del límite horario).
+  const tenantLimited = await checkTenantRateLimit(tenant.id, tenant.plan, senderPhone);
+  if (!tenantLimited.allowed) {
+    if (tenantLimited.reason === 'burst') {
+      console.warn('[gates] tenant burst rate-limit', { tenantId: tenant.id });
+    }
+    return false;
+  }
+  // Mantengo checkTenantLimit referenciado para no romper el deprecated path
+  void checkTenantLimit;
 
   // Trial expiry
   if (tenant.plan === 'free_trial' && tenant.trial_ends_at) {
@@ -616,7 +638,7 @@ async function handleSingleMessageInner(
       tenant_id: tenant.id,
       direction: 'inbound',
       sender_type: 'customer',
-      content,
+      content: encryptPII(content),
       message_type: messageType,
       wa_message_id: messageId,
     });
@@ -627,17 +649,19 @@ async function handleSingleMessageInner(
   //    - Check a nivel app (arriba, paso 0) — reject silent si ya existe
   //    - DB UNIQUE constraint en wa_message_id (si código 23505 → duplicate
   //      webhook retry simultáneo, safe to skip)
+  // PRIV-2: cifrado application-level de campos sensibles. Si la key no
+  // está configurada, encryptPII es passthrough (rollout gradual).
   const { error: insertErr } = await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
     direction: 'inbound',
     sender_type: 'customer',
-    content,
+    content: encryptPII(content),
     message_type: messageType,
     wa_message_id: messageId,
     media_type: ['audio', 'image', 'document', 'video'].includes(messageType) ? messageType : null,
-    media_transcription: mediaTranscription || null,
-    media_description: mediaDescription || null,
+    media_transcription: encryptPII(mediaTranscription || null),
+    media_description: encryptPII(mediaDescription || null),
   });
   if (insertErr) {
     // PostgreSQL 23505 = unique_violation. Significa race con otro webhook
@@ -751,13 +775,13 @@ async function handleSingleMessageInner(
     content,
   );
 
-  // 15. Save outbound message + metrics
+  // 15. Save outbound message + metrics (PRIV-2: cifrado at-rest)
   await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: tenant.id,
     direction: 'outbound',
     sender_type: 'bot',
-    content: response.text,
+    content: encryptPII(response.text),
     message_type: 'text',
     intent,
     model_used: response.model,
@@ -1001,13 +1025,16 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     // FAQ regex matchó pero handler retornó null (data missing) → cae al LLM
   }
 
-  // 4. Cargar historial conversacional
-  const history = await getConversationContext(conversationId, 20);
+  // 4. Cargar historial conversacional (MT-1: 40 mensajes en vez de 20)
+  const history = await getConversationContext(conversationId, 40);
 
   // 5. Componer messages: history + último mensaje del usuario
+  // SEC-1: aplicamos guardrail anti-prompt-injection al último mensaje;
+  // PRIV-6: enmascaramos PII en el historial antes de mandarlo al LLM.
+  const safeMsg = safeUserMessage(content);
   const orchestratorMessages = [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content },
+    ...redactHistoryForLLM(history).map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: safeMsg.content },
   ];
 
   // 6. AGENTE: Phase 2.D usa AGENDA agent para todos los tenants con
@@ -1085,7 +1112,7 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     tenant_id: tenant.id,
     direction: 'outbound',
     sender_type: 'bot',
-    content: responseText,
+    content: encryptPII(responseText),
     message_type: 'text',
     intent: `orchestrator.${agentName}`,
     model_used: modelUsed,
