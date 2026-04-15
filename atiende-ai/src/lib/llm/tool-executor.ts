@@ -118,6 +118,44 @@ export function getToolSchemas(names?: string[] | null): OpenAI.Chat.ChatComplet
  * no consumir el presupuesto del orchestrator (10s total) en una sola tool. */
 const TOOL_TIMEOUT_MS = 4_000;
 
+/** Máximo de chars que serializamos al pasar el resultado de una tool al LLM.
+ * Evita que un get_my_appointments con 200 citas explote tokens y costo. */
+const MAX_TOOL_RESULT_CHARS = 8_000;
+
+function truncateToolResult(result: unknown, name: string): unknown {
+  try {
+    const json = JSON.stringify(result);
+    if (json.length <= MAX_TOOL_RESULT_CHARS) return result;
+    // Si el resultado es un array, recortamos al primer N items + meta.
+    if (Array.isArray(result)) {
+      const truncated: unknown[] = [];
+      let acc = 2; // brackets
+      for (const item of result) {
+        const itemJson = JSON.stringify(item);
+        if (acc + itemJson.length + 1 > MAX_TOOL_RESULT_CHARS - 200) break;
+        truncated.push(item);
+        acc += itemJson.length + 1;
+      }
+      return {
+        _truncated: true,
+        _original_count: result.length,
+        _kept_count: truncated.length,
+        _note: `Resultado de ${name} truncado por exceder ${MAX_TOOL_RESULT_CHARS} chars.`,
+        items: truncated,
+      };
+    }
+    // Si es objeto, devolvemos un wrapper con preview.
+    return {
+      _truncated: true,
+      _original_chars: json.length,
+      _note: `Resultado de ${name} truncado por exceder ${MAX_TOOL_RESULT_CHARS} chars.`,
+      preview: json.slice(0, MAX_TOOL_RESULT_CHARS - 300),
+    };
+  } catch {
+    return result;
+  }
+}
+
 function withToolTimeout<T>(promise: Promise<T>, ms: number, name: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -153,7 +191,8 @@ export async function executeTool(
 
   const start = Date.now();
   try {
-    const result = await withToolTimeout(def.handler(args, ctx), TOOL_TIMEOUT_MS, name);
+    const rawResult = await withToolTimeout(def.handler(args, ctx), TOOL_TIMEOUT_MS, name);
+    const result = truncateToolResult(rawResult, name);
     return {
       success: true,
       result,

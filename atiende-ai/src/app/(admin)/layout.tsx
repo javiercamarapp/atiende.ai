@@ -4,11 +4,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServerSupabase } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-
-const ADMIN_EMAILS = ['javier@atiende.ai', 'admin@atiende.ai'];
 
 interface NavItem {
   href: string;
@@ -30,9 +29,18 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  // Doble gate: app_metadata.role === 'admin' O email en allowlist
+  // FIX 11: RBAC dinámico vía tabla admin_users — sin allowlists hardcodeadas.
+  // Doble gate: app_metadata.role === 'admin' O fila en admin_users.
   const role = (user.app_metadata as { role?: string } | undefined)?.role;
-  const allowed = role === 'admin' || ADMIN_EMAILS.includes(user.email || '');
+  let allowed = role === 'admin';
+  if (!allowed) {
+    const { data: adminRow } = await supabaseAdmin
+      .from('admin_users')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    allowed = !!adminRow;
+  }
   if (!allowed) redirect('/home');
 
   return (
