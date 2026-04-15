@@ -78,3 +78,49 @@ export function validateResponse(
 
   return { valid: true, text };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEGUNDA CAPA ANTI-DIAGNÓSTICO — disclaimer pasivo cuando el paciente
+// pregunta algo médico. NO bloquea la respuesta del agente; solo agrega un
+// recordatorio amigable de agendar consulta. Cubre patrones que la lista
+// léxica de validateResponse() no captura porque están en el INPUT del
+// paciente (no en el output del LLM).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MEDICAL_QUERY_PATTERNS = [
+  /creo que tengo/i,
+  /podr[íi]a ser/i,
+  /s[íi]ntomas? de/i,
+  /parece que es/i,
+  /qu[ée] medicina/i,
+  /qu[ée] pastilla/i,
+  /qu[ée] dosis/i,
+  /me duele (el|la|los|las|un|una)/i,
+  /tengo (fiebre|dolor|infecci[óo]n|inflamaci[óo]n)/i,
+  /es (grave|serio|peligroso)/i,
+];
+
+const MEDICAL_DISCLAIMER =
+  '\n\nPara cualquier consulta médica, le recomendamos agendar una cita ' +
+  'con el doctor para una evaluación profesional.';
+
+/**
+ * Si el mensaje del paciente contiene patrones de auto-diagnóstico o consulta
+ * médica directa, agrega un disclaimer al final de la respuesta del agente.
+ * Idempotente: si el agente ya incluyó "evaluación profesional", no duplica.
+ */
+export function appendMedicalDisclaimer(
+  userMessage: string,
+  agentResponse: string,
+): string {
+  if (!userMessage || !agentResponse) return agentResponse;
+
+  const hasMedicalQuery = MEDICAL_QUERY_PATTERNS.some((p) => p.test(userMessage));
+  if (!hasMedicalQuery) return agentResponse;
+
+  if (agentResponse.includes('evaluación profesional')) {
+    return agentResponse; // ya tiene el disclaimer
+  }
+
+  return agentResponse + MEDICAL_DISCLAIMER;
+}
