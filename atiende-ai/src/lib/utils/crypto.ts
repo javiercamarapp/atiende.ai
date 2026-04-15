@@ -41,6 +41,25 @@ function getKey(): Buffer | null {
   return _key;
 }
 
+// BUG 2 FIX: la primera vez que se invoque encrypt/decrypt, si estamos en
+// producción Y no hay key válida, LANZAMOS en vez de fail-open a texto plano.
+// Sin esto, un olvido de ENV en devops mandaba historiales clínicos en claro
+// a Supabase sin alerta alguna (violación LFPDPPP/HIPAA).
+let _assertedOnce = false;
+function assertKeyOrFailClosed(): Buffer | null {
+  const key = getKey();
+  if (key) return key;
+  if (process.env.NODE_ENV === 'production' && !_assertedOnce) {
+    _assertedOnce = true; // evita spam de throws en el mismo proceso
+    throw new Error(
+      'MESSAGES_ENCRYPTION_KEY (or PII_ENCRYPTION_KEY) is missing or invalid in production. ' +
+      'Refusing to store medical content in plaintext. Configure a 32-byte hex key ' +
+      'and redeploy. See supabase/migrations/messages_media.sql for schema.',
+    );
+  }
+  return null;
+}
+
 /**
  * Cifra un string con AES-256-GCM. Si la llave no está configurada,
  * devuelve el texto sin cambios (fail-open en dev). En producción debes
@@ -49,7 +68,8 @@ function getKey(): Buffer | null {
 export function encryptPII(plaintext: string | null | undefined): string | null {
   if (plaintext == null) return null;
   if (plaintext === '') return '';
-  const key = getKey();
+  // BUG 2 FIX: en producción, fail-closed si no hay key.
+  const key = assertKeyOrFailClosed();
   if (!key) return plaintext;
   try {
     const iv = crypto.randomBytes(12);

@@ -483,15 +483,21 @@ registerTool('book_appointment', {
       args.service_type,
     );
 
-    // FIX 7: rechaza servicios mal configurados (precio ≤ 0). Cobrar $0 sin
-    // intención del owner es peor que pedirle que corrija el catálogo —
-    // silenciar el bug llevaría a citas gratis indebidas.
-    if (matchedService && (matchedService.price === null || matchedService.price === undefined || Number(matchedService.price) <= 0)) {
+    // BUG 6 FIX: rechaza solo precios NULL/undefined/negativos — precio
+    // EXACTO de 0 es legítimo (valoración inicial gratis, lectura de
+    // estudios, consulta de cortesía). El catálogo clínico mexicano
+    // comúnmente marca servicios gratuitos con price=0 intencional.
+    if (
+      matchedService &&
+      (matchedService.price === null ||
+        matchedService.price === undefined ||
+        Number(matchedService.price) < 0)
+    ) {
       return {
         success: false,
-        error_code: 'SERVICE_PRICE_INVALID',
+        error_code: 'INVALID_SERVICE_PRICE',
         message:
-          'Ese servicio no tiene precio configurado. Por favor pídale al consultorio que actualice el catálogo antes de agendar.',
+          'Ese servicio tiene un precio inválido en el catálogo. Por favor pídale al consultorio que lo corrija antes de agendar.',
       };
     }
 
@@ -852,10 +858,12 @@ registerTool('modify_appointment', {
     }
 
     // 1. SELECT scoped por (id, tenant_id, customer_phone del SENDER REAL)
+    // BUG 3 FIX: incluimos customer_name y service_id para poder recrear
+    // el Google Calendar event después del UPDATE.
     const { data: apt, error: readErr } = await supabaseAdmin
       .from('appointments')
       .select(
-        'id, staff_id, datetime, end_datetime, duration_minutes, status, google_event_id, notes',
+        'id, staff_id, service_id, datetime, end_datetime, duration_minutes, status, google_event_id, notes, customer_name, customer_phone, confirmation_code',
       )
       .eq('id', resolvedId!)
       .eq('tenant_id', ctx.tenantId)
@@ -971,16 +979,55 @@ registerTool('modify_appointment', {
       };
     }
 
-    // 6. Actualizar Google Calendar (cancel del viejo evento — el siguiente
-    //    sync creará el nuevo si la integración está activa en el staff)
+    // 6. Actualizar Google Calendar — BUG 3 FIX: CANCEL del viejo Y CREATE
+    // del nuevo evento. El bug anterior solo cancelaba asumiendo que un
+    // "sync posterior" recrearía el evento; en realidad no existía ese sync
+    // y el doctor veía la cita desaparecer de su Google Calendar.
     let calendar_unsync_attempted = false;
+    let calendar_resync_ok = false;
+    let new_google_event_id: string | null = null;
     if (apt.google_event_id) {
       calendar_unsync_attempted = true;
       try {
-        const { cancelCalendarEvent } = await import('@/lib/calendar/google');
+        const { cancelCalendarEvent, createCalendarEvent } = await import('@/lib/calendar/google');
         await cancelCalendarEvent('primary', apt.google_event_id as string);
+        // Buscar staff + service para armar el nuevo evento.
+        const [{ data: staffRow }, { data: serviceRow }] = await Promise.all([
+          supabaseAdmin
+            .from('staff')
+            .select('google_calendar_id, name')
+            .eq('id', apt.staff_id as string)
+            .maybeSingle(),
+          apt.service_id
+            ? supabaseAdmin
+                .from('services')
+                .select('name')
+                .eq('id', apt.service_id as string)
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+        const calendarId = (staffRow?.google_calendar_id as string) || 'primary';
+        const serviceName = (serviceRow?.name as string) || 'Consulta';
+        const ev = await createCalendarEvent({
+          calendarId,
+          summary: `${serviceName} - ${apt.customer_name || 'Paciente'}`,
+          description:
+            `WhatsApp: ${apt.customer_phone}${mergedNotes ? `\nNotas: ${mergedNotes}` : ''}` +
+            (apt.confirmation_code ? `\nCódigo: ${apt.confirmation_code}` : ''),
+          startTime: newDatetime,
+          endTime: newEndDt,
+          attendeeEmail: undefined,
+        });
+        if (ev?.eventId) {
+          new_google_event_id = ev.eventId;
+          calendar_resync_ok = true;
+          await supabaseAdmin
+            .from('appointments')
+            .update({ google_event_id: ev.eventId })
+            .eq('id', apt.id);
+        }
       } catch (err) {
-        console.warn('[tool:modify_appointment] Calendar unsync failed:', err);
+        console.warn('[tool:modify_appointment] Calendar re-sync failed:', err);
       }
     }
 
@@ -1014,6 +1061,8 @@ registerTool('modify_appointment', {
         new_datetime_iso: newDatetime,
         new_datetime_formatted: `${newDateFmt} a las ${newTimeFmt}`,
         calendar_unsync_attempted,
+        calendar_resync_ok,
+        new_google_event_id,
       },
       summary: `Su cita fue reagendada de ${oldDateFmt} ${oldTimeFmt} a ${newDateFmt} ${newTimeFmt}.`,
     };
