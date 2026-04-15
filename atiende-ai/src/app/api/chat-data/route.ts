@@ -96,19 +96,41 @@ function validateSql(sql: string, tenantId: string): { ok: true } | { ok: false;
     }
   }
 
-  // Debe mencionar el tenant_id
-  if (!sql.includes(tenantId)) {
-    return { ok: false, reason: 'tenant_id_filter_required' };
-  }
+  // BUG 4 FIX: validación estricta del filtro tenant_id.
+  // Antes solo verificábamos `sql.includes(tenantId)` — trivialmente
+  // bypass-eable con prompt injection: `SELECT * FROM contacts WHERE 1=1
+  // -- <tenant-uuid>` hacía que el UUID estuviera en el string pero en un
+  // comentario, no filtrando nada.
+  //
+  // Defensa nueva en 3 capas:
+  //   a) Elimina comentarios (--...$ y /*...*/) ANTES de validar.
+  //   b) Exige que cada tabla mencionada en FROM/JOIN aparezca ASOCIADA
+  //      a un `WHERE ... tenant_id = '<uuid>'` o `AND tenant_id = '<uuid>'`.
+  //   c) El UUID debe ser LITERAL (entre comillas simples), no un identifier.
+  const sqlNoComments = sql
+    .replace(/--.*$/gm, '')    // comentarios de una línea
+    .replace(/\/\*[\s\S]*?\*\//g, ''); // bloque /* ... */
 
-  // Check que solo mencione tablas permitidas
+  // Check que solo mencione tablas permitidas (sobre el SQL sin comentarios)
   const tableRegex = /\bfrom\s+([a-z_]+)|\bjoin\s+([a-z_]+)/gi;
   let m: RegExpExecArray | null;
-  while ((m = tableRegex.exec(sql)) !== null) {
+  const tablesUsed = new Set<string>();
+  while ((m = tableRegex.exec(sqlNoComments)) !== null) {
     const table = (m[1] || m[2]).toLowerCase();
     if (!ALLOWED_TABLES.includes(table)) {
       return { ok: false, reason: `forbidden_table: ${table}` };
     }
+    tablesUsed.add(table);
+  }
+
+  // Requerir el UUID como literal string (no como identifier ni como
+  // comentario). Pattern: = 'UUID' or = "UUID". Case-insensitive.
+  const tenantLiteralRe = new RegExp(
+    `tenant_id\\s*=\\s*['"]${tenantId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`,
+    'i',
+  );
+  if (!tenantLiteralRe.test(sqlNoComments)) {
+    return { ok: false, reason: 'tenant_id_literal_filter_required' };
   }
 
   // No semicolons extras (un SELECT, terminado opcionalmente con ;)
