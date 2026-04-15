@@ -118,10 +118,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // RESPONDER 200 INMEDIATAMENTE — no bloquear.
-    // CRÍTICO: usar waitUntil de @vercel/functions para que la función
-    // serverless NO se congele al retornar — sin esto, processIncomingMessage
-    // puede truncarse a medio LLM call, dejando mensajes sin procesar.
+    // FIX 1 (audit R4): idempotency check SÍNCRONO antes de disparar el
+    // background task. Si Meta nos reintenta un mensaje (p.ej. por timeout
+    // en nuestra respuesta de 5s previa) ya grabado, retornamos 200 sin
+    // costar LLM ni WhatsApp API en el reintento. Solo ~20ms de latencia.
+    try {
+      const firstMessageId = changes?.value?.messages?.[0]?.id as string | undefined;
+      if (firstMessageId) {
+        const { data: existing } = await supabaseAdmin
+          .from('messages')
+          .select('id')
+          .eq('wa_message_id', firstMessageId)
+          .maybeSingle();
+        if (existing) {
+          return NextResponse.json({ status: 'duplicate_ignored' });
+        }
+      }
+    } catch {
+      /* Best effort — si el check falla, dejamos que el pipeline idempotente
+         interno del processor maneje el duplicado. */
+    }
+
+    // Patrón "Fast Response": respondemos 200 inmediatamente y movemos
+    // TODA la lógica pesada (orquestador + LLM + WhatsApp send) al
+    // background via waitUntil. Meta Cloud API corta la conexión a los 5s
+    // y reintenta 3× si no tiene 200, lo cual generaría duplicados y
+    // saturaría el pipeline.
     waitUntil(
       processIncomingMessage(body).catch((err) => {
         console.error('Error procesando mensaje WA:', err);
@@ -133,7 +155,7 @@ export async function POST(req: NextRequest) {
       }),
     );
 
-    return NextResponse.json({ status: 'received' });
+    return NextResponse.json({ status: 'processing' });
   } catch (error) {
     console.error('WhatsApp webhook error:', error);
     logWebhook({ provider: 'whatsapp', eventType: 'error', statusCode: 500, error: error instanceof Error ? error.message : 'Unknown error', durationMs: Date.now() - startTime });
