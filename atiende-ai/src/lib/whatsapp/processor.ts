@@ -97,25 +97,33 @@ function tenantHasToolCallingEnabled(tenant: Record<string, unknown>): boolean {
   return features?.tool_calling === true;
 }
 
-import { MAX_USER_INPUT_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MAX_CHARS, EXTRACT_CONTENT_TIMEOUT_MS } from '@/lib/config';
+import { MAX_USER_INPUT_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MAX_TOKENS, EXTRACT_CONTENT_TIMEOUT_MS } from '@/lib/config';
 
 function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, MAX_USER_INPUT_CHARS);
 }
 
-// BUG 7 FIX: presupuesto de caracteres para el historial que mandamos al LLM.
-// Con 40 mensajes largos (audio + imágenes + PDFs transcritos) se puede
-// desbordar la ventana de Grok; cuando pasa, el modelo trunca el tool_call
-// a la mitad y falla el orquestador. Esta función conserva SIEMPRE los
-// últimos `keepRecent` turnos (contexto inmediato) y agrega más antiguos
-// mientras quepan en `maxChars`.
+// BUG 7 FIX + AUDIT R18: presupuesto por TOKENS ESTIMADOS (no chars puros)
+// para el historial que mandamos al LLM. Con 40 mensajes largos (audio +
+// imágenes + PDFs transcritos) se puede desbordar la ventana de Grok; cuando
+// pasa, el modelo trunca el tool_call a la mitad y falla el orquestador.
+//
+// Antes usábamos content.length (chars). Problema: emojis y español con
+// acentos compuestos inflan tokens vs chars, metiendo edge cases de
+// overflow. Ahora usamos estimateTokens() conservador (3 chars/token) que
+// da 15-25% de safety buffer.
+//
+// Conserva SIEMPRE los últimos `keepRecent` turnos (contexto inmediato) y
+// agrega más antiguos mientras quepan en `maxTokens`.
 //
 // AUDIT-R5 BAJO: también colapsa reacciones consecutivas (mismo emoji y/o
 // múltiples [Reacción ...] seguidos) en una sola entrada para no desperdiciar
 // tokens. Las reacciones son señal UX, no contexto semántico para el LLM.
-function truncateHistoryByChars<T extends { content: string }>(
+import { estimateTokens } from '@/lib/utils/token-estimate';
+
+function truncateHistoryByTokens<T extends { content: string }>(
   messages: T[],
-  maxChars: number,
+  maxTokens: number,
   keepRecent = 5,
 ): T[] {
   // Paso 0: colapsar reacciones consecutivas.
@@ -134,15 +142,15 @@ function truncateHistoryByChars<T extends { content: string }>(
   if (messages.length <= keepRecent) return messages;
   const recent = messages.slice(-keepRecent);
   const older = messages.slice(0, -keepRecent);
-  const recentChars = recent.reduce((s, m) => s + (m.content?.length || 0), 0);
-  let budget = maxChars - recentChars;
+  const recentTokens = recent.reduce((s, m) => s + estimateTokens(m.content), 0);
+  let budget = maxTokens - recentTokens;
   if (budget <= 0) return recent;
   const kept: T[] = [];
   for (let i = older.length - 1; i >= 0; i--) {
-    const len = older[i].content?.length || 0;
-    if (len > budget) break;
+    const tokens = estimateTokens(older[i].content);
+    if (tokens > budget) break;
     kept.unshift(older[i]);
-    budget -= len;
+    budget -= tokens;
   }
   return [...kept, ...recent];
 }
@@ -1188,7 +1196,7 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
   // los 5 últimos turnos (contexto inmediato) y agregamos más antiguos
   // hasta llegar al presupuesto.
   const rawHistory = await getConversationContext(conversationId, HISTORY_MAX_MESSAGES);
-  const history = truncateHistoryByChars(rawHistory, HISTORY_MAX_CHARS);
+  const history = truncateHistoryByTokens(rawHistory, HISTORY_MAX_TOKENS);
 
   // 5. Componer messages: history + último mensaje del usuario
   // SEC-1: aplicamos guardrail anti-prompt-injection al último mensaje;
