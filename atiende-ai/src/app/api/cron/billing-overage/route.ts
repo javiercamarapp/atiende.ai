@@ -15,9 +15,25 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Redis } from '@upstash/redis';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { reportVoiceOverageToStripe } from '@/lib/billing/stripe';
 import { requireCronAuth, logCronRun } from '@/lib/agents/internal/cron-helpers';
+
+// AUDIT-R8 ALTO: lock Redis para idempotency a nivel cron run.
+// Vercel ocasionalmente dispara crons 2× el mismo día. Si pasa, sin este
+// lock cobraríamos el overage doble. El WHERE overage_billed=false es la
+// red defensiva extra (solo cobramos las filas que aún no están marcadas),
+// pero el lock evita la condición de carrera entre el SELECT y el UPDATE.
+let _redis: Redis | null = null;
+function getRedis(): Redis | null {
+  if (_redis) return _redis;
+  const url = process.env.UPSTASH_REDIS_URL;
+  const token = process.env.UPSTASH_REDIS_TOKEN;
+  if (!url || !token) return null;
+  _redis = new Redis({ url, token });
+  return _redis;
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,6 +61,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   now.setUTCDate(1);
   now.setUTCMonth(now.getUTCMonth() - 1);
   const lastMonth = now.toISOString().substring(0, 7);
+
+  // AUDIT-R8 ALTO: lock idempotency — el cron solo puede correr una vez por
+  // mes-objetivo. TTL 7 días para que un retry tardío del próximo día también
+  // sea bloqueado.
+  const redis = getRedis();
+  if (redis) {
+    const lockKey = `cron:billing-overage:${lastMonth}`;
+    try {
+      const acquired = await redis.set(lockKey, new Date().toISOString(), {
+        nx: true,
+        ex: 7 * 24 * 3600,
+      });
+      if (acquired !== 'OK') {
+        console.warn(`[cron/billing-overage] already ran for ${lastMonth}, skipping`);
+        return NextResponse.json({
+          status: 'already_processed',
+          month: lastMonth,
+          duration_ms: Date.now() - startedAt.getTime(),
+        });
+      }
+    } catch (err) {
+      console.warn('[cron/billing-overage] redis lock failed, proceeding:', err instanceof Error ? err.message : err);
+      // Continuamos sin lock — el WHERE overage_billed=false es la red de seguridad
+    }
+  }
 
   // Candidatos: overage > 0 del mes anterior y aún no cobrado
   const { data: pending, error } = await supabaseAdmin

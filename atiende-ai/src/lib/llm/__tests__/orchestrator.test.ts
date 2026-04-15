@@ -13,6 +13,20 @@ vi.mock('@/lib/llm/openrouter', () => ({
       this.name = 'LoopGuardError';
     }
   },
+  PartialExecutionError: class PartialExecutionError extends Error {
+    constructor(
+      message: string,
+      public readonly cause: unknown,
+      public readonly partialToolCalls: unknown[],
+      public readonly partialTokensIn: number,
+      public readonly partialTokensOut: number,
+      public readonly partialModel: string,
+    ) {
+      super(message);
+      this.name = 'PartialExecutionError';
+    }
+  },
+  calculateCost: (_m: string, _i: number, _o: number) => 0,
 }));
 
 vi.mock('@/lib/llm/rate-limiter', () => ({
