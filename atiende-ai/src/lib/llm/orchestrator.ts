@@ -26,7 +26,7 @@ import {
   calculateCost,
   type ToolCallRecord,
 } from '@/lib/llm/openrouter';
-import { executeTool, isMutationTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { executeTool, isMutationTool, type ToolContext, type ToolExecutionResult } from '@/lib/llm/tool-executor';
 import { checkOpenRouterRateLimit, RateLimitError } from '@/lib/llm/rate-limiter';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,14 +141,23 @@ function withTimeoutAbort<T>(
  * Adapter: el toolExecutor que `generateWithTools` espera es una función
  * que recibe (name, args) y resuelve a un ToolExecutionResult. Aquí lo
  * componemos cerrando sobre el `ToolContext` extraído del orchestrator ctx.
+ *
+ * AUDIT R18: el cache de mutations exitosas se comparte entre primary y
+ * fallback (ambos construyen ToolContext pasando la MISMA Map) para
+ * defender contra doble-ejecución aún si el fallback LLM intenta repetir
+ * una mutación ya hecha.
  */
-function buildToolExecutor(ctx: OrchestratorContext) {
+function buildToolExecutor(
+  ctx: OrchestratorContext,
+  sharedCache: Map<string, ToolExecutionResult>,
+) {
   const toolCtx: ToolContext = {
     tenantId: ctx.tenantId,
     contactId: ctx.contactId,
     conversationId: ctx.conversationId,
     customerPhone: ctx.customerPhone,
     tenant: ctx.tenant,
+    successfulCallCache: sharedCache,
   };
   return async (toolName: string, args: Record<string, unknown>) => {
     return executeTool(toolName, args, toolCtx);
@@ -162,7 +171,11 @@ function buildToolExecutor(ctx: OrchestratorContext) {
 export async function runOrchestrator(
   ctx: OrchestratorContext,
 ): Promise<OrchestratorResult> {
-  const toolExecutor = buildToolExecutor(ctx);
+  // AUDIT R18: cache compartido entre primary y fallback para defense-in-depth
+  // contra ghost mutations. Vive solo en este closure del turn (no global) →
+  // nunca leak de state entre invocaciones del orquestador.
+  const sharedSuccessCache = new Map<string, ToolExecutionResult>();
+  const toolExecutor = buildToolExecutor(ctx, sharedSuccessCache);
   const agentUsed = ctx.agentName || DEFAULT_AGENT_NAME;
 
   // Rate limit gate — lanza RateLimitError si se excede presupuesto OpenRouter

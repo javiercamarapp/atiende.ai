@@ -429,34 +429,52 @@ ALTER TABLE daily_analytics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE onboarding_responses ENABLE ROW LEVEL SECURITY;
 
+-- AUDIT R18: WITH CHECK explícito en todas las policies tenant-scoped. En
+-- Postgres `FOR ALL USING ...` sí aplica la expresión a INSERT/UPDATE
+-- (new-rows) por default, pero ser explícito elimina ambigüedad y cumple
+-- con recomendación oficial de Supabase para auditorías.
 CREATE POLICY "tenant_own" ON tenants FOR ALL
-USING (user_id = auth.uid());
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 CREATE POLICY "tenant_data" ON staff FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON services FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON contacts FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON conversations FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON messages FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON appointments FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON orders FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON leads FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON voice_calls FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON knowledge_chunks FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON daily_analytics FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON tenant_agents FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 CREATE POLICY "tenant_data" ON onboarding_responses FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 -- marketplace_agents es publico (lectura)
 CREATE POLICY "public_read" ON marketplace_agents FOR SELECT
 USING (true);

@@ -20,6 +20,9 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/webhook-logger', () => ({
   logWebhook: vi.fn(),
+  enforceWebhookSize: () => ({ ok: true }),
+  enforceWebhookSizePostRead: () => ({ ok: true }),
+  WEBHOOK_MAX_BYTES: 2 * 1024 * 1024,
 }));
 
 const mockConstructEvent = vi.fn();

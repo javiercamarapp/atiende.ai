@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { selectModel, calculateCost, MODELS } from '../openrouter';
+import {
+  selectModel,
+  calculateCost,
+  MODELS,
+  updateModelPriceCache,
+  getCachedModelPrices,
+  getTrackedModels,
+} from '../openrouter';
 
 describe('MODELS constants', () => {
   it('define todos los modelos necesarios', () => {
@@ -140,5 +147,36 @@ describe('calculateCost()', () => {
     const claudeCost = calculateCost('anthropic/claude-sonnet-4-6', 1000, 500);
     const geminiCost = calculateCost('google/gemini-2.5-flash-lite', 1000, 500);
     expect(claudeCost).toBeGreaterThan(geminiCost);
+  });
+});
+
+// AUDIT R17 BUG-011: dynamic MODEL_PRICES cache via cron refresh.
+describe('Dynamic MODEL_PRICES cache', () => {
+  it('getTrackedModels devuelve la lista hardcodeada de modelos que trackeamos', () => {
+    const tracked = getTrackedModels();
+    expect(tracked).toContain('openai/gpt-4o-mini');
+    expect(tracked).toContain('google/gemini-2.5-flash-lite');
+    expect(tracked).toContain('x-ai/grok-4.1-fast');
+    expect(tracked.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('updateModelPriceCache actualiza el cache in-memory', () => {
+    updateModelPriceCache('openai/gpt-4o-mini', [0.20, 0.80]);
+    const cached = getCachedModelPrices();
+    expect(cached['openai/gpt-4o-mini']).toEqual([0.20, 0.80]);
+  });
+
+  it('calculateCost prefiere rates del cache sobre MODEL_PRICES hardcodeado', () => {
+    // Hardcode: gpt-4o-mini = [0.15, 0.60]. Forzamos cache a [1.0, 2.0].
+    updateModelPriceCache('openai/gpt-4o-mini', [1.0, 2.0]);
+    // 1M in + 0 out * [1.0, 2.0] / 1M = 1.0 USD
+    const cost = calculateCost('openai/gpt-4o-mini', 1_000_000, 0);
+    expect(cost).toBeCloseTo(1.0, 2);
+  });
+
+  it('calculateCost cae al hardcoded cuando modelo no está en cache', () => {
+    // claude NO lo metemos en cache → usa hardcoded [3.00, 15.00]
+    const cost = calculateCost('anthropic/claude-sonnet-4-6', 1_000_000, 0);
+    expect(cost).toBeCloseTo(3.0, 2);
   });
 });
