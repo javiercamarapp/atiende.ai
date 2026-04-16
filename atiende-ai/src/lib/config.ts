@@ -13,6 +13,11 @@ export const MAX_USER_INPUT_CHARS_GUARDED = 2000; // input-guardrail (más agres
 // ─── History para LLM ──────────────────────────────────────────────────────
 export const HISTORY_MAX_MESSAGES = 40;
 export const HISTORY_MAX_CHARS = 40_000;
+// AUDIT R18: truncado por TOKENS estimados (ratio conservador 3 chars/token
+// para español/mixed-content) en lugar de por chars puros. Evita el edge case
+// donde un mensaje con emojis/acentos inflate tokens y desborde context.
+// 40_000 chars ÷ 3 = ~13,333 tokens safety budget.
+export const HISTORY_MAX_TOKENS = Math.floor(HISTORY_MAX_CHARS / 3);
 export const HISTORY_KEEP_RECENT = 5;
 
 // ─── LLM orchestrator ──────────────────────────────────────────────────────

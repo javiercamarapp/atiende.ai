@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { logWebhook } from '@/lib/webhook-logger';
+import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 import crypto from 'crypto';
 
 function verifyConektaSignature(
@@ -29,7 +29,14 @@ function verifyConektaSignature(
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   try {
+    // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+    const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'conekta', startTime);
+    if (!sizeCheck.ok) return sizeCheck.response;
+
     const rawBody = await req.text();
+
+    const postRead = enforceWebhookSizePostRead(Buffer.byteLength(rawBody, 'utf8'), WEBHOOK_MAX_BYTES, 'conekta', startTime);
+    if (!postRead.ok) return postRead.response;
     const signature = req.headers.get('digest') ?? req.headers.get('http_digest');
     const webhookKey = process.env.CONEKTA_WEBHOOK_KEY;
 

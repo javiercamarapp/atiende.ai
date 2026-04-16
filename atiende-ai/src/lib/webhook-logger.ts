@@ -58,6 +58,75 @@ export async function logWebhook(params: {
 }
 
 /**
+ * AUDIT R17 BUG-002: guardia de tamaño ANTES de bufferear el payload.
+ *
+ * Antes: cada route webhook hacía `await req.arrayBuffer()` sin límite. Un
+ * atacante con payload de varios MB podía tumbar el worker por OOM antes de
+ * llegar a la validación HMAC. Next.js tiene cap implícito (~4.5MB en edge)
+ * pero los handlers Node buffean todo lo que les llegue hasta que falle.
+ *
+ * Devuelve `{ ok: true }` si el header `content-length` está dentro del
+ * límite (o falta, en cuyo caso aceptamos y validamos post-read). Devuelve
+ * `{ ok: false, response }` con un 413 listo para retornar al caller.
+ *
+ * El caller DEBE también validar `rawBuffer.byteLength` post-read porque
+ * `content-length` puede mentir o faltar (streaming, proxies).
+ */
+export function enforceWebhookSize(
+  req: Request,
+  maxBytes: number,
+  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell' | 'delivery',
+  startTime: number,
+): { ok: true } | { ok: false; response: Response } {
+  const contentLength = Number(req.headers.get('content-length') || '0');
+  if (contentLength > 0 && contentLength > maxBytes) {
+    logWebhook({
+      provider,
+      eventType: 'payload_too_large',
+      statusCode: 413,
+      error: `Payload ${contentLength} bytes exceeds ${maxBytes}`,
+      durationMs: Date.now() - startTime,
+    });
+    return {
+      ok: false,
+      response: new Response('Payload too large', { status: 413 }),
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Segunda línea de defensa para tamaño — tras leer el buffer, verifica el
+ * tamaño real. El `content-length` header puede faltar (streaming) o estar
+ * equivocado. Si el buffer real excede, rechazar 413 antes de HMAC.
+ */
+export function enforceWebhookSizePostRead(
+  byteLength: number,
+  maxBytes: number,
+  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell' | 'delivery',
+  startTime: number,
+): { ok: true } | { ok: false; response: Response } {
+  if (byteLength > maxBytes) {
+    logWebhook({
+      provider,
+      eventType: 'payload_too_large_post_read',
+      statusCode: 413,
+      error: `Payload ${byteLength} bytes (post-read) exceeds ${maxBytes}`,
+      durationMs: Date.now() - startTime,
+    });
+    return {
+      ok: false,
+      response: new Response('Payload too large', { status: 413 }),
+    };
+  }
+  return { ok: true };
+}
+
+/** Cap estándar para webhooks entrantes. Meta/Stripe/Conekta/Retell/Telnyx
+ * raramente pasan de 50KB en payloads reales; 2MB es amplio margen. */
+export const WEBHOOK_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
  * Delete webhook logs older than the specified number of days (default: 30).
  * Should be called from a scheduled cron job or admin endpoint.
  */
