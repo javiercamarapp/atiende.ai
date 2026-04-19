@@ -3,11 +3,18 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Send, Phone, Video, MoreVertical, CheckCheck, Loader2 } from 'lucide-react';
 
+interface ToolCall {
+  name: string;
+  ok: boolean;
+  error?: string;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   time: string;
+  toolCalls?: ToolCall[];
 }
 
 function nowLabel(): string {
@@ -57,10 +64,7 @@ export default function PreviewPage() {
       const res = await fetch('/api/preview/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: messages.map((m) => ({ role: m.role, content: m.content })),
-        }),
+        body: JSON.stringify({ message: text }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -78,6 +82,7 @@ export default function PreviewPage() {
           role: 'assistant',
           content: json.reply || '…',
           time: nowLabel(),
+          toolCalls: Array.isArray(json.toolCalls) ? json.toolCalls : undefined,
         },
       ]);
     } catch {
@@ -155,7 +160,7 @@ export default function PreviewPage() {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-element`}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-element`}
               >
                 <div
                   className={`max-w-[80%] px-3 py-2 rounded-lg text-sm shadow-sm ${
@@ -172,6 +177,23 @@ export default function PreviewPage() {
                     )}
                   </div>
                 </div>
+                {msg.toolCalls && msg.toolCalls.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1 max-w-[80%]">
+                    {msg.toolCalls.map((tc, i) => (
+                      <span
+                        key={i}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                          tc.ok
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}
+                        title={tc.error || 'ejecutado'}
+                      >
+                        {tc.ok ? '✓' : '✗'} {tc.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 

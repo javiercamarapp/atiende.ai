@@ -2,9 +2,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CheckCircle2, MessageCircle, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
+import { CheckCircle2, MessageCircle, ExternalLink, Loader2, Copy, Check, Sparkles } from 'lucide-react';
 
 type Status = 'idle' | 'saving' | 'saved' | 'error';
+type SeedStatus = 'idle' | 'seeding' | 'seeded' | 'error';
 
 export default function ConnectWhatsAppPage() {
   const router = useRouter();
@@ -12,6 +13,9 @@ export default function ConnectWhatsAppPage() {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
   const [webhookCopied, setWebhookCopied] = useState(false);
+  const [seedStatus, setSeedStatus] = useState<SeedStatus>('idle');
+  const [seedError, setSeedError] = useState<string | null>(null);
+  const [seedResult, setSeedResult] = useState<{ services: number; staff: number; knowledge: number } | null>(null);
 
   const webhookUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/api/webhook/whatsapp`
@@ -38,6 +42,26 @@ export default function ConnectWhatsAppPage() {
     } catch {
       setStatus('error');
       setError('Error de red. Inténtalo de nuevo.');
+    }
+  }
+
+  async function handleSeedDemo() {
+    if (seedStatus === 'seeding') return;
+    setSeedStatus('seeding');
+    setSeedError(null);
+    try {
+      const res = await fetch('/api/onboarding/seed-demo', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) {
+        setSeedStatus('error');
+        setSeedError(json?.error || 'No pudimos cargar los datos demo.');
+        return;
+      }
+      setSeedResult(json.added);
+      setSeedStatus('seeded');
+    } catch {
+      setSeedStatus('error');
+      setSeedError('Error de red. Inténtalo de nuevo.');
     }
   }
 
@@ -81,6 +105,49 @@ export default function ConnectWhatsAppPage() {
             </p>
           </div>
 
+          {/* Demo seed CTA — fill in realistic services/staff/KB so the preview
+              has something to book against without forcing manual config. */}
+          <div className="animate-element animate-delay-150">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">Cargar datos de demo</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Agrega servicios, staff y horarios realistas de tu giro para probar agendas en el preview.
+                  </p>
+                  {seedError && <p className="text-xs text-red-600 mt-2">{seedError}</p>}
+                  {seedStatus === 'seeded' && seedResult && (
+                    <p className="text-xs text-emerald-700 mt-2">
+                      Listo — agregamos {seedResult.services} servicios, {seedResult.staff} staff y {seedResult.knowledge} hechos al RAG.
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleSeedDemo}
+                  disabled={seedStatus === 'seeding' || seedStatus === 'seeded'}
+                  className="shrink-0 px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  {seedStatus === 'seeding' ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Cargando…
+                    </>
+                  ) : seedStatus === 'seeded' ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      Listo
+                    </>
+                  ) : (
+                    'Cargar demo'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Preview CTA */}
           <div className="animate-element animate-delay-200">
             <button
@@ -93,7 +160,7 @@ export default function ConnectWhatsAppPage() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm">Ver preview del chatbot</p>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Chatea con tu agente antes de conectarlo a WhatsApp
+                  Agenda citas, pregunta precios, prueba el FAQ — todo real, sin WhatsApp.
                 </p>
               </div>
               <span className="text-zinc-400 group-hover:text-zinc-900 transition-colors text-sm">→</span>
