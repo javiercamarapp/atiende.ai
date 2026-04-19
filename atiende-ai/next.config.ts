@@ -10,24 +10,20 @@ const nextConfig: NextConfig = {
   },
 };
 
-// https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/#extend-your-nextjs-configuration
+// https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 export default withSentryConfig(nextConfig, {
-  // Org + project slugs (visible in Sentry URL)
-  org: 'atiendeai',
-  project: 'javascript-nextjs',
+  org: process.env.SENTRY_ORG || 'atiendeai',
+  project: process.env.SENTRY_PROJECT || 'atiende-ai',
 
-  // Only print upload logs in CI
   silent: !process.env.CI,
 
-  // Upload a larger set of source maps for prettier stack traces
   widenClientFileUpload: true,
 
-  // Route Sentry requests through /monitoring to bypass ad-blockers
   tunnelRoute: '/monitoring',
 
-  // Strip Sentry logger statements from prod bundles
-  disableLogger: true,
-
-  // Auto-instrument Vercel cron routes for monitoring
-  automaticVercelMonitors: true,
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludeReplayIframe: true,
+    excludeReplayShadowDom: true,
+  },
 });
