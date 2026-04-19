@@ -564,12 +564,18 @@ export function OnboardingChat() {
                 Asistente de {businessName || verticalDisplayName} configurado con{' '}
                 {Object.keys(capturedFields).length} datos.
               </p>
-              <div className="flex gap-3 justify-center">
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
-                  onClick={() => router.push('/home')}
+                  onClick={() => router.push('/onboarding/connect')}
                   className="px-6 py-3 rounded-2xl bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition-colors"
                 >
-                  Ir al Dashboard
+                  Conectar WhatsApp
+                </button>
+                <button
+                  onClick={() => router.push('/preview')}
+                  className="px-6 py-3 rounded-2xl border border-zinc-200 text-zinc-900 font-medium hover:bg-zinc-50 transition-colors"
+                >
+                  Ver preview
                 </button>
               </div>
             </div>
