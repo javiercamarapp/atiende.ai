@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { generateResponse, MODELS } from '@/lib/llm/openrouter';
+import { processPreviewMessage } from '@/lib/whatsapp/preview-processor';
 
-export const maxDuration = 30;
+// Orchestrator can run up to 2 LLM rounds + tool exec. 60s covers worst case.
+export const maxDuration = 60;
 
-interface HistoryTurn {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-const MAX_HISTORY_TURNS = 10;
 const MAX_MESSAGE_LENGTH = 500;
 
 export async function POST(req: NextRequest) {
@@ -28,7 +23,6 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const message = typeof body?.message === 'string' ? body.message.trim() : '';
-    const history: HistoryTurn[] = Array.isArray(body?.history) ? body.history : [];
 
     if (!message) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
@@ -42,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     const { data: tenant } = await supabaseAdmin
       .from('tenants')
-      .select('id, name, business_type, chat_system_prompt, welcome_message, bot_name')
+      .select('id, name, bot_name')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -55,28 +49,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = tenant.chat_system_prompt
-      || `Eres ${tenant.bot_name || 'un asistente'} de ${tenant.name}. Responde en español (México), breve y cordial. Estás en un preview — no hagas reservas reales.`;
-
-    const trimmedHistory = history
-      .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
-      .slice(-MAX_HISTORY_TURNS)
-      .map((t) => ({ role: t.role, content: t.content.slice(0, MAX_MESSAGE_LENGTH) }));
-
-    const result = await generateResponse({
-      model: MODELS.STANDARD,
-      system: systemPrompt,
-      messages: [...trimmedHistory, { role: 'user', content: message }],
-      maxTokens: 400,
+    const result = await processPreviewMessage({
+      tenantId: tenant.id,
+      userId: user.id,
+      message,
     });
 
     return NextResponse.json({
-      reply: result.text,
+      reply: result.reply,
+      toolCalls: result.toolCalls,
+      modelUsed: result.modelUsed,
+      agentUsed: result.agentUsed,
       botName: tenant.bot_name || 'Asistente',
       businessName: tenant.name,
     });
   } catch (err) {
     console.error('[preview/chat] error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
