@@ -12,13 +12,14 @@ import {
   getServicesAndPrices,
   getInsuranceInfo,
 } from './tools';
+import { getCached, setCached, type FAQIntent } from './cache';
 
 type FAQHandler = (tenantId: string) => Promise<string>;
 
 interface FAQPattern {
   patterns: string[];
   handler: FAQHandler;
-  intent: 'HOURS' | 'LOCATION' | 'PRICE' | 'INSURANCE';
+  intent: FAQIntent;
 }
 
 export const FAQ_PATTERNS: readonly FAQPattern[] = [
@@ -61,12 +62,24 @@ export async function handleFAQ(
   tenantId: string,
 ): Promise<string | null> {
   const norm = normalize(message);
-  for (const { patterns, handler } of FAQ_PATTERNS) {
+  for (const { patterns, handler, intent } of FAQ_PATTERNS) {
     for (const p of patterns) {
       if (norm.includes(normalize(p))) {
-        return await handler(tenantId);
+        // AUDIT P2 item 8: cache hit → skip DB roundtrip.
+        const cached = await getCached(tenantId, intent);
+        if (cached) return cached;
+        const answer = await handler(tenantId);
+        // Solo cachear si la respuesta es "real" (no el fallback de datos
+        // faltantes) — si el dueño carga el horario después, no queremos
+        // servir el "no tengo horario" durante 5 min.
+        if (answer && !answer.startsWith('No tengo')) {
+          void setCached(tenantId, intent, answer);
+        }
+        return answer;
       }
     }
   }
   return null;
 }
+
+export { invalidateTenant as invalidateFAQCache } from './cache';

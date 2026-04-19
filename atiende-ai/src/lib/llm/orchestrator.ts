@@ -28,6 +28,13 @@ import {
 } from '@/lib/llm/openrouter';
 import { executeTool, isMutationTool, type ToolContext, type ToolExecutionResult } from '@/lib/llm/tool-executor';
 import { checkOpenRouterRateLimit, RateLimitError } from '@/lib/llm/rate-limiter';
+import {
+  checkCircuit,
+  reportFailure as reportBreakerFailure,
+  reportSuccess as reportBreakerSuccess,
+  CircuitOpenError,
+  CIRCUIT_OPEN_USER_MESSAGE,
+} from '@/lib/llm/circuit-breaker';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos públicos
@@ -76,6 +83,7 @@ export interface OrchestratorResult {
 import {
   ORCHESTRATOR_PRIMARY_TIMEOUT_MS as PRIMARY_TIMEOUT_MS,
   ORCHESTRATOR_FALLBACK_TIMEOUT_MS as FALLBACK_TIMEOUT_MS,
+  ORCHESTRATOR_TOTAL_TIMEOUT_MS as TOTAL_TIMEOUT_MS,
 } from '@/lib/config';
 
 /** Default sub-agente cuando el caller no especifica uno. */
@@ -168,8 +176,42 @@ function buildToolExecutor(
 // runOrchestrator — entry point público
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * AUDIT P2 item 5 — GLOBAL wall-clock timeout sobre primary+fallback+tools.
+ * Antes cada modelo tenía su propio timeout (10s + 10s = 20s peor caso),
+ * más tool execution en el medio (4s × N rondas). En serverless edge eso
+ * puede llegar a 25-30s y chocar con el timeout de la función o el retry
+ * de Meta. 18s ceiling total deja margen para persist + smart-response
+ * downstream dentro del presupuesto de 60s de maxDuration.
+ *
+ * Si se excede: el AbortController pasado a cada generateWithTools aborta
+ * la request HTTP actual; el caller (processor) atrapa el error y envía
+ * mensaje de fallback al cliente.
+ */
 export async function runOrchestrator(
   ctx: OrchestratorContext,
+): Promise<OrchestratorResult> {
+  const globalController = new AbortController();
+  let globalTimer: NodeJS.Timeout | undefined;
+  const globalTimeoutPromise = new Promise<never>((_, reject) => {
+    globalTimer = setTimeout(() => {
+      globalController.abort();
+      reject(new OrchestratorTimeoutError(TOTAL_TIMEOUT_MS));
+    }, TOTAL_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      runOrchestratorInner(ctx, globalController.signal),
+      globalTimeoutPromise,
+    ]);
+  } finally {
+    if (globalTimer) clearTimeout(globalTimer);
+  }
+}
+
+async function runOrchestratorInner(
+  ctx: OrchestratorContext,
+  globalSignal: AbortSignal,
 ): Promise<OrchestratorResult> {
   // AUDIT R18: cache compartido entre primary y fallback para defense-in-depth
   // contra ghost mutations. Vive solo en este closure del turn (no global) →
@@ -178,6 +220,12 @@ export async function runOrchestrator(
   const toolExecutor = buildToolExecutor(ctx, sharedSuccessCache);
   const agentUsed = ctx.agentName || DEFAULT_AGENT_NAME;
 
+  // AUDIT P2 item 7: circuit breaker. Si OpenRouter está caído (5+ fallas
+  // consecutivas en 60s), bloqueamos nuevos requests por 30s. El caller
+  // (processor.ts) atrapa CircuitOpenError y responde mensaje corto al
+  // paciente sin quemar 20s de timeouts primary+fallback.
+  await checkCircuit();
+
   // Rate limit gate — lanza RateLimitError si se excede presupuesto OpenRouter
   // por tenant (60/min) o global (500/min). El caller (processor.ts) debe
   // capturarlo y responder al paciente con mensaje amigable.
@@ -185,6 +233,9 @@ export async function runOrchestrator(
 
   // ── Intento 1: modelo primario con timeout + AbortController ──
   const primaryController = new AbortController();
+  // Si el timeout global se dispara, propagar al primary inmediatamente.
+  const onGlobalAbort = () => primaryController.abort();
+  globalSignal.addEventListener('abort', onGlobalAbort, { once: true });
   try {
     const result = await withTimeoutAbort(
       generateWithTools({
@@ -205,6 +256,10 @@ export async function runOrchestrator(
       PRIMARY_TIMEOUT_MS,
     );
 
+    // AUDIT P2 item 7: éxito primary → resetear contador del breaker.
+    // Best-effort (no await crítico; si Redis falla seguimos).
+    void reportBreakerSuccess();
+
     return {
       responseText: result.finalText,
       toolCallsExecuted: result.toolCallsExecuted,
@@ -218,6 +273,10 @@ export async function runOrchestrator(
   } catch (primaryErr) {
     const errName = primaryErr instanceof Error ? primaryErr.name : 'unknown';
     const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+
+    // AUDIT P2 item 7: reportar falla al breaker. Si supera threshold,
+    // el breaker se abrirá y subsequent requests se rechazan inmediato.
+    void reportBreakerFailure(`primary:${errName}`);
     console.warn(
       `[orchestrator] primary model (${MODELS.ORCHESTRATOR}) failed → ${errName}: ${errMsg}. Trying fallback.`,
     );
@@ -294,7 +353,10 @@ export async function runOrchestrator(
         ).join('\n')
       : ctx.systemPrompt;
 
+    // Si el timeout global se dispara durante el fallback, abortar también.
     const fallbackController = new AbortController();
+    const onGlobalAbortFb = () => fallbackController.abort();
+    globalSignal.addEventListener('abort', onGlobalAbortFb, { once: true });
     try {
       const result = await withTimeoutAbort(
         generateWithTools({
@@ -319,6 +381,11 @@ export async function runOrchestrator(
         FALLBACK_TIMEOUT_MS,
       );
 
+      // AUDIT P2 item 7: fallback succeeded → medio reset. Contamos esto
+      // como "hay upstream sano" → resetear contador para no abrir breaker
+      // innecesariamente si solo el primario está flaky.
+      void reportBreakerSuccess();
+
       // Mergeamos toolCalls del primario + del fallback para auditoría completa
       const mergedCalls = [...primaryPartialCalls, ...result.toolCallsExecuted];
       return {
@@ -337,6 +404,10 @@ export async function runOrchestrator(
       // mensaje genérico de "hubo un problema, te contactamos en breve".
       const fbName = fallbackErr instanceof Error ? fallbackErr.name : 'unknown';
       const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+
+      // AUDIT P2 item 7: ambos modelos fallaron → cuenta como doble falla
+      // (ambos upstream del mismo provider rotos).
+      void reportBreakerFailure(`fallback:${fbName}`);
       // AUDIT-VC R11: capturar error crítico en Sentry + Supabase para
       // observabilidad en producción (no queda solo en console).
       try {
@@ -382,3 +453,4 @@ export class OrchestratorBothFailedError extends Error {
 export { LoopGuardError } from '@/lib/llm/openrouter';
 export type { ToolCallRecord } from '@/lib/llm/openrouter';
 export { RateLimitError, RATE_LIMIT_USER_MESSAGE } from '@/lib/llm/rate-limiter';
+export { CircuitOpenError, CIRCUIT_OPEN_USER_MESSAGE } from '@/lib/llm/circuit-breaker';

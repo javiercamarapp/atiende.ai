@@ -10,6 +10,8 @@ import {
   OrchestratorBothFailedError,
   RateLimitError,
   RATE_LIMIT_USER_MESSAGE,
+  CircuitOpenError,
+  CIRCUIT_OPEN_USER_MESSAGE,
   type OrchestratorContext,
 } from '@/lib/llm/orchestrator';
 import { getToolSchemas } from '@/lib/llm/tool-executor';
@@ -1253,7 +1255,10 @@ async function handleWithOrchestrator(args: OrchestratorBranchArgs): Promise<voi
     tokensIn = result.tokensIn;
     tokensOut = result.tokensOut;
   } catch (err) {
-    if (err instanceof RateLimitError) {
+    if (err instanceof CircuitOpenError) {
+      console.warn('[orchestrator] circuit breaker OPEN; retry_after=', err.retryAfter);
+      responseText = CIRCUIT_OPEN_USER_MESSAGE;
+    } else if (err instanceof RateLimitError) {
       console.warn('[orchestrator] rate limited:', err.scope, 'retry_after=', err.retryAfter);
       responseText = RATE_LIMIT_USER_MESSAGE;
     } else if (err instanceof OrchestratorBothFailedError) {

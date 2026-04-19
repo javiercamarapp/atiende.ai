@@ -27,12 +27,31 @@ vi.mock('@/lib/webhook-logger', () => ({
 }));
 
 const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => ({ then: vi.fn((cb: Function) => cb()) })) }));
+// AUDIT P1 item 1 — webhook ahora hace idempotency multi-message vía
+// `supabaseAdmin.from('messages').select('wa_message_id').in(...)`. El mock
+// debe soportar esa cadena además de .update().eq(). Por default `in()`
+// retorna `{ data: [], error: null }` (ningún duplicado) → el webhook
+// continúa al worker normal.
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
     from: vi.fn(() => ({
       update: mockUpdate,
+      select: vi.fn(() => ({
+        in: vi.fn(() => Promise.resolve({ data: [], error: null })),
+      })),
     })),
   },
+}));
+
+// AUDIT P1 item 4 — checkApiRateLimit default a false (no rate-limited).
+vi.mock('@/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn(() => Promise.resolve(false)),
+}));
+
+// AUDIT P1/P2 — QStash no configurado en tests, fallback a waitUntil.
+vi.mock('@/lib/queue/qstash', () => ({
+  isQStashConfigured: () => false,
+  publishMessage: vi.fn(),
 }));
 
 import { GET, POST } from '../../webhook/whatsapp/route';
@@ -103,17 +122,30 @@ describe('/api/webhook/whatsapp', () => {
 
   // ─── POST ────────────────────────────────────────────────────
   describe('POST - message processing', () => {
-    const messagePayload = {
+    // AUDIT P2 item 6: payload debe pasar validación Zod. Campos requeridos:
+    // - metadata.phone_number_id: 10-20 dígitos
+    // - messages[].id, from, type, timestamp (unix seconds, 8-12 dígitos)
+    //
+    // AUDIT P1 item 3: timestamp debe ser reciente (< 5 min) para no
+    // dispararse replay protection. Calculado en cada test con Date.now().
+    const recentTimestamp = () => String(Math.floor(Date.now() / 1000));
+    const messagePayload = () => ({
       entry: [{
         changes: [{
           field: 'messages',
           value: {
-            metadata: { phone_number_id: '123' },
-            messages: [{ id: 'msg-1', from: '5219991234567', text: { body: 'Hola' } }],
+            metadata: { phone_number_id: '1234567890' },
+            messages: [{
+              id: 'msg-1',
+              from: '5219991234567',
+              type: 'text',
+              timestamp: recentTimestamp(),
+              text: { body: 'Hola' },
+            }],
           },
         }],
       }],
-    };
+    });
 
     function postWithSignature(body: object | string, headers: Record<string, string> = {}) {
       const raw = typeof body === 'string' ? body : JSON.stringify(body);
@@ -138,7 +170,7 @@ describe('/api/webhook/whatsapp', () => {
     });
 
     it('processes valid signed message and returns 200', async () => {
-      const req = postWithSignature(messagePayload);
+      const req = postWithSignature(messagePayload());
       const res = await POST(req);
       expect(res.status).toBe(200);
       const json = await res.json();
@@ -147,7 +179,7 @@ describe('/api/webhook/whatsapp', () => {
     });
 
     it('returns 401 when signature is invalid', async () => {
-      const raw = JSON.stringify(messagePayload);
+      const raw = JSON.stringify(messagePayload());
       const req = new Request('http://localhost/api/webhook/whatsapp', {
         method: 'POST',
         body: raw,
@@ -160,7 +192,7 @@ describe('/api/webhook/whatsapp', () => {
     it('returns 401 when signature header is missing', async () => {
       const req = new Request('http://localhost/api/webhook/whatsapp', {
         method: 'POST',
-        body: JSON.stringify(messagePayload),
+        body: JSON.stringify(messagePayload()),
       }) as any;
       const res = await POST(req);
       expect(res.status).toBe(401);
@@ -169,7 +201,7 @@ describe('/api/webhook/whatsapp', () => {
     it('logs webhook on missing signature', async () => {
       const req = new Request('http://localhost/api/webhook/whatsapp', {
         method: 'POST',
-        body: JSON.stringify(messagePayload),
+        body: JSON.stringify(messagePayload()),
       }) as any;
       await POST(req);
       expect(logWebhook).toHaveBeenCalledWith(
@@ -183,7 +215,7 @@ describe('/api/webhook/whatsapp', () => {
           changes: [{
             field: 'messages',
             value: {
-              metadata: { phone_number_id: '123' },
+              metadata: { phone_number_id: '1234567890' },
               statuses: [{ id: 'wamid.xxx', status: 'delivered', timestamp: '1700000000' }],
             },
           }],
@@ -203,7 +235,7 @@ describe('/api/webhook/whatsapp', () => {
           changes: [{
             field: 'messages',
             value: {
-              metadata: { phone_number_id: '123' },
+              metadata: { phone_number_id: '1234567890' },
               statuses: [{ id: 'wamid.yyy', status: 'read', timestamp: '1700000000' }],
             },
           }],
@@ -223,13 +255,16 @@ describe('/api/webhook/whatsapp', () => {
       delete process.env.WA_APP_SECRET;
       const req = new Request('http://localhost/api/webhook/whatsapp', {
         method: 'POST',
-        body: JSON.stringify(messagePayload),
+        body: JSON.stringify(messagePayload()),
       }) as any;
       const res = await POST(req);
       expect(res.status).toBe(500);
     });
 
-    it('returns 500 on malformed JSON body', async () => {
+    // AUDIT P1 item 2 — JSON.parse envuelto en try/catch. Ahora retornamos
+    // 200 con `status:'invalid_json'` para que Meta no reintente el mismo
+    // payload malformado.
+    it('returns 200 with invalid_json status on malformed body (no Meta retry)', async () => {
       const raw = 'not valid json';
       const sig = signPayload(raw, process.env.WA_APP_SECRET!);
       const req = new Request('http://localhost/api/webhook/whatsapp', {
@@ -238,12 +273,15 @@ describe('/api/webhook/whatsapp', () => {
         headers: { 'x-hub-signature-256': sig },
       }) as any;
       const res = await POST(req);
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe('invalid_json');
+      expect(processIncomingMessage).not.toHaveBeenCalled();
     });
 
     it('returns received even if processIncomingMessage rejects', async () => {
       vi.mocked(processIncomingMessage).mockRejectedValueOnce(new Error('fail'));
-      const req = postWithSignature(messagePayload);
+      const req = postWithSignature(messagePayload());
       const res = await POST(req);
       // Route returns 200 immediately, error handled in background
       expect(res.status).toBe(200);

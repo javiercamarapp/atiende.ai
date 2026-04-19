@@ -23,6 +23,12 @@ export const HISTORY_KEEP_RECENT = 5;
 // ─── LLM orchestrator ──────────────────────────────────────────────────────
 export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 10_000;
 export const ORCHESTRATOR_FALLBACK_TIMEOUT_MS = 10_000;
+/** Wall-clock ceiling para TODO el turno (primary + fallback + tools).
+ *  Peor caso sin esto: 10s primary timeout + tool exec + 10s fallback
+ *  + tool exec ≈ 25s. En serverless edge eso ya pasó el p95 que queremos
+ *  (<15s total) y puede encadenarse con Meta timeout de 20s. 18s deja
+ *  margen para SmartResponse + persist + disclaimer downstream. */
+export const ORCHESTRATOR_TOTAL_TIMEOUT_MS = 18_000;
 export const ORCHESTRATOR_MAX_TOOL_ROUNDS = 5;
 export const ORCHESTRATOR_MAX_TOKENS_WITH_TOOLS = 2000;
 export const ORCHESTRATOR_MAX_TOKENS_NO_TOOLS = 800;
