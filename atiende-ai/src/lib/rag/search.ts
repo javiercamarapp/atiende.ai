@@ -1,8 +1,12 @@
 import OpenAI from 'openai';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
-// OpenAI directo para embeddings (mas barato que via OpenRouter)
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (_openai) return _openai;
+  _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 // Buscar conocimiento relevante del negocio (RAG)
 // Esto es lo que PREVIENE alucinaciones
@@ -11,7 +15,7 @@ export async function searchKnowledge(
   query: string
 ): Promise<string> {
   // 1. Generar embedding del query del cliente
-  const embResponse = await openai.embeddings.create({
+  const embResponse = await getOpenAI().embeddings.create({
     model: 'text-embedding-3-small', // $0.02/M tokens
     input: query,
   });
@@ -68,7 +72,7 @@ export async function ingestKnowledge(
   source: string = 'onboarding'
 ): Promise<void> {
   // Generar embedding
-  const embResponse = await openai.embeddings.create({
+  const embResponse = await getOpenAI().embeddings.create({
     model: 'text-embedding-3-small',
     input: content,
   });
@@ -90,7 +94,7 @@ export async function ingestKnowledgeBatch(
   source: string = 'onboarding'
 ): Promise<void> {
   // Generar embeddings en batch (OpenAI soporta hasta 2048 inputs)
-  const embResponse = await openai.embeddings.create({
+  const embResponse = await getOpenAI().embeddings.create({
     model: 'text-embedding-3-small',
     input: chunks.map(c => c.content),
   });
