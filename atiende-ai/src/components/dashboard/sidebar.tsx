@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, MessageSquare, Calendar, Bot,
   BookOpen, BarChart3, Settings, TrendingUp, Menu, UserCircle2,
-  Sparkles, Megaphone,
+  Sparkles, Megaphone, HelpCircle,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -25,12 +25,58 @@ const LABELS: Record<string, string> = {
   analytics: 'Analytics', settings: 'Ajustes',
 };
 
+const TOP_GROUP = new Set(['dashboard', 'appointments', 'conversations', 'contacts', 'agents']);
+
 type TenantShape = {
   name?: string | null;
   plan?: string | null;
   has_chat_agent?: boolean | null;
   has_voice_agent?: boolean | null;
 };
+
+function NavLink({
+  href, label, icon: Icon, active, collapsible, onNavigate,
+}: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+  collapsible: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      title={label}
+      className={cn(
+        'relative flex items-center py-2.5 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
+        collapsible
+          ? 'justify-center group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3'
+          : 'gap-3 px-3',
+        active
+          ? 'halo bg-[hsl(var(--brand-blue-soft))] font-medium'
+          : 'hover:bg-[hsl(var(--brand-blue-soft))]',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-full transition-all duration-200',
+          active ? 'h-5 bg-[hsl(var(--brand-blue))]' : 'h-0 bg-transparent',
+        )}
+      />
+      <Icon className="w-5 h-5 shrink-0 text-[hsl(var(--brand-blue))]" />
+      <span className={cn(
+        'text-[hsl(var(--brand-blue))]',
+        collapsible && 'hidden group-hover/sidebar:inline',
+      )}>
+        {label}
+      </span>
+    </Link>
+  );
+}
 
 function SidebarContent({
   tenant, modules, path, onNavigate, collapsible = false,
@@ -41,59 +87,62 @@ function SidebarContent({
   onNavigate?: () => void;
   collapsible?: boolean;
 }) {
-  const hideWhenCollapsed = collapsible
-    ? 'opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200'
-    : '';
-  const hideBlockWhenCollapsed = collapsible
-    ? 'opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 pointer-events-none group-hover/sidebar:pointer-events-auto'
-    : '';
+  const navModules = modules.filter(m => m !== 'settings');
+  const primaryMods = navModules.filter(m => TOP_GROUP.has(m));
+  const secondaryMods = navModules.filter(m => !TOP_GROUP.has(m));
+
+  function getHref(mod: string) {
+    if (mod === 'dashboard') return '/home';
+    if (mod === 'settings') return '/settings/agent';
+    return '/' + mod;
+  }
+  function isActive(mod: string) {
+    if (mod === 'dashboard') return path === '/home';
+    return path.startsWith('/' + mod);
+  }
 
   return (
     <>
-      <div className="px-4 pt-5 pb-4">
+      {/* Logo */}
+      <div className={cn(
+        'px-4 pt-5 pb-4',
+        collapsible && 'flex flex-col items-center group-hover/sidebar:items-start',
+      )}>
         <Link href="/home" className="block w-fit" onClick={onNavigate}>
           {collapsible ? (
             <>
-              {/* Icon only — visible when collapsed */}
               <Image
-                src="/logo-icon.png"
-                alt="atiende.ai"
-                width={80}
-                height={80}
-                priority
+                src="/logo-icon.png" alt="atiende.ai" width={80} height={80} priority
                 style={{ height: '36px', width: '36px' }}
                 className="shrink-0 block group-hover/sidebar:hidden"
               />
-              {/* Full logo — visible when expanded */}
               <Image
-                src="/logo.png"
-                alt="atiende.ai"
-                width={472}
-                height={200}
-                priority
+                src="/logo.png" alt="atiende.ai" width={472} height={200} priority
                 style={{ height: '36px', width: 'auto' }}
                 className="shrink-0 hidden group-hover/sidebar:block"
               />
             </>
           ) : (
             <Image
-              src="/logo.png"
-              alt="atiende.ai"
-              width={472}
-              height={200}
-              priority
+              src="/logo.png" alt="atiende.ai" width={472} height={200} priority
               style={{ height: '36px', width: 'auto' }}
               className="shrink-0"
             />
           )}
         </Link>
-        <p className={cn('text-xs text-zinc-500 truncate mt-2 whitespace-nowrap', hideWhenCollapsed)}>
+        <p className={cn(
+          'text-xs text-zinc-500 truncate mt-2 whitespace-nowrap',
+          collapsible && 'hidden group-hover/sidebar:block',
+        )}>
           {tenant.name}
         </p>
       </div>
 
-      {/* ROI pill */}
-      <div className={cn('mx-4 mt-2 glass-card px-3 py-2.5', hideBlockWhenCollapsed)}>
+      {/* ROI pill — only when expanded */}
+      <div className={cn(
+        'mx-4 mt-2 glass-card px-3 py-2.5',
+        collapsible && 'hidden group-hover/sidebar:block',
+      )}>
         <div className="flex items-center gap-2 whitespace-nowrap">
           <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">
@@ -103,44 +152,56 @@ function SidebarContent({
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 pt-3 pb-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
-        {modules.map((mod) => {
-          const Icon = ICONS[mod] || LayoutDashboard;
-          const href = mod === 'dashboard' ? '/home' : mod === 'settings' ? '/settings/agent' : '/' + mod;
-          const active = mod === 'dashboard' ? path === '/home' : path.startsWith('/' + mod);
-          return (
-            <Link
-              key={mod}
-              href={href}
-              onClick={onNavigate}
-              aria-current={active ? 'page' : undefined}
-              title={LABELS[mod] || mod}
-              className={cn(
-                'relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
-                active
-                  ? 'halo bg-[hsl(var(--brand-blue-soft))] font-medium'
-                  : 'hover:bg-[hsl(var(--brand-blue-soft))]',
-              )}
-            >
-              {/* Active indicator bar */}
-              <span
-                aria-hidden
-                className={cn(
-                  'absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-full transition-all duration-200',
-                  active ? 'h-5 bg-[hsl(var(--brand-blue))]' : 'h-0 bg-transparent',
-                )}
-              />
-              <Icon className="w-5 h-5 shrink-0 text-[hsl(var(--brand-blue))]" />
-              <span className={cn('text-[hsl(var(--brand-blue))]', hideWhenCollapsed)}>
-                {LABELS[mod] || mod}
-              </span>
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 pt-3 pb-3 overflow-y-auto overflow-x-hidden">
+        <div className="space-y-0.5">
+          {primaryMods.map(mod => (
+            <NavLink
+              key={mod} href={getHref(mod)} label={LABELS[mod] || mod}
+              icon={ICONS[mod] || LayoutDashboard} active={isActive(mod)}
+              collapsible={collapsible} onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+        {secondaryMods.length > 0 && (
+          <>
+            <div className={cn(
+              'my-2 border-t border-zinc-200',
+              collapsible && 'mx-2 group-hover/sidebar:mx-0',
+            )} />
+            <div className="space-y-0.5">
+              {secondaryMods.map(mod => (
+                <NavLink
+                  key={mod} href={getHref(mod)} label={LABELS[mod] || mod}
+                  icon={ICONS[mod] || LayoutDashboard} active={isActive(mod)}
+                  collapsible={collapsible} onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </nav>
 
-      {/* Footer — plan + features */}
-      <div className={cn('px-4 pb-4 pt-3 border-t border-zinc-200', hideBlockWhenCollapsed)}>
+      {/* Bottom — settings + help */}
+      <div className="px-3 pb-3 border-t border-zinc-200 pt-2 space-y-0.5">
+        {modules.includes('settings') && (
+          <NavLink
+            href="/settings/agent" label="Ajustes" icon={Settings}
+            active={path.startsWith('/settings')} collapsible={collapsible}
+            onNavigate={onNavigate}
+          />
+        )}
+        <NavLink
+          href="https://wa.me/5215512345678" label="Ayuda" icon={HelpCircle}
+          active={false} collapsible={collapsible}
+          onNavigate={onNavigate}
+        />
+      </div>
+
+      {/* Plan card — only when expanded */}
+      <div className={cn(
+        'px-4 pb-4 pt-3 border-t border-zinc-200',
+        collapsible && 'hidden group-hover/sidebar:block',
+      )}>
         <div className="glass-card px-3 py-2.5">
           <p className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 whitespace-nowrap">
             Plan
@@ -180,7 +241,7 @@ export function Sidebar({
 
   return (
     <>
-      {/* Desktop sidebar — in-flow, content pushes right on expand */}
+      {/* Desktop sidebar */}
       <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col glass-panel border-r border-zinc-200 overflow-hidden transition-[width] duration-300">
         <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
       </aside>
