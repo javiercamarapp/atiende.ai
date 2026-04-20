@@ -63,12 +63,12 @@ function getKPIs(type: string, today: TodayShape | null, month: MonthRow[]): Kpi
 }
 
 const TONES: Record<Kpi['tone'], { icon: string; accent: string }> = {
-  ink:     { icon: 'text-white/80',       accent: 'from-white/30 to-transparent' },
-  emerald: { icon: 'text-emerald-300',    accent: 'from-emerald-400/40 to-transparent' },
-  amber:   { icon: 'text-amber-300',      accent: 'from-amber-400/40 to-transparent' },
-  red:     { icon: 'text-red-300',        accent: 'from-red-400/40 to-transparent' },
-  sky:     { icon: 'text-sky-300',        accent: 'from-sky-400/40 to-transparent' },
-  violet:  { icon: 'text-violet-300',     accent: 'from-violet-400/40 to-transparent' },
+  ink:     { icon: 'text-zinc-700',       accent: 'from-zinc-400/40 to-transparent' },
+  emerald: { icon: 'text-emerald-600',    accent: 'from-emerald-500/50 to-transparent' },
+  amber:   { icon: 'text-amber-600',      accent: 'from-amber-500/50 to-transparent' },
+  red:     { icon: 'text-red-600',        accent: 'from-red-500/50 to-transparent' },
+  sky:     { icon: 'text-sky-600',        accent: 'from-sky-500/50 to-transparent' },
+  violet:  { icon: 'text-violet-600',     accent: 'from-violet-500/50 to-transparent' },
 };
 
 export function KPICards({
@@ -98,7 +98,7 @@ export function KPICards({
             />
             <div className="flex items-center gap-2">
               <Icon className={`w-4 h-4 ${tone.icon}`} />
-              <span className="text-[11px] uppercase tracking-wider text-white/50">
+              <span className="text-[11px] uppercase tracking-wider text-zinc-500">
                 {k.label}
               </span>
             </div>

@@ -78,11 +78,11 @@ export default function ChatDataPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Inteligencia</p>
-        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Inteligencia</p>
+        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">
           Pregunta a tus datos
         </h1>
-        <p className="mt-1.5 text-sm text-white/50">
+        <p className="mt-1.5 text-sm text-zinc-500">
           Pregúntale a tu consultorio lo que quieras en español natural.
         </p>
       </header>
@@ -90,14 +90,14 @@ export default function ChatDataPage() {
       {/* Sugerencias */}
       {turns.length === 0 && (
         <div className="glass-card p-6">
-          <p className="text-xs uppercase tracking-wider text-white/45 mb-3">Ejemplos</p>
+          <p className="text-xs uppercase tracking-wider text-zinc-500 mb-3">Ejemplos</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {EXAMPLES.map((ex) => (
               <button
                 key={ex}
                 type="button"
                 onClick={() => ask(ex)}
-                className="text-left text-sm px-3 py-2.5 rounded-lg bg-white/[0.02] border border-white/10 text-white/75 hover:bg-white/[0.04] hover:border-white/20 hover:text-white transition"
+                className="text-left text-sm px-3 py-2.5 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 hover:text-zinc-900 transition"
               >
                 {ex}
               </button>
@@ -113,7 +113,7 @@ export default function ChatDataPage() {
             <TurnBlock key={t.id} turn={t} />
           ))}
           {loading && (
-            <div className="glass-card p-4 text-sm text-white/50">
+            <div className="glass-card p-4 text-sm text-zinc-500">
               <span className="inline-block animate-pulse">Pensando…</span>
             </div>
           )}
@@ -135,12 +135,12 @@ export default function ChatDataPage() {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Pregunta sobre tus citas, pacientes, pagos…"
           disabled={loading}
-          className="flex-1 bg-transparent outline-none px-2 text-sm text-white placeholder:text-white/35"
+          className="flex-1 bg-transparent outline-none px-2 text-sm text-zinc-900 placeholder:text-zinc-400"
         />
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="px-4 py-2 rounded-lg bg-white text-black text-sm font-medium disabled:opacity-30 hover:bg-white/90 transition"
+          className="px-4 py-2 rounded-lg bg-[hsl(var(--brand-blue))] text-white text-sm font-medium disabled:opacity-30 hover:opacity-90 transition"
         >
           Enviar
         </button>
@@ -159,7 +159,7 @@ function TurnBlock({ turn }: { turn: Turn }) {
     <article className="stagger-item space-y-3">
       {/* Pregunta */}
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-white/10 border border-white/10 px-4 py-2.5 text-sm text-white">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-zinc-100 border border-zinc-200 px-4 py-2.5 text-sm text-zinc-900">
           {turn.question}
         </div>
       </div>
@@ -168,16 +168,16 @@ function TurnBlock({ turn }: { turn: Turn }) {
       {(turn.answer || turn.error) && (
         <div className="glass-card p-4">
           {turn.error && (
-            <p className="text-xs text-red-300 mb-2">Error: {turn.error}</p>
+            <p className="text-xs text-red-600 mb-2">Error: {turn.error}</p>
           )}
-          <p className="text-sm text-white/90 leading-relaxed">{turn.answer}</p>
+          <p className="text-sm text-zinc-900 leading-relaxed">{turn.answer}</p>
 
           {turn.rows && turn.rows.length > 0 && (
             <>
               <button
                 type="button"
                 onClick={() => setShowRows((s) => !s)}
-                className="mt-3 text-xs text-white/50 hover:text-white/80 transition"
+                className="mt-3 text-xs text-zinc-500 hover:text-zinc-800 transition"
               >
                 {showRows ? 'Ocultar' : 'Ver'} tabla ({turn.row_count} fila{turn.row_count === 1 ? '' : 's'})
               </button>
@@ -190,12 +190,12 @@ function TurnBlock({ turn }: { turn: Turn }) {
               <button
                 type="button"
                 onClick={() => setShowSql((s) => !s)}
-                className="mt-2 ml-3 text-xs text-white/40 hover:text-white/70 transition"
+                className="mt-2 ml-3 text-xs text-zinc-400 hover:text-zinc-700 transition"
               >
                 {showSql ? 'Ocultar SQL' : 'Ver SQL'}
               </button>
               {showSql && (
-                <pre className="mt-2 p-3 rounded-lg bg-black/40 border border-white/5 text-[11px] text-white/70 overflow-auto max-h-60 font-mono">
+                <pre className="mt-2 p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-100 overflow-auto max-h-60 font-mono">
                   {turn.sql}
                 </pre>
               )}
@@ -211,12 +211,12 @@ function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (rows.length === 0) return null;
   const headers = Object.keys(rows[0]);
   return (
-    <div className="mt-3 rounded-lg border border-white/5 overflow-auto max-h-80">
+    <div className="mt-3 rounded-lg border border-zinc-100 overflow-auto max-h-80">
       <table className="w-full text-xs">
-        <thead className="bg-white/[0.02] sticky top-0">
+        <thead className="bg-zinc-50 sticky top-0">
           <tr>
             {headers.map((h) => (
-              <th key={h} className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-white/45 font-medium">
+              <th key={h} className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
                 {h}
               </th>
             ))}
@@ -224,9 +224,9 @@ function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
         </thead>
         <tbody>
           {rows.slice(0, 50).map((r, i) => (
-            <tr key={i} className="border-t border-white/5">
+            <tr key={i} className="border-t border-zinc-100">
               {headers.map((h) => (
-                <td key={h} className="px-3 py-2 text-white/80 tabular-nums">
+                <td key={h} className="px-3 py-2 text-zinc-800 tabular-nums">
                   {formatCell(r[h])}
                 </td>
               ))}
@@ -235,7 +235,7 @@ function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
         </tbody>
       </table>
       {rows.length > 50 && (
-        <p className="text-center text-[10px] text-white/40 py-2 border-t border-white/5">
+        <p className="text-center text-[10px] text-zinc-400 py-2 border-t border-zinc-100">
           … {rows.length - 50} filas adicionales no mostradas
         </p>
       )}

@@ -63,17 +63,17 @@ export default async function AdminPromptsPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Plataforma</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Plataforma</p>
         <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">
           Prompts en revisión
         </h1>
-        <p className="mt-1.5 text-sm text-white/50">
+        <p className="mt-1.5 text-sm text-zinc-500">
           {rows.length} propuestas pendientes del pipeline de fine-tuning.
         </p>
       </header>
 
       {rows.length === 0 ? (
-        <div className="glass-card p-10 text-center text-sm text-white/50">
+        <div className="glass-card p-10 text-center text-sm text-zinc-500">
           No hay prompts en cola. El pipeline de fine-tuning corre los domingos 11pm UTC.
         </div>
       ) : (
@@ -90,19 +90,19 @@ export default async function AdminPromptsPage() {
               >
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
-                    <p className="text-xs font-mono text-white/50">
+                    <p className="text-xs font-mono text-zinc-500">
                       {tenantNameMap.get(r.tenant_id) || r.tenant_id.slice(0, 8)}
-                      <span className="mx-1.5 text-white/20">·</span>
-                      <span className="text-white/80">agente {r.agent_name}</span>
+                      <span className="mx-1.5 text-zinc-300">·</span>
+                      <span className="text-zinc-800">agente {r.agent_name}</span>
                     </p>
                     {r.changes_summary && (
-                      <p className="mt-1.5 text-sm text-white/80">{r.changes_summary}</p>
+                      <p className="mt-1.5 text-sm text-zinc-800">{r.changes_summary}</p>
                     )}
-                    <p className="mt-1 text-[11px] text-white/40">
+                    <p className="mt-1 text-[11px] text-zinc-500">
                       {new Date(r.created_at).toLocaleString('es-MX')}
-                      <span className="mx-1.5 text-white/20">·</span>
+                      <span className="mx-1.5 text-zinc-300">·</span>
                       <span className="text-emerald-300">+{addedCount}</span>
-                      <span className="mx-1 text-white/20">/</span>
+                      <span className="mx-1 text-zinc-300">/</span>
                       <span className="text-red-300">-{removedCount}</span>
                     </p>
                   </div>
@@ -135,8 +135,8 @@ function DiffColumn({
   const bg = color === 'red' ? 'bg-red-400/10' : 'bg-emerald-400/10';
   const text = color === 'red' ? 'text-red-200' : 'text-emerald-200';
   return (
-    <div className="rounded-lg bg-black/40 border border-white/5 overflow-hidden">
-      <div className="px-3 py-1.5 border-b border-white/5 text-[10px] uppercase tracking-wider text-white/45">
+    <div className="rounded-lg bg-zinc-900 border border-zinc-800 overflow-hidden">
+      <div className="px-3 py-1.5 border-b border-zinc-800 text-[10px] uppercase tracking-wider text-zinc-400">
         {title}
       </div>
       <pre className="p-3 max-h-96 overflow-auto">
@@ -145,7 +145,7 @@ function DiffColumn({
           return (
             <div
               key={i}
-              className={hit ? `${bg} ${text} px-1 -mx-1 rounded` : 'text-white/65 px-1 -mx-1'}
+              className={hit ? `${bg} ${text} px-1 -mx-1 rounded` : 'text-zinc-100 px-1 -mx-1'}
             >
               {line || '\u00A0'}
             </div>
