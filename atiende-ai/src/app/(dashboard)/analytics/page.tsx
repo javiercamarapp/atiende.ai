@@ -121,7 +121,7 @@ export default async function AnalyticsPage() {
                   <div className="w-full flex-1 flex items-end">
                     <div
                       className={`w-full rounded-t-sm transition-all duration-500 ${
-                        isWorst ? 'bg-red-500/70' : 'bg-white/15'
+                        isWorst ? 'bg-red-500/70' : 'bg-zinc-200'
                       }`}
                       style={{ height: `${Math.max(pct, 4)}%` }}
                     />
@@ -240,7 +240,7 @@ export default async function AnalyticsPage() {
           </div>
 
           {lastReactivated && (
-            <div className="mt-6 rounded-lg border border-zinc-100 bg-white/[0.02] p-4">
+            <div className="mt-6 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
               <p className="text-[10px] uppercase tracking-wider text-zinc-400">
                 Último reactivado
               </p>

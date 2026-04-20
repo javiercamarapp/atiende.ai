@@ -49,11 +49,11 @@ export default function MarketingPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Marketing</p>
-        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Marketing</p>
+        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">
           Generador de contenido
         </h1>
-        <p className="mt-1.5 text-sm text-white/50">
+        <p className="mt-1.5 text-sm text-zinc-500">
           3 opciones listas para copiar, con sugerencia de imagen y mejor horario.
         </p>
       </header>
@@ -65,7 +65,7 @@ export default function MarketingPage() {
             <select
               value={type}
               onChange={(e) => setType(e.target.value as PostType)}
-              className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-white/25 transition"
+              className="w-full rounded-lg bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[hsl(var(--brand-blue))] transition"
             >
               <option value="instagram">Instagram</option>
               <option value="facebook">Facebook</option>
@@ -76,7 +76,7 @@ export default function MarketingPage() {
             <select
               value={tone}
               onChange={(e) => setTone(e.target.value as Tone)}
-              className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-white/25 transition"
+              className="w-full rounded-lg bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[hsl(var(--brand-blue))] transition"
             >
               <option value="profesional">Profesional</option>
               <option value="cercano">Cercano</option>
@@ -92,7 +92,7 @@ export default function MarketingPage() {
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             placeholder='Ej: "Limpieza dental $299 esta semana"'
-            className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-white/25 transition placeholder:text-white/30"
+            className="w-full rounded-lg bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[hsl(var(--brand-blue))] transition placeholder:text-zinc-400"
           />
         </Field>
 
@@ -100,11 +100,11 @@ export default function MarketingPage() {
           <button
             type="submit"
             disabled={loading || !topic.trim()}
-            className="px-5 py-2.5 rounded-lg bg-white text-black text-sm font-medium disabled:opacity-30 hover:bg-white/90 transition"
+            className="px-5 py-2.5 rounded-lg bg-[hsl(var(--brand-blue))] text-white text-sm font-medium disabled:opacity-30 hover:opacity-90 transition"
           >
             {loading ? 'Generando…' : 'Generar 3 opciones'}
           </button>
-          {err && <span className="text-xs text-red-300">{err}</span>}
+          {err && <span className="text-xs text-red-600">{err}</span>}
         </div>
       </form>
 
@@ -132,9 +132,9 @@ export default function MarketingPage() {
             .shimmer-line {
               background: linear-gradient(
                 90deg,
-                rgba(255, 255, 255, 0.04) 0%,
-                rgba(255, 255, 255, 0.1) 50%,
-                rgba(255, 255, 255, 0.04) 100%
+                rgba(0, 0, 0, 0.04) 0%,
+                rgba(0, 0, 0, 0.08) 50%,
+                rgba(0, 0, 0, 0.04) 100%
               );
               background-size: 200% 100%;
               animation: shimmer 2s ease-in-out infinite;
@@ -151,7 +151,7 @@ export default function MarketingPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wider text-white/50">{label}</span>
+      <span className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</span>
       <div className="mt-1.5">{children}</div>
     </label>
   );
@@ -176,7 +176,7 @@ function PostCard({ post, index }: { post: GeneratedPost; index: number }) {
       style={{ animationDelay: `${80 + index * 80}ms` }}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-white/45">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">
           Opción {index + 1}
         </span>
         <button
@@ -184,26 +184,26 @@ function PostCard({ post, index }: { post: GeneratedPost; index: number }) {
           onClick={copy}
           className={
             copied
-              ? 'text-xs px-2.5 py-1 rounded-md bg-emerald-400/10 border border-emerald-400/30 text-emerald-300'
-              : 'text-xs px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-white/70 hover:text-white hover:border-white/25 transition'
+              ? 'text-xs px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-600'
+              : 'text-xs px-2.5 py-1 rounded-md bg-zinc-50 border border-zinc-200 text-zinc-700 hover:text-zinc-900 hover:border-zinc-300 transition'
           }
         >
           {copied ? 'Copiado ✓' : 'Copiar'}
         </button>
       </div>
 
-      <p className="text-sm text-white whitespace-pre-wrap leading-relaxed flex-1">
+      <p className="text-sm text-zinc-900 whitespace-pre-wrap leading-relaxed flex-1">
         {post.text}
       </p>
 
-      <div className="pt-4 border-t border-white/5 space-y-3">
+      <div className="pt-4 border-t border-zinc-100 space-y-3">
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-white/45 mb-1">Imagen sugerida</p>
-          <p className="text-xs text-white/70 leading-relaxed">{post.image_description}</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Imagen sugerida</p>
+          <p className="text-xs text-zinc-700 leading-relaxed">{post.image_description}</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-white/45 mb-1">Mejor horario</p>
-          <p className="text-xs text-sky-300 font-medium">{post.best_time}</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Mejor horario</p>
+          <p className="text-xs text-sky-600 font-medium">{post.best_time}</p>
         </div>
       </div>
     </article>
