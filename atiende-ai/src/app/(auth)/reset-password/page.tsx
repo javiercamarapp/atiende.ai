@@ -58,7 +58,7 @@ export default function ResetPasswordPage() {
             height={200}
             priority
             style={{ height: '56px', width: 'auto' }}
-            className="animate-element animate-delay-150 mb-1"
+            className="animate-element animate-delay-150 mb-1 self-start"
           />
 
           <h1 className="animate-element animate-delay-200 text-4xl font-semibold leading-tight text-zinc-900">

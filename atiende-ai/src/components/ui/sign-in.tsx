@@ -65,7 +65,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({
               height={200}
               priority
               style={{ height: '56px', width: 'auto' }}
-              className="animate-element animate-delay-50 mb-2"
+              className="animate-element animate-delay-50 mb-2 self-start"
             />
             <h1 className="animate-element animate-delay-100 text-4xl md:text-5xl font-semibold leading-tight text-zinc-900">{title}</h1>
             <p className="animate-element animate-delay-200 text-zinc-500">{description}</p>
