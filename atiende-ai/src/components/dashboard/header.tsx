@@ -58,37 +58,37 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
 
   const percent = usage !== null ? Math.min((usage / limit) * 100, 100) : 0;
   const getColor = () => {
-    if (percent > 90) return 'text-red-400';
-    if (percent >= 70) return 'text-amber-300';
-    return 'text-emerald-300';
+    if (percent > 90) return 'text-red-600';
+    if (percent >= 70) return 'text-amber-600';
+    return 'text-emerald-600';
   };
   const getProgressClass = () => {
-    if (percent > 90) return '[&>div]:bg-red-400';
-    if (percent >= 70) return '[&>div]:bg-amber-300';
-    return '[&>div]:bg-emerald-300';
+    if (percent > 90) return '[&>div]:bg-red-500';
+    if (percent >= 70) return '[&>div]:bg-amber-500';
+    return '[&>div]:bg-emerald-500';
   };
 
   return (
-    <header className="h-14 glass-panel border-b flex items-center justify-between px-6 pl-14 md:pl-6">
+    <header className="h-14 bg-white/90 backdrop-blur flex items-center justify-between px-6 pl-14 md:pl-6">
       <div>
         <div className="text-sm flex items-center">
           <Link
             href="/home"
-            className="text-white/55 hover:text-white/90 transition-colors"
+            className="text-zinc-500 hover:text-zinc-900 transition-colors"
           >
             Dashboard
           </Link>
           {!isHome && (
             <>
-              <ChevronRight className="w-3 h-3 inline mx-1.5 text-white/30" />
-              <span className="text-white font-medium">{currentPage}</span>
+              <ChevronRight className="w-3 h-3 inline mx-1.5 text-zinc-400" />
+              <span className="text-zinc-900 font-medium">{currentPage}</span>
             </>
           )}
         </div>
-        <p className="text-[11px] text-white/40 mt-0.5">
+        <p className="text-[11px] text-zinc-500 mt-0.5">
           {tenant.status === 'active' ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Agente activo
             </span>
           ) : (
@@ -101,7 +101,7 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
           <div className="hidden sm:flex items-center gap-2">
             <Progress
               value={percent}
-              className={`w-24 h-1.5 bg-white/10 ${getProgressClass()}`}
+              className={`w-24 h-1.5 bg-zinc-100 ${getProgressClass()}`}
             />
             <span className={`text-xs font-medium tabular-nums ${getColor()}`}>
               {usage}/{limit === 999999 ? '∞' : limit}
@@ -114,7 +114,7 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
             variant="ghost"
             size="icon"
             onClick={handleLogout}
-            className="text-white/60 hover:text-white hover:bg-white/10"
+            className="text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
           >
             <LogOut className="w-4 h-4" />
           </Button>

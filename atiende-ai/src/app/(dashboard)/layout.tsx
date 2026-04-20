@@ -22,11 +22,11 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           const daysLeft = Math.ceil((new Date(tenant.trial_ends_at).getTime() - Date.now()) / 86400000);
           if (daysLeft <= 7 && daysLeft > 0) {
             return (
-              <div className="glass-panel border-b px-6 py-3 flex items-center justify-between">
-                <p className="text-sm text-amber-200/90">
+              <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between">
+                <p className="text-sm text-amber-800">
                   Tu prueba gratis termina en <strong>{daysLeft} dia{daysLeft !== 1 ? 's' : ''}</strong>.
                 </p>
-                <Link href="/settings/billing" className="text-sm font-medium text-amber-200 hover:text-amber-100 underline-offset-4 hover:underline transition">
+                <Link href="/settings/billing" className="text-sm font-medium text-amber-900 hover:text-amber-700 underline-offset-4 hover:underline transition">
                   Elegir plan
                 </Link>
               </div>
@@ -34,11 +34,11 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           }
           if (daysLeft <= 0) {
             return (
-              <div className="glass-panel border-b px-6 py-3 flex items-center justify-between">
-                <p className="text-sm text-red-300">
+              <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center justify-between">
+                <p className="text-sm text-red-700">
                   Tu prueba gratis ha terminado. Elige un plan para seguir usando el servicio.
                 </p>
-                <Link href="/settings/billing" className="text-sm font-medium text-red-200 hover:text-white underline-offset-4 hover:underline transition">
+                <Link href="/settings/billing" className="text-sm font-medium text-red-800 hover:text-red-600 underline-offset-4 hover:underline transition">
                   Elegir plan
                 </Link>
               </div>

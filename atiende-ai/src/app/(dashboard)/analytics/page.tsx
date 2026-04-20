@@ -101,16 +101,16 @@ export default async function AnalyticsPage() {
   return (
     <div className="space-y-8">
       <header className="animate-element">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Panel</p>
-        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">Analytics</h1>
-        <p className="mt-1.5 text-sm text-white/50">Últimos 90 días de actividad operativa.</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Panel</p>
+        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">Analytics</h1>
+        <p className="mt-1.5 text-sm text-zinc-500">Últimos 90 días de actividad operativa.</p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* ── 1. No-show por DOW ─────────────────────────────────────────── */}
         <section className="stagger-item glass-card p-6">
-          <h3 className="text-sm font-medium text-white/80">No-shows por día de la semana</h3>
-          <p className="mt-1 text-xs text-white/45">{noShows?.length ?? 0} no-shows en 90 días.</p>
+          <h3 className="text-sm font-medium text-zinc-800">No-shows por día de la semana</h3>
+          <p className="mt-1 text-xs text-zinc-500">{noShows?.length ?? 0} no-shows en 90 días.</p>
 
           <div className="mt-6 flex items-end gap-3 h-40">
             {noShowByDow.map((count, i) => {
@@ -121,13 +121,13 @@ export default async function AnalyticsPage() {
                   <div className="w-full flex-1 flex items-end">
                     <div
                       className={`w-full rounded-t-sm transition-all duration-500 ${
-                        isWorst ? 'bg-red-400/70' : 'bg-white/15'
+                        isWorst ? 'bg-red-500/70' : 'bg-white/15'
                       }`}
                       style={{ height: `${Math.max(pct, 4)}%` }}
                     />
                   </div>
-                  <span className="text-[10px] text-white/50 tabular-nums">{count}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-white/40">
+                  <span className="text-[10px] text-zinc-500 tabular-nums">{count}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400">
                     {DOW_LABELS[i]}
                   </span>
                 </div>
@@ -138,11 +138,11 @@ export default async function AnalyticsPage() {
 
         {/* ── 2. Top razones de cancelación ──────────────────────────────── */}
         <section className="stagger-item glass-card p-6">
-          <h3 className="text-sm font-medium text-white/80">Top razones de cancelación</h3>
-          <p className="mt-1 text-xs text-white/45">{reasonsTotal} cancelaciones clasificadas.</p>
+          <h3 className="text-sm font-medium text-zinc-800">Top razones de cancelación</h3>
+          <p className="mt-1 text-xs text-zinc-500">{reasonsTotal} cancelaciones clasificadas.</p>
 
           {reasonsList.length === 0 ? (
-            <p className="mt-6 text-sm text-white/40">Sin datos aún.</p>
+            <p className="mt-6 text-sm text-zinc-400">Sin datos aún.</p>
           ) : (
             <ul className="mt-4 space-y-3">
               {reasonsList.map(([reason, count], idx) => {
@@ -154,12 +154,12 @@ export default async function AnalyticsPage() {
                     style={{ animationDelay: `${100 + idx * 50}ms` }}
                   >
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-white/80">{REASON_LABELS[reason] ?? reason}</span>
-                      <span className="text-white/60 tabular-nums">{count} · {pct}%</span>
+                      <span className="text-zinc-800">{REASON_LABELS[reason] ?? reason}</span>
+                      <span className="text-zinc-600 tabular-nums">{count} · {pct}%</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-1.5 rounded-full bg-zinc-50 overflow-hidden">
                       <div
-                        className="h-full bg-amber-400/70 transition-all duration-700"
+                        className="h-full bg-amber-500/70 transition-all duration-700"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -172,8 +172,8 @@ export default async function AnalyticsPage() {
 
         {/* ── 3. Revenue at risk histórico ────────────────────────────────── */}
         <section className="stagger-item glass-card p-6">
-          <h3 className="text-sm font-medium text-white/80">Revenue perdido por semana</h3>
-          <p className="mt-1 text-xs text-white/45">Últimas 4 semanas · no-shows + canceladas.</p>
+          <h3 className="text-sm font-medium text-zinc-800">Revenue perdido por semana</h3>
+          <p className="mt-1 text-xs text-zinc-500">Últimas 4 semanas · no-shows + canceladas.</p>
 
           <div className="relative mt-6 h-40">
             {/* Puntos + línea conectora */}
@@ -216,10 +216,10 @@ export default async function AnalyticsPage() {
           <div className="mt-3 grid grid-cols-4 gap-2">
             {points.map((p) => (
               <div key={p.label} className="text-center">
-                <p className="text-sm font-medium text-white tabular-nums">
+                <p className="text-sm font-medium text-zinc-900 tabular-nums">
                   ${Math.round(p.value).toLocaleString('es-MX')}
                 </p>
-                <p className="mt-0.5 text-[10px] uppercase tracking-wider text-white/40">
+                <p className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-400">
                   {p.label}
                 </p>
               </div>
@@ -229,25 +229,25 @@ export default async function AnalyticsPage() {
 
         {/* ── 4. Pacientes reactivados ────────────────────────────────────── */}
         <section className="stagger-item glass-card p-6">
-          <h3 className="text-sm font-medium text-white/80">Pacientes reactivados</h3>
-          <p className="mt-1 text-xs text-white/45">Via agente RETENCIÓN.</p>
+          <h3 className="text-sm font-medium text-zinc-800">Pacientes reactivados</h3>
+          <p className="mt-1 text-xs text-zinc-500">Via agente RETENCIÓN.</p>
 
           <div className="mt-6 flex flex-col items-start gap-2">
             <p className="kpi-number text-6xl font-semibold tabular-nums">
               {reactivatedCount ?? 0}
             </p>
-            <p className="text-xs text-emerald-300/80">pacientes recuperados</p>
+            <p className="text-xs text-emerald-600/80">pacientes recuperados</p>
           </div>
 
           {lastReactivated && (
-            <div className="mt-6 rounded-lg border border-white/5 bg-white/[0.02] p-4">
-              <p className="text-[10px] uppercase tracking-wider text-white/40">
+            <div className="mt-6 rounded-lg border border-zinc-100 bg-white/[0.02] p-4">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-400">
                 Último reactivado
               </p>
-              <p className="mt-1 text-sm font-medium text-white">
+              <p className="mt-1 text-sm font-medium text-zinc-900">
                 {lastReactivated.name || lastReactivated.phone}
               </p>
-              <p className="mt-0.5 text-xs text-white/50">
+              <p className="mt-0.5 text-xs text-zinc-500">
                 {new Date(lastReactivated.reactivated_at).toLocaleDateString('es-MX', {
                   day: 'numeric',
                   month: 'long',

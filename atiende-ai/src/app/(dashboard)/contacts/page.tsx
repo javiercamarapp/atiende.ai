@@ -21,15 +21,15 @@ interface ContactRow {
 
 function healthBadgeColor(score: number | null): { bg: string; border: string; text: string } {
   const s = score ?? 0;
-  if (s > 70) return { bg: 'bg-emerald-400/10', border: 'border-emerald-400/30', text: 'text-emerald-300' };
-  if (s >= 40) return { bg: 'bg-amber-400/10', border: 'border-amber-400/30', text: 'text-amber-300' };
-  return { bg: 'bg-red-400/10', border: 'border-red-400/30', text: 'text-red-300' };
+  if (s > 70) return { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600' };
+  if (s >= 40) return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-600' };
+  return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-600' };
 }
 
 function churnBarColor(prob: number): string {
-  if (prob > 60) return 'bg-red-400';
-  if (prob > 30) return 'bg-amber-400';
-  return 'bg-emerald-400';
+  if (prob > 60) return 'bg-red-500';
+  if (prob > 30) return 'bg-amber-500';
+  return 'bg-emerald-500';
 }
 
 function fmtRelative(iso: string | null): string {
@@ -127,9 +127,9 @@ export default async function ContactsPage({
   return (
     <div className="space-y-6">
       <header className="animate-element">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Panel</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Panel</p>
         <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">Pacientes</h1>
-        <p className="mt-1.5 text-sm text-white/50">{contacts.length} pacientes en tu base.</p>
+        <p className="mt-1.5 text-sm text-zinc-500">{contacts.length} pacientes en tu base.</p>
       </header>
 
       {/* Filtros */}
@@ -142,8 +142,8 @@ export default async function ContactsPage({
               href={f.id === 'all' ? '/contacts' : `/contacts?filter=${f.id}`}
               className={
                 active
-                  ? 'px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 text-xs font-medium text-white'
-                  : 'px-3 py-1.5 rounded-lg bg-transparent border border-white/10 text-xs text-white/60 hover:border-white/20 hover:text-white/90 transition'
+                  ? 'px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-300 text-xs font-medium text-white'
+                  : 'px-3 py-1.5 rounded-lg bg-transparent border border-zinc-200 text-xs text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 transition'
               }
             >
               {f.label}
@@ -153,13 +153,13 @@ export default async function ContactsPage({
       </div>
 
       {contacts.length === 0 ? (
-        <div className="glass-card p-10 text-center text-sm text-white/50">
+        <div className="glass-card p-10 text-center text-sm text-zinc-500">
           Sin pacientes en este filtro.
         </div>
       ) : (
         <div className="glass-card overflow-hidden">
           {/* Header row */}
-          <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 border-b border-white/5 text-[10px] uppercase tracking-wider text-white/45">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 border-b border-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
             <div className="col-span-3">Paciente</div>
             <div className="col-span-2">Última visita</div>
             <div className="col-span-2">Próxima predicha</div>
@@ -175,21 +175,21 @@ export default async function ContactsPage({
               return (
                 <li
                   key={c.id}
-                  className="stagger-item grid grid-cols-12 gap-4 px-5 py-4 border-b border-white/5 last:border-b-0 items-center hover:bg-white/[0.015] transition"
+                  className="stagger-item grid grid-cols-12 gap-4 px-5 py-4 border-b border-zinc-100 last:border-b-0 items-center hover:bg-white/[0.015] transition"
                   style={{ animationDelay: `${40 + Math.min(idx, 12) * 30}ms` }}
                 >
                   <div className="col-span-12 md:col-span-3">
                     <p className="text-sm font-medium text-white truncate">
                       {c.name || c.phone}
                     </p>
-                    {c.name && <p className="text-[11px] text-white/40 tabular-nums">{c.phone}</p>}
+                    {c.name && <p className="text-[11px] text-zinc-400 tabular-nums">{c.phone}</p>}
                   </div>
 
-                  <div className="col-span-6 md:col-span-2 text-xs text-white/60">
+                  <div className="col-span-6 md:col-span-2 text-xs text-zinc-600">
                     {fmtRelative(c.last_contact_at ?? null)}
                   </div>
 
-                  <div className="col-span-6 md:col-span-2 text-xs text-white/60">
+                  <div className="col-span-6 md:col-span-2 text-xs text-zinc-600">
                     {fmtNext(c.next_visit_predicted_at)}
                   </div>
 
@@ -203,13 +203,13 @@ export default async function ContactsPage({
 
                   <div className="col-span-8 md:col-span-2">
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                      <div className="flex-1 h-1.5 rounded-full bg-zinc-50 overflow-hidden">
                         <div
                           className={`h-full ${churnBarColor(churn)}`}
                           style={{ width: `${Math.min(100, churn)}%` }}
                         />
                       </div>
-                      <span className="text-[11px] text-white/60 tabular-nums w-8 text-right">
+                      <span className="text-[11px] text-zinc-600 tabular-nums w-8 text-right">
                         {churn}%
                       </span>
                     </div>
