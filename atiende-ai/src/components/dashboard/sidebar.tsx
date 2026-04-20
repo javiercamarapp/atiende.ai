@@ -34,33 +34,69 @@ type TenantShape = {
 };
 
 function SidebarContent({
-  tenant, modules, path, onNavigate,
+  tenant, modules, path, onNavigate, collapsible = false,
 }: {
   tenant: TenantShape;
   modules: string[];
   path: string;
   onNavigate?: () => void;
+  collapsible?: boolean;
 }) {
+  const hideWhenCollapsed = collapsible
+    ? 'opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200'
+    : '';
+  const hideBlockWhenCollapsed = collapsible
+    ? 'opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 pointer-events-none group-hover/sidebar:pointer-events-auto'
+    : '';
+
   return (
     <>
-      <div className="px-5 pt-5 pb-4">
-        <Link href="/home" className="block" onClick={onNavigate}>
-          <Image
-            src="/logo.png"
-            alt="atiende.ai"
-            width={200}
-            height={85}
-            priority
-            className="h-9 w-auto"
-          />
+      <div className="px-4 pt-5 pb-4">
+        <Link href="/home" className="block w-fit" onClick={onNavigate}>
+          {collapsible ? (
+            <>
+              {/* Icon only — visible when collapsed */}
+              <Image
+                src="/logo-icon.png"
+                alt="atiende.ai"
+                width={80}
+                height={80}
+                priority
+                style={{ height: '36px', width: '36px' }}
+                className="shrink-0 block group-hover/sidebar:hidden"
+              />
+              {/* Full logo — visible when expanded */}
+              <Image
+                src="/logo.png"
+                alt="atiende.ai"
+                width={472}
+                height={200}
+                priority
+                style={{ height: '36px', width: 'auto' }}
+                className="shrink-0 hidden group-hover/sidebar:block"
+              />
+            </>
+          ) : (
+            <Image
+              src="/logo.png"
+              alt="atiende.ai"
+              width={472}
+              height={200}
+              priority
+              style={{ height: '36px', width: 'auto' }}
+              className="shrink-0"
+            />
+          )}
         </Link>
-        <p className="text-xs text-zinc-500 truncate mt-2">{tenant.name}</p>
+        <p className={cn('text-xs text-zinc-500 truncate mt-2 whitespace-nowrap', hideWhenCollapsed)}>
+          {tenant.name}
+        </p>
       </div>
 
       {/* ROI pill */}
-      <div className="mx-4 mt-2 glass-card px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+      <div className={cn('mx-4 mt-2 glass-card px-3 py-2.5', hideBlockWhenCollapsed)}>
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">
             ROI este mes
           </span>
@@ -68,7 +104,7 @@ function SidebarContent({
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 pt-3 pb-3 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-3 pt-3 pb-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
         {modules.map((mod) => {
           const Icon = ICONS[mod] || LayoutDashboard;
           const href = mod === 'dashboard' ? '/home' : mod === 'settings' ? '/settings/agent' : '/' + mod;
@@ -79,11 +115,12 @@ function SidebarContent({
               href={href}
               onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
+              title={LABELS[mod] || mod}
               className={cn(
-                'group relative flex items-center gap-3 px-3 py-2 rounded-lg text-[13.5px] transition-all duration-200',
+                'relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
                 active
-                  ? 'halo bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] font-medium'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100',
+                  ? 'halo bg-[hsl(var(--brand-blue-soft))] font-medium'
+                  : 'hover:bg-[hsl(var(--brand-blue-soft))]',
               )}
             >
               {/* Active indicator bar */}
@@ -94,25 +131,22 @@ function SidebarContent({
                   active ? 'h-5 bg-[hsl(var(--brand-blue))]' : 'h-0 bg-transparent',
                 )}
               />
-              <Icon
-                className={cn(
-                  'w-4 h-4 shrink-0 transition-colors',
-                  active ? 'text-[hsl(var(--brand-blue))]' : 'text-zinc-400 group-hover:text-zinc-700',
-                )}
-              />
-              <span>{LABELS[mod] || mod}</span>
+              <Icon className="w-5 h-5 shrink-0 text-[hsl(var(--brand-blue))]" />
+              <span className={cn('text-[hsl(var(--brand-blue))]', hideWhenCollapsed)}>
+                {LABELS[mod] || mod}
+              </span>
             </Link>
           );
         })}
       </nav>
 
       {/* Footer — plan + features */}
-      <div className="px-4 pb-4 pt-3 border-t border-zinc-200">
+      <div className={cn('px-4 pb-4 pt-3 border-t border-zinc-200', hideBlockWhenCollapsed)}>
         <div className="glass-card px-3 py-2.5">
-          <p className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500">
+          <p className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 whitespace-nowrap">
             Plan
           </p>
-          <p className="text-sm text-zinc-900 mt-0.5 capitalize">
+          <p className="text-sm text-zinc-900 mt-0.5 capitalize whitespace-nowrap">
             {tenant.plan || 'free trial'}
           </p>
           {(tenant.has_chat_agent || tenant.has_voice_agent) && (
@@ -147,9 +181,9 @@ export function Sidebar({
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-64 flex-col glass-panel border-r border-zinc-200">
-        <SidebarContent tenant={tenant} modules={modules} path={path} />
+      {/* Desktop sidebar — in-flow, content pushes right on expand */}
+      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col glass-panel border-r border-zinc-200 overflow-hidden transition-[width] duration-300">
+        <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
       </aside>
 
       {/* Mobile hamburger */}
