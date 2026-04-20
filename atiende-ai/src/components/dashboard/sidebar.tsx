@@ -3,8 +3,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, MessageSquare, Calendar, ShoppingBag, Users, Phone, Bot,
-  BookOpen, BarChart3, Settings, TrendingUp, Menu, Shield, UserCircle2,
+  LayoutDashboard, MessageSquare, Calendar, Bot,
+  BookOpen, BarChart3, Settings, TrendingUp, Menu, UserCircle2,
   Sparkles, Megaphone,
 } from 'lucide-react';
 import Image from 'next/image';
@@ -15,15 +15,14 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, conversations: MessageSquare, appointments: Calendar,
-  contacts: UserCircle2, orders: ShoppingBag, leads: Users, calls: Phone, agents: Bot,
-  knowledge: BookOpen, 'chat-data': Sparkles, marketing: Megaphone,
-  analytics: BarChart3, insurance: Shield, settings: Settings,
+  contacts: UserCircle2, agents: Bot, knowledge: BookOpen, 'chat-data': Sparkles,
+  marketing: Megaphone, analytics: BarChart3, settings: Settings,
 };
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard', conversations: 'Conversaciones', appointments: 'Citas',
-  contacts: 'Pacientes', orders: 'Pedidos', leads: 'Leads', calls: 'Llamadas', agents: 'Agents',
-  knowledge: 'Conocimiento', 'chat-data': 'Pregunta a tus datos', marketing: 'Marketing',
-  analytics: 'Analytics', insurance: 'Seguros', settings: 'Ajustes',
+  contacts: 'Pacientes', agents: 'Agents', knowledge: 'Conocimiento',
+  'chat-data': 'Pregunta a tus datos', marketing: 'Marketing',
+  analytics: 'Analytics', settings: 'Ajustes',
 };
 
 type TenantShape = {

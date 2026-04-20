@@ -3,7 +3,6 @@ import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
 import { ingestKnowledgeBatch } from '@/lib/rag/search';
-import { createRetellAgent } from '@/lib/voice/retell';
 import { getChatTemplate } from '@/lib/templates/chat/index';
 import { getVoiceTemplate } from '@/lib/templates/voice/index';
 
@@ -218,27 +217,7 @@ REGLAS PARA EL PROMPT:
       welcome_message: `Hola! Bienvenido(a) a ${businessInfo.name}. Soy su asistente virtual, disponible 24/7. En que le puedo ayudar?`,
     }).eq('id', tenant.id);
 
-    // 6. CREAR VOICE AGENT (si aplica)
-    if (agentType === 'voice' || agentType === 'both') {
-      const voiceTemplate = getVoiceTemplate(businessType);
-      const voicePrompt = voiceTemplate
-        .replace(/\{\{NOMBRE_NEGOCIO\}\}/g, businessInfo.name)
-        .replace(/\{\{DIRECCION\}\}/g, businessInfo.address || '');
-
-      const retellAgent = await createRetellAgent({
-        name: businessInfo.name,
-        voice_system_prompt: voicePrompt,
-        elevenlabs_voice_id: undefined,
-        config: { human_phone: businessInfo.phone },
-      });
-
-      await supabaseAdmin.from('tenants').update({
-        voice_system_prompt: voicePrompt,
-        retell_agent_id: retellAgent.agent_id,
-      }).eq('id', tenant.id);
-    }
-
-    // 7. GENERAR SYSTEM PROMPTS POR AGENTE (fire-and-forget)
+    // 6. GENERAR SYSTEM PROMPTS POR AGENTE (fire-and-forget)
     // Corre async para no bloquear el response al cliente. Los prompts
     // personalizados quedarán en tenant_prompts en ~30-60s. Mientras tanto
     // los agentes usan el prompt base de src/lib/agents/<agent>/prompt.ts.

@@ -55,7 +55,7 @@ describe('enforceWebhookSize', () => {
       headers: { 'content-length': String(WEBHOOK_MAX_BYTES + 1) },
       body: '',
     });
-    const result = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'conekta', Date.now());
+    const result = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'stripe', Date.now());
     expect(result.ok).toBe(false);
   });
 
@@ -65,7 +65,7 @@ describe('enforceWebhookSize', () => {
       headers: { 'content-length': String(WEBHOOK_MAX_BYTES) },
       body: '',
     });
-    const result = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'retell', Date.now());
+    const result = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'whatsapp', Date.now());
     expect(result.ok).toBe(true);
   });
 });

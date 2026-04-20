@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# archived code (kept locally, not tracked)
+src/despues/
+
 # vercel
 .vercel
 
