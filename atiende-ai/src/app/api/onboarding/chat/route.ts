@@ -233,15 +233,47 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     if (err instanceof StructuredGenerationError) {
+      // StructuredGenerationError carries two diagnostic fields (.cause and
+      // .lastRawContent) that don't round-trip through the default logger
+      // serialization. Extract them explicitly so Vercel logs show the actual
+      // failure mode (ZodError / parse error / underlying OpenRouter API
+      // error) and the raw LLM output that wouldn't parse.
+      const underlying = err.cause;
+      const underlyingMessage =
+        underlying instanceof Error
+          ? underlying.message
+          : underlying !== undefined
+            ? String(underlying)
+            : undefined;
+      const underlyingName =
+        underlying instanceof Error ? underlying.name : undefined;
       logger.error('onboarding_chat agent failed', err, {
         vertical: incomingVertical,
+        underlyingName,
+        underlyingMessage,
+        lastRawContent: err.lastRawContent?.slice(0, 2000),
+        hadUrl: maybeUrl !== null,
+        scrapedOk: scrapedMarkdown !== undefined,
+        scrapeError,
       });
+
+      // Context-aware fallback so the user has an actionable next step
+      // instead of the generic "Se me trabó un segundo" dead-end.
+      let fallback: string;
+      if (maybeUrl && scrapeError) {
+        fallback = `No pude leer el contenido de ${maybeUrl}. ¿Puedes describirme tu negocio con palabras? Por ejemplo: "Soy dentista en Mérida, ofrezco 3 servicios, abro L–V de 9 a 6".`;
+      } else if (maybeUrl && scrapedMarkdown) {
+        fallback =
+          'Leí tu sitio web pero tuve un problema procesando la info. ¿Puedes contarme en una frase qué servicios ofreces y en qué ciudad estás?';
+      } else {
+        fallback =
+          'Se me trabó un segundo, ¿puedes repetirme lo último en una sola oración?';
+      }
+
       return NextResponse.json(
         {
           error: 'agent_failed',
-          assistantMessages: [
-            'Se me trabó un segundo, ¿puedes repetirme lo último en una sola oración?',
-          ],
+          assistantMessages: [fallback],
         },
         { status: 500 },
       );
