@@ -42,8 +42,6 @@ function SidebarContent({
   onNavigate?: () => void;
   collapsible?: boolean;
 }) {
-  // Classes that only hide content when the sidebar is in collapsible mode
-  // (desktop). On mobile the Sheet is always full-width so nothing hides.
   const hideWhenCollapsed = collapsible
     ? 'opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200'
     : '';
@@ -55,15 +53,40 @@ function SidebarContent({
     <>
       <div className="px-4 pt-5 pb-4">
         <Link href="/home" className="block w-fit" onClick={onNavigate}>
-          <Image
-            src="/logo-icon.png"
-            alt="atiende.ai"
-            width={128}
-            height={128}
-            priority
-            style={{ height: '56px', width: '56px' }}
-            className="shrink-0"
-          />
+          {collapsible ? (
+            <>
+              {/* Icon only — visible when collapsed */}
+              <Image
+                src="/logo-icon.png"
+                alt="atiende.ai"
+                width={80}
+                height={80}
+                priority
+                style={{ height: '36px', width: '36px' }}
+                className="shrink-0 block group-hover/sidebar:hidden"
+              />
+              {/* Full logo — visible when expanded */}
+              <Image
+                src="/logo.png"
+                alt="atiende.ai"
+                width={472}
+                height={200}
+                priority
+                style={{ height: '36px', width: 'auto' }}
+                className="shrink-0 hidden group-hover/sidebar:block"
+              />
+            </>
+          ) : (
+            <Image
+              src="/logo.png"
+              alt="atiende.ai"
+              width={472}
+              height={200}
+              priority
+              style={{ height: '36px', width: 'auto' }}
+              className="shrink-0"
+            />
+          )}
         </Link>
         <p className={cn('text-xs text-zinc-500 truncate mt-2 whitespace-nowrap', hideWhenCollapsed)}>
           {tenant.name}
@@ -94,7 +117,7 @@ function SidebarContent({
               aria-current={active ? 'page' : undefined}
               title={LABELS[mod] || mod}
               className={cn(
-                'relative flex items-center gap-3 px-3 py-2 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
+                'relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
                 active
                   ? 'halo bg-[hsl(var(--brand-blue-soft))] font-medium'
                   : 'hover:bg-[hsl(var(--brand-blue-soft))]',
@@ -108,7 +131,7 @@ function SidebarContent({
                   active ? 'h-5 bg-[hsl(var(--brand-blue))]' : 'h-0 bg-transparent',
                 )}
               />
-              <Icon className="w-4 h-4 shrink-0 text-[hsl(var(--brand-blue))]" />
+              <Icon className="w-5 h-5 shrink-0 text-[hsl(var(--brand-blue))]" />
               <span className={cn('text-[hsl(var(--brand-blue))]', hideWhenCollapsed)}>
                 {LABELS[mod] || mod}
               </span>
@@ -158,11 +181,8 @@ export function Sidebar({
 
   return (
     <>
-      {/* Desktop spacer — keeps main content offset at collapsed width */}
-      <div className="hidden md:block w-[72px] shrink-0" aria-hidden />
-
-      {/* Desktop sidebar — fixed, expands on hover (Supabase-style) */}
-      <aside className="group/sidebar hidden md:flex fixed left-0 top-0 bottom-0 w-[72px] hover:w-64 flex-col glass-panel border-r border-zinc-200 overflow-hidden transition-[width] duration-200 z-40">
+      {/* Desktop sidebar — in-flow, content pushes right on expand */}
+      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col glass-panel border-r border-zinc-200 overflow-hidden transition-[width] duration-300">
         <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
       </aside>
 
