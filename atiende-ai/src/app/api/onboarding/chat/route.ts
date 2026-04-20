@@ -41,11 +41,11 @@ const ChatRequestSchema = z.object({
         content: z.string().min(1).max(4000),
       }),
     )
-    // Cap kept generous because runChatAgent already slices to the last 20
-    // turns before calling the LLM. A real onboarding easily reaches 40+
-    // entries (the agent emits up to 3 bubbles per turn), so the old .max(40)
-    // was rejecting valid long sessions with 400 and killing progress.
-    .max(200)
+    // Upper DoS guard only. We pre-slice history to HISTORY_HARD_CAP before
+    // this validator runs (see POST handler), so this .max() can never reject
+    // a real session. runChatAgent further slices to the last 20 turns before
+    // calling the LLM, so cap here isn't a context bound either.
+    .max(1000)
     .default([]),
   userMessage: z.string().min(1).max(4000),
   uploadedContent: z
@@ -59,12 +59,27 @@ const ChatRequestSchema = z.object({
     .optional(),
 });
 
+// Pre-validation history trim. The agent emits up to 3 bubbles per turn, so a
+// long onboarding can accumulate hundreds of entries. We keep the last 60
+// (~20 turns) which is already ≥ what runChatAgent feeds to the LLM
+// (MAX_HISTORY_TURNS=20). This guarantees Zod's size cap can never reject a
+// real session and the route is bulletproof against runaway history.
+const HISTORY_HARD_CAP = 60;
+
 export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  // Trim history before validation so a long session never 400s.
+  if (body && typeof body === 'object' && body !== null && 'history' in body) {
+    const h = (body as { history?: unknown }).history;
+    if (Array.isArray(h) && h.length > HISTORY_HARD_CAP) {
+      (body as { history: unknown[] }).history = h.slice(-HISTORY_HARD_CAP);
+    }
   }
 
   const parsed = ChatRequestSchema.safeParse(body);
