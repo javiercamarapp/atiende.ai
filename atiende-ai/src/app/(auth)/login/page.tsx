@@ -68,9 +68,8 @@ export default function LoginPage() {
   return (
     <SignInPage
       title={
-        <span className="font-light tracking-tighter">
-          Bienvenido a{' '}
-          <span className="font-semibold">useatiende.ai</span>
+        <span className="font-light tracking-tighter text-zinc-900">
+          Bienvenido
         </span>
       }
       description="Inicia sesión y automatiza tu negocio con inteligencia artificial"

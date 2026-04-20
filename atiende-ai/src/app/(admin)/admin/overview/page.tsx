@@ -70,7 +70,7 @@ export default async function AdminOverviewPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Plataforma</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Plataforma</p>
         <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">Overview</h1>
       </header>
 
@@ -105,7 +105,7 @@ function Kpi({ label, value, tone }: { label: string; value: string | number; to
   return (
     <div className="stagger-item glass-card relative overflow-hidden p-5">
       <div aria-hidden className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${toneAccent[tone]}`} />
-      <span className="text-[11px] uppercase tracking-wider text-white/50">{label}</span>
+      <span className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</span>
       <p className="kpi-number text-3xl font-semibold mt-3 tabular-nums">{value}</p>
     </div>
   );

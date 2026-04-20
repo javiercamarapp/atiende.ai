@@ -45,18 +45,18 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   return (
     <div className="dashboard-shell min-h-screen">
-      <nav className="glass-panel border-b border-white/5 px-6 py-3 flex items-center justify-between">
+      <nav className="glass-panel border-b border-zinc-100 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6 overflow-x-auto">
-          <h1 className="font-semibold text-sm text-white whitespace-nowrap">
-            useatiende.ai <span className="text-emerald-400 text-[10px] font-medium uppercase tracking-wider ml-1">Admin</span>
+          <h1 className="font-semibold text-sm text-zinc-900 whitespace-nowrap">
+            useatiende.ai <span className="text-emerald-600 text-[10px] font-medium uppercase tracking-wider ml-1">Admin</span>
           </h1>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-zinc-100" />
           <ul className="flex items-center gap-1">
             {NAV.map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className="px-3 py-1.5 rounded-lg text-xs text-white/60 hover:text-white hover:bg-white/5 transition whitespace-nowrap"
+                  className="px-3 py-1.5 rounded-lg text-xs text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 transition whitespace-nowrap"
                 >
                   {item.label}
                 </Link>
@@ -64,7 +64,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             ))}
           </ul>
         </div>
-        <span className="text-[11px] text-white/40 whitespace-nowrap">{user.email}</span>
+        <span className="text-[11px] text-zinc-400 whitespace-nowrap">{user.email}</span>
       </nav>
       <main className="p-8 max-w-7xl mx-auto">
         <div className="animate-element">{children}</div>
