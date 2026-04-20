@@ -11,7 +11,10 @@
 //   2. Rate limit per-tenant (Redis) — burst cap 1/10 del limit horario
 //   3. Trial expiry — si plan=free_trial y expiró → mensaje + abort
 //   4. Monthly cap atómico — reserveMonthlyMessage (INCR + rollback si >limit)
-//   5. Business hours — si está cerrado → mensaje "abrimos a las X"
+//
+// NOTA: El bot atiende 24/7 independientemente del horario del negocio. El
+// horario (business_hours) se respeta solo al momento de reservar citas —
+// lo aplica el tool check_availability / book_appointment del agente AGENDA.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { sendTextMessage } from '@/lib/whatsapp/send';
@@ -86,24 +89,6 @@ export async function runGates(
       'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.',
     );
     return false;
-  }
-
-  // 5. Business hours — si está cerrado, mensaje cortés y abort.
-  // Best-effort: si el parseo de hours falla, dejamos pasar para no romper.
-  try {
-    const { isBusinessOpen, getNextOpenTime } = await import('@/lib/actions/business-hours');
-    const hours = tenant.business_hours as Record<string, string> | null;
-    if (!isBusinessOpen(hours)) {
-      const nextOpen = getNextOpenTime(hours);
-      await sendTextMessage(
-        phoneNumberId,
-        senderPhone,
-        `🌙 Gracias por escribirnos. En este momento estamos fuera de horario. Abrimos ${nextOpen}. Le responderemos a primera hora. ¡Que tenga buena noche!`,
-      );
-      return false;
-    }
-  } catch {
-    /* best effort — continuar procesando si el check de hours falla */
   }
 
   return true;
