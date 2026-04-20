@@ -85,9 +85,9 @@ export default async function AdminAgentsPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Plataforma</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Plataforma</p>
         <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">Agent performance</h1>
-        <p className="mt-1.5 text-sm text-white/50">Últimos 7 días — tool_call_logs agregados.</p>
+        <p className="mt-1.5 text-sm text-zinc-500">Últimos 7 días — tool_call_logs agregados.</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -101,41 +101,41 @@ export default async function AdminAgentsPage() {
             >
               <div className="flex items-baseline justify-between">
                 <h3 className="text-sm font-medium text-white">{s.agent}</h3>
-                <span className="text-[11px] uppercase tracking-wider text-white/40">
+                <span className="text-[11px] uppercase tracking-wider text-zinc-500">
                   {s.tenants_count} tenant{s.tenants_count === 1 ? '' : 's'}
                 </span>
               </div>
 
               <div className="mt-4 grid grid-cols-3 gap-3">
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-white/45">Éxito</p>
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Éxito</p>
                   <p className={`mt-1 text-xl font-semibold tabular-nums ${rateColor}`}>
                     {s.success_rate}%
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-white/45">Avg ms</p>
-                  <p className="mt-1 text-xl font-semibold tabular-nums text-white/85">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Avg ms</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900">
                     {s.avg_duration_ms || '—'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-white/45">Total</p>
-                  <p className="mt-1 text-xl font-semibold tabular-nums text-white/85">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500">Total</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900">
                     {s.total}
                   </p>
                 </div>
               </div>
 
               {s.top_failing.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-white/5">
-                  <p className="text-[10px] uppercase tracking-wider text-white/45 mb-2">
+                <div className="mt-4 pt-4 border-t border-zinc-100">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">
                     Top failing tools
                   </p>
                   <ul className="space-y-1.5">
                     {s.top_failing.map((t) => (
                       <li key={t.tool} className="flex items-center justify-between gap-3 text-xs">
-                        <span className="text-white/70 font-mono truncate">{t.tool}</span>
+                        <span className="text-zinc-700 font-mono truncate">{t.tool}</span>
                         <span className="text-red-300 tabular-nums shrink-0">
                           {t.errors} error{t.errors === 1 ? '' : 'es'}
                         </span>

@@ -39,7 +39,7 @@ export function FraudActions({ alertId, current }: { alertId: string; current: s
           type="button"
           onClick={() => setStatus('investigating')}
           disabled={pending}
-          className="px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-xs font-medium text-amber-300 hover:bg-amber-400/15 disabled:opacity-50 transition"
+          className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition"
         >
           Investigando
         </button>
@@ -49,7 +49,7 @@ export function FraudActions({ alertId, current }: { alertId: string; current: s
           type="button"
           onClick={() => setStatus('resolved')}
           disabled={pending}
-          className="px-3 py-1.5 rounded-lg bg-emerald-400/10 border border-emerald-400/30 text-xs font-medium text-emerald-300 hover:bg-emerald-400/15 disabled:opacity-50 transition"
+          className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition"
         >
           Resuelto
         </button>
@@ -59,12 +59,12 @@ export function FraudActions({ alertId, current }: { alertId: string; current: s
           type="button"
           onClick={() => setStatus('false_positive')}
           disabled={pending}
-          className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 hover:text-white hover:border-white/20 disabled:opacity-50 transition"
+          className="px-3 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs text-zinc-700 hover:text-zinc-900 hover:border-zinc-300 disabled:opacity-50 transition"
         >
           Falso positivo
         </button>
       )}
-      {err && <span className="text-xs text-red-300">{err}</span>}
+      {err && <span className="text-xs text-red-600">{err}</span>}
     </div>
   );
 }

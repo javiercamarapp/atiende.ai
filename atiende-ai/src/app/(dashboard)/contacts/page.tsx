@@ -128,7 +128,7 @@ export default async function ContactsPage({
     <div className="space-y-6">
       <header className="animate-element">
         <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Panel</p>
-        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">Pacientes</h1>
+        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">Pacientes</h1>
         <p className="mt-1.5 text-sm text-zinc-500">{contacts.length} pacientes en tu base.</p>
       </header>
 
@@ -142,7 +142,7 @@ export default async function ContactsPage({
               href={f.id === 'all' ? '/contacts' : `/contacts?filter=${f.id}`}
               className={
                 active
-                  ? 'px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-300 text-xs font-medium text-white'
+                  ? 'px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-300 text-xs font-medium text-zinc-900'
                   : 'px-3 py-1.5 rounded-lg bg-transparent border border-zinc-200 text-xs text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 transition'
               }
             >
@@ -175,11 +175,11 @@ export default async function ContactsPage({
               return (
                 <li
                   key={c.id}
-                  className="stagger-item grid grid-cols-12 gap-4 px-5 py-4 border-b border-zinc-100 last:border-b-0 items-center hover:bg-white/[0.015] transition"
+                  className="stagger-item grid grid-cols-12 gap-4 px-5 py-4 border-b border-zinc-100 last:border-b-0 items-center hover:bg-zinc-50 transition"
                   style={{ animationDelay: `${40 + Math.min(idx, 12) * 30}ms` }}
                 >
                   <div className="col-span-12 md:col-span-3">
-                    <p className="text-sm font-medium text-white truncate">
+                    <p className="text-sm font-medium text-zinc-900 truncate">
                       {c.name || c.phone}
                     </p>
                     {c.name && <p className="text-[11px] text-zinc-400 tabular-nums">{c.phone}</p>}
@@ -215,7 +215,7 @@ export default async function ContactsPage({
                     </div>
                   </div>
 
-                  <div className="col-span-12 md:col-span-2 text-sm text-white tabular-nums md:text-right">
+                  <div className="col-span-12 md:col-span-2 text-sm text-zinc-900 tabular-nums md:text-right">
                     {fmtMXN(c.lifetime_value_mxn)}
                   </div>
                 </li>

@@ -97,7 +97,7 @@ export default function ChatDataPage() {
                 key={ex}
                 type="button"
                 onClick={() => ask(ex)}
-                className="text-left text-sm px-3 py-2.5 rounded-lg bg-white/[0.02] border border-zinc-200 text-zinc-700 hover:bg-white/[0.04] hover:border-zinc-300 hover:text-zinc-900 transition"
+                className="text-left text-sm px-3 py-2.5 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 hover:text-zinc-900 transition"
               >
                 {ex}
               </button>
@@ -140,7 +140,7 @@ export default function ChatDataPage() {
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="px-4 py-2 rounded-lg bg-white text-black text-sm font-medium disabled:opacity-30 hover:bg-white/90 transition"
+          className="px-4 py-2 rounded-lg bg-[hsl(var(--brand-blue))] text-white text-sm font-medium disabled:opacity-30 hover:opacity-90 transition"
         >
           Enviar
         </button>
@@ -195,7 +195,7 @@ function TurnBlock({ turn }: { turn: Turn }) {
                 {showSql ? 'Ocultar SQL' : 'Ver SQL'}
               </button>
               {showSql && (
-                <pre className="mt-2 p-3 rounded-lg bg-black/40 border border-zinc-100 text-[11px] text-zinc-700 overflow-auto max-h-60 font-mono">
+                <pre className="mt-2 p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-100 overflow-auto max-h-60 font-mono">
                   {turn.sql}
                 </pre>
               )}
@@ -213,7 +213,7 @@ function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   return (
     <div className="mt-3 rounded-lg border border-zinc-100 overflow-auto max-h-80">
       <table className="w-full text-xs">
-        <thead className="bg-white/[0.02] sticky top-0">
+        <thead className="bg-zinc-50 sticky top-0">
           <tr>
             {headers.map((h) => (
               <th key={h} className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">

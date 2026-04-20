@@ -47,20 +47,20 @@ export default async function AdminFaqGapsPage() {
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Plataforma</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Plataforma</p>
         <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">FAQ Gaps</h1>
         {lastRun ? (
-          <p className="mt-1.5 text-sm text-white/50">
+          <p className="mt-1.5 text-sm text-zinc-500">
             Última corrida: {new Date(lastRun.started_at).toLocaleString('es-MX')} ·{' '}
             {lastRun.tenants_succeeded}/{lastRun.tenants_processed} tenants OK.
           </p>
         ) : (
-          <p className="mt-1.5 text-sm text-white/50">El job corre los lunes 6am UTC.</p>
+          <p className="mt-1.5 text-sm text-zinc-500">El job corre los lunes 6am UTC.</p>
         )}
       </header>
 
       {tenantsWithSuggestions.length === 0 ? (
-        <div className="glass-card p-10 text-center text-sm text-white/50">
+        <div className="glass-card p-10 text-center text-sm text-zinc-500">
           Sin sugerencias por promover. Se generan cuando hay ≥3 preguntas repetidas sin respuesta.
         </div>
       ) : (
@@ -75,7 +75,7 @@ export default async function AdminFaqGapsPage() {
               >
                 <div className="flex items-baseline justify-between gap-4">
                   <h3 className="text-sm font-medium text-white">{tenantName}</h3>
-                  <span className="text-[11px] uppercase tracking-wider text-white/40">
+                  <span className="text-[11px] uppercase tracking-wider text-zinc-500">
                     {t.questions ?? 0} preguntas · {t.clusters ?? 0} clusters
                   </span>
                 </div>
@@ -84,15 +84,15 @@ export default async function AdminFaqGapsPage() {
                   {(t.suggestions || []).map((s, i) => (
                     <li
                       key={i}
-                      className="rounded-lg border border-white/5 bg-white/[0.015] p-4"
+                      className="rounded-lg border border-zinc-100 bg-zinc-50 p-4"
                     >
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-white/45">
+                          <p className="text-xs text-zinc-500">
                             Preguntada {s.frequency} {s.frequency === 1 ? 'vez' : 'veces'}
                           </p>
                           <p className="mt-1 text-sm font-medium text-white">{s.question}</p>
-                          <p className="mt-2 text-sm text-white/70 leading-relaxed">
+                          <p className="mt-2 text-sm text-zinc-700 leading-relaxed">
                             {s.suggested_answer}
                           </p>
                         </div>

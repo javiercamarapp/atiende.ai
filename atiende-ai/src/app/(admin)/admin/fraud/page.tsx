@@ -19,7 +19,7 @@ interface AlertRow {
 function anomalyColor(type: string): { tone: string; label: string } {
   if (type.startsWith('volume')) return { tone: 'text-amber-300', label: 'Volumen' };
   if (type === 'prompt_injection') return { tone: 'text-red-300', label: 'Prompt injection' };
-  return { tone: 'text-white/70', label: type };
+  return { tone: 'text-zinc-700', label: type };
 }
 
 export default async function AdminFraudPage() {
@@ -50,20 +50,20 @@ export default async function AdminFraudPage() {
   return (
     <div className="space-y-8">
       <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Plataforma</p>
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Plataforma</p>
         <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">
           Fraud alerts
         </h1>
-        <p className="mt-1.5 text-sm text-white/50">
+        <p className="mt-1.5 text-sm text-zinc-500">
           {open.length} abiertas · {closed.length} recientes en historial.
         </p>
       </header>
 
       {/* Abiertas */}
       <section>
-        <h2 className="text-xs uppercase tracking-[0.18em] text-white/50 mb-3">Abiertas</h2>
+        <h2 className="text-xs uppercase tracking-[0.18em] text-zinc-500 mb-3">Abiertas</h2>
         {open.length === 0 ? (
-          <div className="glass-card p-10 text-center text-sm text-white/50">
+          <div className="glass-card p-10 text-center text-sm text-zinc-500">
             No hay alertas abiertas. El detector corre nocturno.
           </div>
         ) : (
@@ -82,17 +82,17 @@ export default async function AdminFraudPage() {
                         <span className={`text-xs font-mono font-medium ${meta.tone}`}>
                           {meta.label}
                         </span>
-                        <span className="text-white/20">·</span>
-                        <span className="text-xs text-white/70">
+                        <span className="text-zinc-300">·</span>
+                        <span className="text-xs text-zinc-700">
                           {tenantMap.get(a.tenant_id) || a.tenant_id.slice(0, 8)}
                         </span>
-                        <span className="text-white/20">·</span>
-                        <span className="text-[11px] text-white/45">
+                        <span className="text-zinc-300">·</span>
+                        <span className="text-[11px] text-zinc-500">
                           {new Date(a.created_at).toLocaleString('es-MX')}
                         </span>
                       </div>
                       {a.evidence && (
-                        <p className="mt-2 text-sm text-white/80 font-mono break-words">
+                        <p className="mt-2 text-sm text-zinc-800 font-mono break-words">
                           {a.evidence}
                         </p>
                       )}
@@ -109,7 +109,7 @@ export default async function AdminFraudPage() {
       {/* Historial */}
       {closed.length > 0 && (
         <section>
-          <h2 className="text-xs uppercase tracking-[0.18em] text-white/50 mb-3">Historial reciente</h2>
+          <h2 className="text-xs uppercase tracking-[0.18em] text-zinc-500 mb-3">Historial reciente</h2>
           <div className="glass-card overflow-hidden">
             <ul>
               {closed.map((a) => {
@@ -117,14 +117,14 @@ export default async function AdminFraudPage() {
                 return (
                   <li
                     key={a.id}
-                    className="px-5 py-3 border-b border-white/5 last:border-0 flex items-center justify-between gap-4 flex-wrap"
+                    className="px-5 py-3 border-b border-zinc-100 last:border-0 flex items-center justify-between gap-4 flex-wrap"
                   >
                     <div className="flex items-center gap-2 flex-wrap text-xs">
                       <span className={`font-mono ${meta.tone}`}>{meta.label}</span>
-                      <span className="text-white/20">·</span>
-                      <span className="text-white/70">{tenantMap.get(a.tenant_id) || a.tenant_id.slice(0, 8)}</span>
-                      <span className="text-white/20">·</span>
-                      <span className="text-white/45">
+                      <span className="text-zinc-300">·</span>
+                      <span className="text-zinc-700">{tenantMap.get(a.tenant_id) || a.tenant_id.slice(0, 8)}</span>
+                      <span className="text-zinc-300">·</span>
+                      <span className="text-zinc-500">
                         {new Date(a.created_at).toLocaleDateString('es-MX')}
                       </span>
                     </div>
@@ -132,7 +132,7 @@ export default async function AdminFraudPage() {
                       className={
                         a.status === 'resolved'
                           ? 'inline-flex items-center rounded-md bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 text-[10px] text-emerald-300'
-                          : 'inline-flex items-center rounded-md bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/50'
+                          : 'inline-flex items-center rounded-md bg-zinc-100 border border-zinc-200 px-2 py-0.5 text-[10px] text-zinc-500'
                       }
                     >
                       {a.status === 'resolved' ? 'Resuelto' : 'Falso positivo'}
