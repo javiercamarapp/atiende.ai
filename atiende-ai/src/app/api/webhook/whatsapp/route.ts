@@ -4,7 +4,34 @@ import { processIncomingMessage } from '@/lib/whatsapp/processor';
 import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { publishMessage, isQStashConfigured } from '@/lib/queue/qstash';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
+import {
+  WhatsAppWebhookSchema,
+  checkWebhookReplay,
+  extractMessageIds,
+} from '@/lib/whatsapp/webhook-schema';
 import crypto from 'crypto';
+
+// AUDIT P1 item 3: rechazar payloads cuyos mensajes tengan >5 min de edad.
+// Meta normalmente entrega en <5s; >5 min indica replay (captura previa
+// reenviada por un atacante con el secret) o un reintento ya irrelevante.
+const WEBHOOK_REPLAY_MAX_AGE_SECONDS = 300;
+
+// AUDIT P1 item 4: rate limit por IP de origen. Meta usa un pool acotado de
+// IPs; 300/min es generoso (tráfico real típico <50/min por IP). Se aplica
+// después del HMAC para que un atacante sin el secret gaste primero el HMAC
+// check (cheap) y el rate-limit segundo.
+const WEBHOOK_IP_RATE_LIMIT = 300;
+const WEBHOOK_IP_RATE_WINDOW = 60;
+
+function extractClientIp(req: NextRequest): string {
+  // Vercel inyecta x-forwarded-for con el IP del cliente real primero.
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0].trim();
+  const real = req.headers.get('x-real-ip');
+  if (real) return real.trim();
+  return 'unknown';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Feature flag — Tool calling pipeline (Fase 1 de la migración)
@@ -100,29 +127,86 @@ export async function POST(req: NextRequest) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    // Decodificamos el buffer a string UTF-8 para parseo JSON. Notar que
-    // este toString es POSTERIOR a la verificación HMAC, así que cualquier
-    // re-codificación interna no afecta la integridad criptográfica.
-    const body = JSON.parse(rawBuffer.toString('utf8'));
+    // AUDIT P1 item 4: rate-limit por IP POST-HMAC. Un atacante sin el
+    // secret ya fue rechazado arriba; este gate protege contra payload floods
+    // desde IPs legítimas (o un secret leaked). Fail-open si Redis no responde.
+    const clientIp = extractClientIp(req);
+    const rateLimited = await checkApiRateLimit(
+      `wa_webhook:${clientIp}`,
+      WEBHOOK_IP_RATE_LIMIT,
+      WEBHOOK_IP_RATE_WINDOW,
+    );
+    if (rateLimited) {
+      logWebhook({
+        provider: 'whatsapp',
+        eventType: 'rate_limited',
+        statusCode: 429,
+        payload: { ip: clientIp },
+        durationMs: Date.now() - startTime,
+      });
+      // Devolvemos 200 (no 429) para que Meta NO reintente — el duplicado
+      // sería peor que perder un mensaje en un burst real.
+      return NextResponse.json({ status: 'rate_limited' });
+    }
 
-    // Extract event type from WhatsApp payload
-    const entry = body?.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const waPhoneId = changes?.value?.metadata?.phone_number_id;
-    const hasMessages = changes?.value?.messages?.length > 0;
-    const hasStatuses = changes?.value?.statuses?.length > 0;
+    // AUDIT P1 item 2: JSON.parse seguro. Si el body está corrupto devolver
+    // 500 haría que Meta reintente hasta 3x, duplicando procesamiento cuando
+    // eventualmente una retry sí parse correctamente. Respondemos 200 con
+    // status='invalid_json' para que Meta deje de reintentar.
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBuffer.toString('utf8'));
+    } catch (err) {
+      console.warn('[whatsapp-webhook] malformed JSON payload:', err instanceof Error ? err.message : err);
+      logWebhook({
+        provider: 'whatsapp',
+        eventType: 'invalid_json',
+        statusCode: 200,
+        error: err instanceof Error ? err.message : 'JSON parse error',
+        durationMs: Date.now() - startTime,
+      });
+      return NextResponse.json({ status: 'invalid_json' });
+    }
+
+    // AUDIT P2 item 6: validar schema del payload con Zod. `.passthrough()` en
+    // todos los objetos preserva campos desconocidos (Meta cambia la API
+    // constantemente); solo imponemos validación estricta en los campos que
+    // el pipeline usa y que si son garbage causan crashes downstream.
+    const parseResult = WhatsAppWebhookSchema.safeParse(body);
+    if (!parseResult.success) {
+      console.warn(
+        '[whatsapp-webhook] payload failed schema validation:',
+        parseResult.error.issues.slice(0, 3),
+      );
+      logWebhook({
+        provider: 'whatsapp',
+        eventType: 'invalid_payload',
+        statusCode: 200,
+        error: `schema: ${parseResult.error.issues[0]?.message || 'unknown'}`,
+        durationMs: Date.now() - startTime,
+      });
+      return NextResponse.json({ status: 'invalid_payload' });
+    }
+    const validated = parseResult.data;
+
+    // Extract event type from WhatsApp payload (usando datos validados).
+    const entry = validated.entry[0];
+    const changes = entry.changes[0];
+    const waPhoneId = changes.value.metadata.phone_number_id;
+    const hasMessages = (changes.value.messages?.length || 0) > 0;
+    const hasStatuses = (changes.value.statuses?.length || 0) > 0;
     const eventType = hasMessages ? 'message' : hasStatuses ? 'status' : 'unknown';
 
     logWebhook({
       provider: 'whatsapp',
       eventType,
       statusCode: 200,
-      payload: { phone_number_id: waPhoneId, field: changes?.field },
+      payload: { phone_number_id: waPhoneId, field: changes.field },
       durationMs: Date.now() - startTime,
     });
 
     // Handle delivery status updates (sent, delivered, read)
-    if (changes?.value?.statuses) {
+    if (changes.value.statuses) {
       for (const status of changes.value.statuses) {
         supabaseAdmin
           .from('messages')
@@ -137,25 +221,54 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // FIX 1 (audit R4): idempotency check SÍNCRONO antes de disparar el
-    // background task. Si Meta nos reintenta un mensaje (p.ej. por timeout
-    // en nuestra respuesta de 5s previa) ya grabado, retornamos 200 sin
-    // costar LLM ni WhatsApp API en el reintento. Solo ~20ms de latencia.
+    // AUDIT P1 item 3: replay protection. Si el payload trae mensajes con
+    // timestamp > 5 min de edad es replay o retry ya irrelevante. Respondemos
+    // 200 para no triggear reintento de Meta.
+    if (hasMessages) {
+      const replay = checkWebhookReplay(validated, WEBHOOK_REPLAY_MAX_AGE_SECONDS);
+      if (!replay.ok) {
+        console.warn(
+          `[whatsapp-webhook] replay rejected — message age=${replay.ageSeconds}s > ${WEBHOOK_REPLAY_MAX_AGE_SECONDS}s`,
+        );
+        logWebhook({
+          provider: 'whatsapp',
+          eventType: 'replay_rejected',
+          statusCode: 200,
+          error: `age=${replay.ageSeconds}s`,
+          durationMs: Date.now() - startTime,
+        });
+        return NextResponse.json({ status: 'replay_rejected' });
+      }
+    }
+
+    // AUDIT P1 item 1: idempotency MULTI-MESSAGE. Antes solo verificábamos
+    // `messages[0].id` — un batch de N mensajes (raro pero Meta lo hace en
+    // reintentos) procesaba N-1 duplicados. Ahora query batch con .in().
+    // Si TODOS los IDs están en DB, es duplicado completo → short-circuit
+    // sin disparar worker. Si solo algunos, dejamos que el processor filtre
+    // (su propio check por-mensaje ya es idempotente vía UNIQUE constraint).
     try {
-      const firstMessageId = changes?.value?.messages?.[0]?.id as string | undefined;
-      if (firstMessageId) {
-        const { data: existing } = await supabaseAdmin
+      const allMessageIds = extractMessageIds(validated);
+      if (allMessageIds.length > 0) {
+        const { data: existingRows } = await supabaseAdmin
           .from('messages')
-          .select('id')
-          .eq('wa_message_id', firstMessageId)
-          .maybeSingle();
-        if (existing) {
+          .select('wa_message_id')
+          .in('wa_message_id', allMessageIds);
+        const existingIds = new Set((existingRows || []).map((r) => r.wa_message_id));
+        if (existingIds.size === allMessageIds.length) {
+          logWebhook({
+            provider: 'whatsapp',
+            eventType: 'duplicate_batch',
+            statusCode: 200,
+            payload: { count: allMessageIds.length },
+            durationMs: Date.now() - startTime,
+          });
           return NextResponse.json({ status: 'duplicate_ignored' });
         }
       }
     } catch {
       /* Best effort — si el check falla, dejamos que el pipeline idempotente
-         interno del processor maneje el duplicado. */
+         interno del processor maneje el duplicado vía UNIQUE constraint. */
     }
 
     // Patrón "Fast Response + async queue": respondemos 200 inmediatamente
@@ -178,12 +291,12 @@ export async function POST(req: NextRequest) {
         || process.env.NEXT_PUBLIC_APP_URL
         || req.nextUrl.origin;
       const workerUrl = `${baseUrl}/api/worker/process-message`;
-      const pub = await publishMessage(workerUrl, body);
+      const pub = await publishMessage(workerUrl, validated);
       if (!pub.ok) {
         // Publicación falló — fallback a waitUntil para no perder el mensaje.
         console.warn('[webhook] QStash publish failed, fallback to waitUntil:', pub.reason);
         waitUntil(
-          processIncomingMessage(body).catch((err) => {
+          processIncomingMessage(validated as never).catch((err) => {
             console.error('Error procesando mensaje WA (fallback):', err);
             logWebhook({ provider: 'whatsapp', eventType: 'process_error', error: err instanceof Error ? err.message : 'Unknown error' });
           }),
@@ -192,7 +305,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Sin QStash configurado — modo legacy con waitUntil.
       waitUntil(
-        processIncomingMessage(body).catch((err) => {
+        processIncomingMessage(validated as never).catch((err) => {
           console.error('Error procesando mensaje WA:', err);
           logWebhook({
             provider: 'whatsapp',

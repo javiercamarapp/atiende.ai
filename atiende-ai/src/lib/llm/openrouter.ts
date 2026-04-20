@@ -409,8 +409,13 @@ export async function generateStructured<T>(opts: {
   }
 
   if (lastError instanceof StructuredGenerationError) throw lastError;
+  // Preserve the last underlying error's message in the wrapper so it shows
+  // up in logs even if the caller doesn't dig into `.cause` — this is usually
+  // an OpenRouter API error (401 missing key, 429 rate limit, 5xx upstream).
+  const lastMsg =
+    lastError instanceof Error ? lastError.message : String(lastError);
   throw new StructuredGenerationError(
-    'All generation attempts failed',
+    `All generation attempts failed: ${lastMsg}`,
     lastError,
   );
 }
