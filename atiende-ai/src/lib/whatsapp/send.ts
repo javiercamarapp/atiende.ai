@@ -7,6 +7,17 @@ const getHeaders = () => ({
   'Content-Type': 'application/json',
 });
 
+// Mexico used to require a "1" after the 52 country code (e.g. 5219991234567).
+// Meta deprecated that requirement in 2023; modern allowlist entries and
+// WhatsApp registrations use 52 + 10 digits (529991234567). Inbound `from`
+// values still arrive in the legacy 13-digit form for older accounts, so when
+// we reply we'd hit error 131030 (recipient_not_in_allowed_list) against a
+// recipient that IS registered, just under the new format. Strip the legacy
+// "1" at the send boundary so recipient matches what Meta now expects.
+function toMetaRecipient(to: string): string {
+  return /^521\d{10}$/.test(to) ? '52' + to.slice(3) : to;
+}
+
 /** Códigos de error de Meta más comunes que el sistema debería loggear distintos. */
 const META_ERROR_CODES: Record<number, string> = {
   131026: 'message_not_delivered',     // número inválido o no en WhatsApp
@@ -53,6 +64,7 @@ function inspectAxiosError(err: unknown, fnName: string): SendResult {
 export async function sendTextMessage(
   phoneNumberId: string, to: string, text: string,
 ): Promise<SendResult> {
+  to = toMetaRecipient(to);
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
@@ -141,6 +153,7 @@ export async function sendButtonMessage(
   phoneNumberId: string, to: string,
   body: string, buttons: string[],
 ): Promise<SendResult> {
+  to = toMetaRecipient(to);
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
@@ -172,6 +185,7 @@ export async function sendListMessage(
   header: string, body: string,
   sections: { title: string; rows: { id: string; title: string; description?: string }[] }[],
 ): Promise<SendResult> {
+  to = toMetaRecipient(to);
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
@@ -198,6 +212,7 @@ export async function sendTemplate(
   phoneNumberId: string, to: string,
   templateName: string, params: string[],
 ): Promise<SendResult> {
+  to = toMetaRecipient(to);
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
@@ -226,6 +241,7 @@ export async function sendLocation(
   phoneNumberId: string, to: string,
   lat: number, lng: number, name: string, address: string,
 ): Promise<SendResult> {
+  to = toMetaRecipient(to);
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
@@ -264,6 +280,7 @@ export async function markAsRead(
 // Ahora sí loggeamos auth failures (401 / code 133000) aunque mantenemos
 // el fire-and-forget para no romper el pipeline.
 export async function sendTypingIndicator(phoneNumberId: string, to: string): Promise<SendResult> {
+  to = toMetaRecipient(to);
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
