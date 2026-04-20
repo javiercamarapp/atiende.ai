@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import Image from 'next/image';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -50,15 +51,14 @@ export default function ResetPasswordPage() {
             <ArrowLeft className="w-4 h-4" /> Volver
           </Link>
 
-          <div className="animate-element animate-delay-150 flex items-center gap-2 mb-1">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="32" height="32" rx="8" fill="hsl(235 84% 55%)" />
-              <path d="M8 12C8 9.79 9.79 8 12 8H20C22.21 8 24 9.79 24 12V18C24 20.21 22.21 22 20 22H14L10 25V22H12C9.79 22 8 20.21 8 18V12Z" fill="white" fillOpacity="0.95" />
-              <circle cx="13" cy="15" r="1.25" fill="hsl(235 84% 55%)" />
-              <circle cx="19" cy="15" r="1.25" fill="hsl(235 84% 55%)" />
-            </svg>
-            <span className="text-lg font-semibold tracking-tight text-zinc-900">atiende<span style={{color: 'hsl(235 84% 55%)'}}>.ai</span></span>
-          </div>
+          <Image
+            src="/logo.png"
+            alt="atiende.ai"
+            width={200}
+            height={85}
+            priority
+            className="animate-element animate-delay-150 h-10 w-auto mb-1"
+          />
 
           <h1 className="animate-element animate-delay-200 text-4xl font-semibold leading-tight text-zinc-900">
             <span className="font-light tracking-tighter">Nueva contraseña</span>

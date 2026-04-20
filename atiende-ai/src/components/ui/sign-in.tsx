@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { Eye, EyeOff } from 'lucide-react';
 
 export interface Testimonial {
@@ -57,15 +58,14 @@ export const SignInPage: React.FC<SignInPageProps> = ({
       <section className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="flex flex-col gap-6">
-            <div className="animate-element animate-delay-50 flex items-center gap-2 mb-2">
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="32" height="32" rx="8" fill="hsl(235 84% 55%)" />
-                <path d="M8 12C8 9.79 9.79 8 12 8H20C22.21 8 24 9.79 24 12V18C24 20.21 22.21 22 20 22H14L10 25V22H12C9.79 22 8 20.21 8 18V12Z" fill="white" fillOpacity="0.95" />
-                <circle cx="13" cy="15" r="1.25" fill="hsl(235 84% 55%)" />
-                <circle cx="19" cy="15" r="1.25" fill="hsl(235 84% 55%)" />
-              </svg>
-              <span className="text-lg font-semibold tracking-tight text-zinc-900">atiende<span style={{color: 'hsl(235 84% 55%)'}}>.ai</span></span>
-            </div>
+            <Image
+              src="/logo.png"
+              alt="atiende.ai"
+              width={200}
+              height={85}
+              priority
+              className="animate-element animate-delay-50 h-10 w-auto mb-2"
+            />
             <h1 className="animate-element animate-delay-100 text-4xl md:text-5xl font-semibold leading-tight text-zinc-900">{title}</h1>
             <p className="animate-element animate-delay-200 text-zinc-500">{description}</p>
 
