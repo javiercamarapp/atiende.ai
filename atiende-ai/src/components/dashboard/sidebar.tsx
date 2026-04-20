@@ -7,6 +7,7 @@ import {
   BookOpen, BarChart3, Settings, TrendingUp, Menu, Shield, UserCircle2,
   Sparkles, Megaphone,
 } from 'lucide-react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -43,16 +44,15 @@ function SidebarContent({
   return (
     <>
       <div className="px-5 pt-5 pb-4">
-        <Link href="/home" className="flex items-center gap-2" onClick={onNavigate}>
-          <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
-            <rect width="32" height="32" rx="8" fill="hsl(235 84% 55%)" />
-            <path d="M8 12C8 9.79 9.79 8 12 8H20C22.21 8 24 9.79 24 12V18C24 20.21 22.21 22 20 22H14L10 25V22H12C9.79 22 8 20.21 8 18V12Z" fill="white" fillOpacity="0.95" />
-            <circle cx="13" cy="15" r="1.25" fill="hsl(235 84% 55%)" />
-            <circle cx="19" cy="15" r="1.25" fill="hsl(235 84% 55%)" />
-          </svg>
-          <span className="text-lg font-semibold tracking-tight text-zinc-900">
-            atiende<span className="text-[hsl(var(--brand-blue))]">.ai</span>
-          </span>
+        <Link href="/home" className="block" onClick={onNavigate}>
+          <Image
+            src="/logo.png"
+            alt="atiende.ai"
+            width={200}
+            height={85}
+            priority
+            className="h-9 w-auto"
+          />
         </Link>
         <p className="text-xs text-zinc-500 truncate mt-2">{tenant.name}</p>
       </div>
