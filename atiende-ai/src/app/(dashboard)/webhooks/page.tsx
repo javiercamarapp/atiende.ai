@@ -4,15 +4,11 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 const PROVIDER_ICONS: Record<string, string> = {
   whatsapp: 'WA',
   stripe: 'ST',
-  conekta: 'CK',
-  retell: 'RE',
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
   whatsapp: 'bg-green-100 text-green-700',
   stripe: 'bg-purple-100 text-purple-700',
-  conekta: 'bg-blue-100 text-blue-700',
-  retell: 'bg-orange-100 text-orange-700',
 };
 
 function statusColor(code: number | null): string {

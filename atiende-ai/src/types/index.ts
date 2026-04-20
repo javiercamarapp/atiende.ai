@@ -4,12 +4,12 @@ export interface Tenant {
   status: 'onboarding'|'testing'|'active'|'paused'|'cancelled';
   email: string; phone: string; address: string; city: string; state: string;
   wa_phone_number_id: string|null; wa_waba_id: string|null; wa_display_phone: string|null;
-  has_chat_agent: boolean; retell_agent_id: string|null; telnyx_number: string|null; has_voice_agent: boolean;
+  has_chat_agent: boolean; has_voice_agent: boolean;
   chat_system_prompt: string|null; voice_system_prompt: string|null; welcome_message: string|null;
   llm_primary: string; llm_sensitive: string; llm_classifier: string;
   temperature: number; bot_name: string; timezone: string;
   business_hours: Record<string,string>; config: Record<string, unknown>;
-  stripe_customer_id: string|null; conekta_customer_id: string|null;
+  stripe_customer_id: string|null;
   // Voice billing (plan premium) — populados al checkout de premium o manual.
   voice_minutes_included: number;            // 0 = sin voz, 300 = premium
   stripe_subscription_item_voice_id: string|null;
