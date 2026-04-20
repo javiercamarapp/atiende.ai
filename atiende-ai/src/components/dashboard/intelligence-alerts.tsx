@@ -22,9 +22,9 @@ interface AlertItem {
 
 const KIND_STYLES: Record<AlertKind, { tone: string; bg: string; border: string; icon: ReactElement }> = {
   no_show: {
-    tone: 'text-red-300',
-    bg: 'bg-red-400/5',
-    border: 'border-red-400/20',
+    tone: 'text-red-700',
+    bg: 'bg-red-50',
+    border: 'border-red-200',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
         <circle cx="12" cy="12" r="10" />
@@ -34,9 +34,9 @@ const KIND_STYLES: Record<AlertKind, { tone: string; bg: string; border: string;
     ),
   },
   revenue: {
-    tone: 'text-amber-300',
-    bg: 'bg-amber-400/5',
-    border: 'border-amber-400/20',
+    tone: 'text-amber-700',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
         <line x1="12" y1="1" x2="12" y2="23" />
@@ -45,9 +45,9 @@ const KIND_STYLES: Record<AlertKind, { tone: string; bg: string; border: string;
     ),
   },
   churn: {
-    tone: 'text-amber-300',
-    bg: 'bg-amber-400/5',
-    border: 'border-amber-400/20',
+    tone: 'text-amber-700',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
         <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
@@ -55,9 +55,9 @@ const KIND_STYLES: Record<AlertKind, { tone: string; bg: string; border: string;
     ),
   },
   unsatisfied: {
-    tone: 'text-red-300',
-    bg: 'bg-red-400/5',
-    border: 'border-red-400/20',
+    tone: 'text-red-700',
+    bg: 'bg-red-50',
+    border: 'border-red-200',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -190,8 +190,8 @@ export async function IntelligenceAlerts({ tenantId }: { tenantId: string }) {
   if (alerts.length === 0) {
     return (
       <div className="glass-card p-6">
-        <h3 className="text-sm font-medium text-white/80">Alertas inteligentes</h3>
-        <p className="mt-3 text-sm text-white/50">Sin alertas activas. Todo bajo control.</p>
+        <h3 className="text-sm font-medium text-zinc-800">Alertas inteligentes</h3>
+        <p className="mt-3 text-sm text-zinc-500">Sin alertas activas. Todo bajo control.</p>
       </div>
     );
   }
@@ -199,8 +199,8 @@ export async function IntelligenceAlerts({ tenantId }: { tenantId: string }) {
   return (
     <div className="glass-card p-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-white/80">Alertas inteligentes</h3>
-        <span className="text-[11px] uppercase tracking-wider text-white/40">
+        <h3 className="text-sm font-medium text-zinc-800">Alertas inteligentes</h3>
+        <span className="text-[11px] uppercase tracking-wider text-zinc-400">
           {alerts.length} activa{alerts.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -216,16 +216,16 @@ export async function IntelligenceAlerts({ tenantId }: { tenantId: string }) {
               <div className={`mt-0.5 ${s.tone}`}>{s.icon}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-white truncate">{a.title}</p>
-                  <span className="text-[10px] uppercase tracking-wider text-white/40 shrink-0">
+                  <p className="text-sm font-medium text-zinc-900 truncate">{a.title}</p>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 shrink-0">
                     {relativeTime(a.when)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-xs text-white/60">{a.description}</p>
+                <p className="mt-0.5 text-xs text-zinc-600">{a.description}</p>
                 {a.action_href && (
                   <Link
                     href={a.action_href}
-                    className={`mt-2 inline-flex items-center gap-1 text-xs font-medium ${s.tone} hover:text-white transition`}
+                    className={`mt-2 inline-flex items-center gap-1 text-xs font-medium ${s.tone} hover:opacity-80 transition`}
                   >
                     {a.action}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">

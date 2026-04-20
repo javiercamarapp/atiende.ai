@@ -10,9 +10,9 @@ import { AnomalyBanner } from '@/components/dashboard/anomaly-banner';
 import { detectAnomalies } from '@/lib/intelligence/anomaly-detector';
 
 function healthTone(score: number): { label: string; dot: string; ring: string; text: string } {
-  if (score > 70) return { label: 'Saludable', dot: 'bg-emerald-400', ring: 'ring-emerald-400/30', text: 'text-emerald-300' };
-  if (score >= 40) return { label: 'Atención', dot: 'bg-amber-400', ring: 'ring-amber-400/30', text: 'text-amber-300' };
-  return { label: 'Crítico', dot: 'bg-red-400', ring: 'ring-red-400/30', text: 'text-red-300' };
+  if (score > 70) return { label: 'Saludable', dot: 'bg-emerald-500', ring: 'ring-emerald-200', text: 'text-emerald-700' };
+  if (score >= 40) return { label: 'Atención', dot: 'bg-amber-500', ring: 'ring-amber-200', text: 'text-amber-700' };
+  return { label: 'Crítico', dot: 'bg-red-500', ring: 'ring-red-200', text: 'text-red-700' };
 }
 
 function fmtMXN(n: number): string {
@@ -99,11 +99,11 @@ export default async function DashboardPage() {
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="animate-element">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Panel</p>
-        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-white">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Panel</p>
+        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">
           {tenant.name}
         </h1>
-        <p className="mt-1.5 text-sm text-white/50">
+        <p className="mt-1.5 text-sm text-zinc-500">
           Tu agente está escuchando en WhatsApp 24/7.
         </p>
       </header>
@@ -113,31 +113,31 @@ export default async function DashboardPage() {
         <div className={`stagger-item glass-card p-6 ring-1 ${tone.ring}`}>
           <div className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
-            <span className="text-[11px] uppercase tracking-wider text-white/50">Salud del negocio</span>
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500">Salud del negocio</span>
           </div>
           <div className="mt-3 flex items-end gap-3">
             <p className="kpi-number text-5xl font-semibold tabular-nums">{healthScore}</p>
             <span className={`mb-2 text-xs font-medium ${tone.text}`}>{tone.label}</span>
           </div>
-          <p className="mt-2 text-xs text-white/45">Score compuesto 0-100 por recencia, asistencia y cancelaciones.</p>
+          <p className="mt-2 text-xs text-zinc-500">Score compuesto 0-100 por recencia, asistencia y cancelaciones.</p>
         </div>
 
         <div className="stagger-item glass-card p-6">
           <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            <span className="text-[11px] uppercase tracking-wider text-white/50">Ingresos en riesgo hoy</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500">Ingresos en riesgo hoy</span>
           </div>
           <p className="kpi-number text-5xl font-semibold mt-3 tabular-nums">{fmtMXN(revenueAtRisk)}</p>
-          <p className="mt-2 text-xs text-white/45">Estimación por citas con alta probabilidad de no-show.</p>
+          <p className="mt-2 text-xs text-zinc-500">Estimación por citas con alta probabilidad de no-show.</p>
         </div>
 
         <div className="stagger-item glass-card p-6">
           <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-            <span className="text-[11px] uppercase tracking-wider text-white/50">Pacientes en riesgo de churn</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500">Pacientes en riesgo de churn</span>
           </div>
           <p className="kpi-number text-5xl font-semibold mt-3 tabular-nums">{churnCount}</p>
-          <p className="mt-2 text-xs text-white/45">Con probabilidad de churn mayor al 60%.</p>
+          <p className="mt-2 text-xs text-zinc-500">Con probabilidad de churn mayor al 60%.</p>
         </div>
       </section>
 
@@ -189,33 +189,33 @@ function KpiCard({
   tone: 'emerald' | 'amber' | 'red' | 'sky' | 'violet';
 }) {
   const toneColor: Record<string, string> = {
-    emerald: 'text-emerald-300',
-    amber: 'text-amber-300',
-    red: 'text-red-300',
-    sky: 'text-sky-300',
-    violet: 'text-violet-300',
+    emerald: 'text-emerald-700',
+    amber: 'text-amber-700',
+    red: 'text-red-700',
+    sky: 'text-sky-700',
+    violet: 'text-violet-700',
   };
   const toneAccent: Record<string, string> = {
-    emerald: 'from-emerald-400/30 to-transparent',
-    amber: 'from-amber-400/30 to-transparent',
-    red: 'from-red-400/30 to-transparent',
-    sky: 'from-sky-400/30 to-transparent',
-    violet: 'from-violet-400/30 to-transparent',
+    emerald: 'from-emerald-500/50 to-transparent',
+    amber: 'from-amber-500/50 to-transparent',
+    red: 'from-red-500/50 to-transparent',
+    sky: 'from-sky-500/50 to-transparent',
+    violet: 'from-violet-500/50 to-transparent',
   };
 
   return (
     <div className="stagger-item glass-card relative overflow-hidden p-5">
       <div aria-hidden className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${toneAccent[tone]}`} />
-      <span className="text-[11px] uppercase tracking-wider text-white/50">{label}</span>
+      <span className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</span>
       <div className="mt-3 flex items-baseline gap-2">
         <p className="kpi-number text-3xl font-semibold tabular-nums">{value}</p>
         {typeof delta === 'number' && delta !== 0 && (
-          <span className={`text-xs font-medium ${delta > 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+          <span className={`text-xs font-medium ${delta > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
             {delta > 0 ? '↑' : '↓'} {Math.abs(delta)}
           </span>
         )}
       </div>
-      {subtitle && <p className={`mt-1 text-xs ${toneColor[tone]} opacity-70`}>{subtitle}</p>}
+      {subtitle && <p className={`mt-1 text-xs ${toneColor[tone]} opacity-80`}>{subtitle}</p>}
     </div>
   );
 }
