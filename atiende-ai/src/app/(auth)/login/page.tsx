@@ -5,27 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 import { SignInPage } from '@/components/ui/sign-in';
 import { toast } from 'sonner';
 
-const testimonials = [
-  {
-    avatarSrc: 'https://randomuser.me/api/portraits/women/57.jpg',
-    name: 'Dra. María González',
-    handle: 'Dentista, Mérida',
-    text: 'Redujimos no-shows en 70%. El bot agenda citas a las 11pm.',
-  },
-  {
-    avatarSrc: 'https://randomuser.me/api/portraits/men/64.jpg',
-    name: 'Roberto Sánchez',
-    handle: 'Taquería, Cancún',
-    text: '10 pedidos extra por noche. Se pagó solo en la primera semana.',
-  },
-  {
-    avatarSrc: 'https://randomuser.me/api/portraits/men/32.jpg',
-    name: 'Ana Martínez',
-    handle: 'Inmobiliaria, Playa del Carmen',
-    text: 'Cerramos 3 ventas que habríamos perdido. El bot califica leads 24/7.',
-  },
-];
-
 export default function LoginPage() {
   const router = useRouter();
   const [, setLoading] = useState(false);
@@ -75,7 +54,6 @@ export default function LoginPage() {
       description="Inicia sesión y automatiza tu negocio con inteligencia artificial"
       heroImageSrc="https://images.unsplash.com/photo-1556761175-b413da4baf72?w=1200&q=80"
       heroVideoSrc="/hero.mp4"
-      testimonials={testimonials}
       onSignIn={handleSignIn}
       onGoogleSignIn={handleGoogleSignIn}
       onResetPassword={() => router.push('/forgot-password')}
