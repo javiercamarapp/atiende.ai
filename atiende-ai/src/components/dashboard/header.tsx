@@ -69,7 +69,7 @@ export function DashHeader({ tenant }: { tenant: TenantHeader }) {
   };
 
   return (
-    <header className="h-14 bg-white/90 backdrop-blur flex items-center justify-between px-6 pl-14 md:pl-6">
+    <header className="h-14 flex items-center justify-between px-6 pl-14 md:pl-6">
       <div>
         <div className="text-sm flex items-center">
           <Link
