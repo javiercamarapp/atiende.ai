@@ -41,7 +41,11 @@ const ChatRequestSchema = z.object({
         content: z.string().min(1).max(4000),
       }),
     )
-    .max(40)
+    // Cap kept generous because runChatAgent already slices to the last 20
+    // turns before calling the LLM. A real onboarding easily reaches 40+
+    // entries (the agent emits up to 3 bubbles per turn), so the old .max(40)
+    // was rejecting valid long sessions with 400 and killing progress.
+    .max(200)
     .default([]),
   userMessage: z.string().min(1).max(4000),
   uploadedContent: z
