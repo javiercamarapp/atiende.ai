@@ -29,7 +29,7 @@ function redactPII(obj: unknown): unknown {
 
 export async function logWebhook(params: {
   tenantId?: string;
-  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell' | 'delivery';
+  provider: 'whatsapp' | 'stripe' | 'delivery';
   eventType?: string;
   direction?: 'inbound' | 'outbound';
   statusCode?: number;
@@ -75,7 +75,7 @@ export async function logWebhook(params: {
 export function enforceWebhookSize(
   req: Request,
   maxBytes: number,
-  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell' | 'delivery',
+  provider: 'whatsapp' | 'stripe' | 'delivery',
   startTime: number,
 ): { ok: true } | { ok: false; response: Response } {
   const contentLength = Number(req.headers.get('content-length') || '0');
@@ -103,7 +103,7 @@ export function enforceWebhookSize(
 export function enforceWebhookSizePostRead(
   byteLength: number,
   maxBytes: number,
-  provider: 'whatsapp' | 'stripe' | 'conekta' | 'retell' | 'delivery',
+  provider: 'whatsapp' | 'stripe' | 'delivery',
   startTime: number,
 ): { ok: true } | { ok: false; response: Response } {
   if (byteLength > maxBytes) {

@@ -79,7 +79,7 @@ export async function middleware(request: NextRequest) {
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co " +
         "https://openrouter.ai https://api.anthropic.com https://api.openai.com " +
         "https://api.stripe.com https://*.upstash.io https://graph.facebook.com " +
-        "https://api.retellai.com https://api.deepgram.com https://api.elevenlabs.io " +
+        "https://api.deepgram.com " +
         "https://o4511223361896448.ingest.us.sentry.io",
       "frame-src 'self' https://js.stripe.com",
       "media-src 'self' blob: https:",

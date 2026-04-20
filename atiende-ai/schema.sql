@@ -38,10 +38,6 @@ wa_waba_id TEXT,
 wa_display_phone TEXT,
 wa_token TEXT, -- encrypted business token
 has_chat_agent BOOLEAN DEFAULT false,
--- Voice
-retell_agent_id TEXT,
-telnyx_number TEXT,
-elevenlabs_voice_id TEXT DEFAULT 'JBFqnCBsd6RMkjVDRZzb',
 has_voice_agent BOOLEAN DEFAULT false,
 -- Prompts
 chat_system_prompt TEXT,
@@ -63,7 +59,6 @@ business_hours JSONB DEFAULT '{
 config JSONB DEFAULT '{}',
 -- Billing
 stripe_customer_id TEXT,
-conekta_customer_id TEXT,
 rfc TEXT, -- facturacion MX
 -- Timestamps
 created_at TIMESTAMPTZ DEFAULT now(),
