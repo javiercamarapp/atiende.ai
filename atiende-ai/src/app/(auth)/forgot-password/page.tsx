@@ -68,10 +68,11 @@ export default function ForgotPasswordPage() {
           <Image
             src="/logo.png"
             alt="atiende.ai"
-            width={200}
-            height={85}
+            width={472}
+            height={200}
             priority
-            className="animate-element animate-delay-150 h-10 w-auto mb-1"
+            style={{ height: '56px', width: 'auto' }}
+            className="animate-element animate-delay-150 mb-1"
           />
 
           <h1 className="animate-element animate-delay-200 text-4xl font-semibold leading-tight text-zinc-900">
