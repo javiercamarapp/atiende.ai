@@ -270,36 +270,10 @@ export async function POST(request: Request) {
           'Se me trabó un segundo, ¿puedes repetirme lo último en una sola oración?';
       }
 
-      // TEMP diagnostic bubble — Vercel runtime logs are not capturing our
-      // console.error output (likely hijacked by Sentry's enableLogs:true
-      // integration), so the operator has no way to see why the LLM pipeline
-      // failed. Surfacing the underlying message + name + raw content (head)
-      // in the chat itself lets us diagnose on the next repro. Remove once
-      // we've identified and fixed the root cause.
-      const debugParts: string[] = [];
-      if (underlyingName) debugParts.push(`name=${underlyingName}`);
-      if (underlyingMessage) debugParts.push(`msg=${underlyingMessage}`);
-      if (err.lastRawContent) {
-        debugParts.push(
-          `raw=${err.lastRawContent.slice(0, 500).replace(/\s+/g, ' ')}`,
-        );
-      }
-      const debugBubble =
-        debugParts.length > 0
-          ? `[debug] ${debugParts.join(' | ')}`
-          : `[debug] ${err.message}`;
-
       return NextResponse.json(
         {
           error: 'agent_failed',
-          assistantMessages: [fallback, debugBubble],
-          debug: {
-            errorName: err.name,
-            errorMessage: err.message,
-            underlyingName,
-            underlyingMessage,
-            lastRawContentHead: err.lastRawContent?.slice(0, 500),
-          },
+          assistantMessages: [fallback],
         },
         { status: 500 },
       );
