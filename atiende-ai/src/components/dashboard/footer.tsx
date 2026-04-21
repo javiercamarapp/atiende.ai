@@ -17,7 +17,7 @@ function SocialLink({ href, label, children }: { href: string; label: string; ch
 export function DashFooter() {
   const year = new Date().getFullYear();
   return (
-    <footer className="px-6 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-3 text-[11.5px] text-zinc-500 border-t border-zinc-200 bg-[hsl(var(--background))]">
+    <footer className="px-6 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-3 text-[11.5px] text-zinc-500 border-t border-zinc-200 bg-white">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
         <span>Copyright © {year} atiende.ai</span>
         <Link href="/settings/privacy" className="hover:text-zinc-900 transition">Privacy Policy</Link>

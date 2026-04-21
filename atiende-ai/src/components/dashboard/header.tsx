@@ -53,7 +53,7 @@ export function DashHeader({ tenant, user }: { tenant: TenantHeader; user?: User
   const role = tenant.plan === 'free_trial' ? 'Free trial' : (tenant.plan || 'Admin');
 
   return (
-    <header className="h-20 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-[hsl(var(--background))] border-b border-transparent">
+    <header className="h-20 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-white border-b border-zinc-200">
       {/* Left: Page title */}
       <div className="min-w-0">
         <h1 className="text-[26px] md:text-[28px] font-semibold tracking-tight text-zinc-900 truncate">
@@ -71,7 +71,7 @@ export function DashHeader({ tenant, user }: { tenant: TenantHeader; user?: User
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search anything"
-            className="w-64 lg:w-80 pl-10 pr-4 h-10 text-sm rounded-full bg-white border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] shadow-sm"
+            className="w-64 lg:w-80 pl-10 pr-4 h-10 text-sm rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
           />
         </div>
 
