@@ -66,7 +66,7 @@ function ensureEncryptionAtRequestTime(): void {
     console.warn('[processor]', err instanceof Error ? err.message : err);
   }
 }
-import { detectPromptInjection, sanitizeUserInput } from '@/lib/whatsapp/input-guardrail';
+import { detectPromptInjection, sanitizeUserInput, sanitizeRagContext } from '@/lib/whatsapp/input-guardrail';
 import * as mediaProcessor from '@/lib/whatsapp/media-processor';
 
 /**
@@ -820,7 +820,8 @@ async function handleSingleMessageInner(
   const intent = await resolveIntent(content, conv!.id);
 
   // 10. Build RAG context + history in parallel
-  const { ragContext, history } = await buildRagContext(tenant.id as string, content, conv!.id);
+  const { ragContext: rawRagContext, history } = await buildRagContext(tenant.id as string, content, conv!.id);
+  const ragContext = sanitizeRagContext(rawRagContext);
 
   // ───────────────────────────────────────────────────────────────────────────
   // 10b. PIPELINE FORK — tool calling vs. classifier (Fase 1)
