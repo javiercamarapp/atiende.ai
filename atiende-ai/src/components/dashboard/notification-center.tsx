@@ -55,19 +55,22 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
-        <div className="p-3 border-b font-medium text-sm">Notificaciones</div>
+      <PopoverContent
+        className="w-[calc(100vw-2rem)] max-w-sm sm:w-80 p-0 bg-white border border-zinc-200 rounded-2xl shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)] overflow-hidden"
+        align="end"
+      >
+        <div className="px-4 py-3 border-b border-zinc-100 font-semibold text-[13px] text-zinc-900 bg-white">Notificaciones</div>
         {notifications.length === 0 ? (
-          <div className="p-4 text-center text-sm text-zinc-500">Sin notificaciones</div>
+          <div className="p-6 text-center text-sm text-zinc-500 bg-white">Sin notificaciones</div>
         ) : (
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto bg-white">
             {notifications.map(n => (
-              <div key={n.id} className="px-3 py-2.5 border-b last:border-0 hover:bg-zinc-50 transition-colors">
-                <div className="flex items-start gap-2">
-                  <span className="text-lg">{getIcon(n.action)}</span>
+              <div key={n.id} className="px-4 py-3 border-b border-zinc-100 last:border-0 hover:bg-zinc-50 transition-colors">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-lg shrink-0">{getIcon(n.action)}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-zinc-900 truncate">{n.action.replace('agent.action.', '').replace(/\./g, ' ')}</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">{timeAgo(n.created_at)}</p>
+                    <p className="text-[13px] text-zinc-900 truncate">{n.action.replace('agent.action.', '').replace(/\./g, ' ')}</p>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">{timeAgo(n.created_at)}</p>
                   </div>
                 </div>
               </div>

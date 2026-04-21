@@ -220,7 +220,7 @@ export function CalendarView({
   }
 
   return (
-    <div className="relative bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100dvh-10rem)] md:h-[calc(100vh-8rem)]">
+    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)]">
       {/* ─── MOBILE FILTERS SHEET ─── */}
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetContent side="left" className="md:hidden p-0 flex flex-col">
@@ -433,8 +433,8 @@ export function CalendarView({
 
         {/* ─────────────── MAIN ─────────────── */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {/* Top bar — DESKTOP */}
-          <div className="hidden md:flex items-center justify-between gap-3 px-5 py-3 bg-white">
+          {/* Top bar */}
+          <div className="flex items-center justify-between gap-3 px-5 py-3 bg-white">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCursor(startOfWeek(today))}
@@ -460,6 +460,15 @@ export function CalendarView({
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Filters (mobile) */}
+              <button
+                onClick={() => setFiltersOpen(true)}
+                aria-label="Filtros"
+                className="md:hidden p-1.5 rounded-full border border-zinc-200 bg-zinc-50 text-zinc-600 hover:text-zinc-900 transition"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+              {/* Search */}
               <div className="relative hidden lg:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
                 <input
@@ -470,6 +479,7 @@ export function CalendarView({
                   className="w-48 pl-8 pr-3 h-8 text-[12.5px] rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
                 />
               </div>
+              {/* View toggle */}
               <div className="flex items-center bg-zinc-50 rounded-full p-0.5 border border-zinc-200">
                 {(['lista', 'dia', 'semana', 'agenda'] as View[]).map((v) => (
                   <button
@@ -478,68 +488,22 @@ export function CalendarView({
                     className={cn(
                       'px-3 py-1 rounded-full text-[12px] font-medium transition capitalize',
                       view === v ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900',
+                      (v === 'lista' || v === 'semana') && 'hidden md:inline-flex',
                     )}
                   >
                     {v === 'lista' ? 'Lista' : v === 'dia' ? 'Día' : v === 'semana' ? 'Semana' : 'Agenda'}
                   </button>
                 ))}
               </div>
-              <button onClick={() => setNewApptOpen(true)} className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12px] font-medium hover:opacity-90 transition">
+              {/* New */}
+              <button
+                type="button"
+                onClick={() => setNewApptOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12px] font-medium hover:opacity-90 transition"
+              >
                 <Plus className="w-3.5 h-3.5" />
                 Nueva
               </button>
-            </div>
-          </div>
-
-          {/* Top bar — MOBILE */}
-          <div className="md:hidden px-4 pt-3 pb-2 bg-white border-b border-zinc-100">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1 min-w-0">
-                <button
-                  onClick={() => setCursor(addDays(cursor, -7))}
-                  className="p-1.5 text-zinc-400 hover:text-zinc-900 transition rounded-full"
-                  aria-label="Semana anterior"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <p className="text-[13px] font-semibold text-zinc-900 tabular-nums truncate">{fmtRange()}</p>
-                <button
-                  onClick={() => setCursor(addDays(cursor, 7))}
-                  className="p-1.5 text-zinc-400 hover:text-zinc-900 transition rounded-full"
-                  aria-label="Semana siguiente"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  onClick={() => setCursor(startOfWeek(today))}
-                  className="h-8 px-2.5 text-[11.5px] font-medium text-zinc-700 rounded-full bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 transition"
-                >
-                  Hoy
-                </button>
-                <button
-                  onClick={() => setFiltersOpen(true)}
-                  aria-label="Filtros"
-                  className="w-8 h-8 rounded-full bg-zinc-50 border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition flex items-center justify-center"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center bg-zinc-50 rounded-full p-0.5 border border-zinc-200 w-fit">
-              {(['dia', 'agenda'] as View[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    'px-3.5 py-1 rounded-full text-[12px] font-medium transition',
-                    view === v ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500',
-                  )}
-                >
-                  {v === 'dia' ? 'Día' : 'Agenda'}
-                </button>
-              ))}
             </div>
           </div>
 
@@ -786,85 +750,97 @@ export function CalendarView({
       <Sheet open={newApptOpen} onOpenChange={setNewApptOpen}>
         <SheetContent
           side="right"
-          className="p-0 flex flex-col bg-white border-0 rounded-l-[28px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)] w-[90%] max-w-[400px]"
+          className="p-0 flex flex-col bg-white border-0 rounded-l-[28px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)] w-[92%] max-w-[420px]"
         >
-          <SheetHeader className="px-6 pt-7 pb-4">
-            <SheetTitle className="text-[15px] font-semibold text-zinc-900 tracking-tight">Nueva cita</SheetTitle>
+          <SheetHeader className="px-6 pt-7 pb-5 border-b border-zinc-100">
+            <SheetTitle className="text-[18px] font-semibold text-zinc-900 tracking-tight">Nueva cita</SheetTitle>
+            <p className="text-[13px] text-zinc-500 font-normal">Agenda a un paciente en tu calendario.</p>
           </SheetHeader>
-          <form onSubmit={handleCreateAppt} className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
-            <label className="block">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Paciente *</span>
-              <input
-                type="text"
-                required
-                value={newAppt.customer}
-                onChange={(e) => setNewAppt({ ...newAppt, customer: e.target.value })}
-                placeholder="Nombre del paciente"
-                className="mt-1.5 w-full h-11 px-4 text-[13px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] transition"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Teléfono</span>
-              <input
-                type="tel"
-                value={newAppt.phone}
-                onChange={(e) => setNewAppt({ ...newAppt, phone: e.target.value })}
-                placeholder="52 1 999 123 4567"
-                className="mt-1.5 w-full h-11 px-4 text-[13px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] transition"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Servicio</span>
-              <select
-                value={newAppt.service}
-                onChange={(e) => setNewAppt({ ...newAppt, service: e.target.value })}
-                className="mt-1.5 w-full h-11 px-4 text-[13px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] transition appearance-none"
-              >
-                <option value="">Seleccionar servicio</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.name}>{s.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Fecha *</span>
+          <form onSubmit={handleCreateAppt} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Paciente</span>
                 <input
-                  type="date"
+                  type="text"
                   required
-                  value={newAppt.date}
-                  onChange={(e) => setNewAppt({ ...newAppt, date: e.target.value })}
-                  className="mt-1.5 w-full h-11 px-4 text-[13px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] transition"
+                  value={newAppt.customer}
+                  onChange={(e) => setNewAppt({ ...newAppt, customer: e.target.value })}
+                  placeholder="Nombre completo"
+                  className="w-full h-12 px-4 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition"
                 />
               </label>
-              <label className="block">
-                <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Hora *</span>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Teléfono <span className="text-zinc-400 font-normal">· opcional</span></span>
                 <input
-                  type="time"
-                  required
-                  value={newAppt.time}
-                  onChange={(e) => setNewAppt({ ...newAppt, time: e.target.value })}
-                  className="mt-1.5 w-full h-11 px-4 text-[13px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] transition"
+                  type="tel"
+                  value={newAppt.phone}
+                  onChange={(e) => setNewAppt({ ...newAppt, phone: e.target.value })}
+                  placeholder="52 999 123 4567"
+                  className="w-full h-12 px-4 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Servicio</span>
+                <div className="relative">
+                  <select
+                    value={newAppt.service}
+                    onChange={(e) => setNewAppt({ ...newAppt, service: e.target.value })}
+                    className="w-full h-12 pl-4 pr-10 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition appearance-none text-zinc-900"
+                  >
+                    <option value="">Seleccionar servicio</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
+                  <ChevronRight className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 rotate-90 pointer-events-none" />
+                </div>
+              </label>
+              <div className="space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium block">Fecha y hora</span>
+                <div className="grid grid-cols-5 gap-2">
+                  <input
+                    type="date"
+                    required
+                    value={newAppt.date}
+                    onChange={(e) => setNewAppt({ ...newAppt, date: e.target.value })}
+                    className="col-span-3 h-12 px-4 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition tabular-nums"
+                  />
+                  <input
+                    type="time"
+                    required
+                    value={newAppt.time}
+                    onChange={(e) => setNewAppt({ ...newAppt, time: e.target.value })}
+                    className="col-span-2 h-12 px-3 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition tabular-nums text-center"
+                  />
+                </div>
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Notas <span className="text-zinc-400 font-normal">· opcional</span></span>
+                <textarea
+                  value={newAppt.notes}
+                  onChange={(e) => setNewAppt({ ...newAppt, notes: e.target.value })}
+                  rows={3}
+                  placeholder="Detalles adicionales…"
+                  className="w-full px-4 py-3 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition resize-none leading-relaxed"
                 />
               </label>
             </div>
-            <label className="block">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Notas</span>
-              <textarea
-                value={newAppt.notes}
-                onChange={(e) => setNewAppt({ ...newAppt, notes: e.target.value })}
-                rows={3}
-                placeholder="Notas adicionales…"
-                className="mt-1.5 w-full px-4 py-3 text-[13px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] transition resize-none"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={savingAppt || !newAppt.customer.trim() || !newAppt.date || !newAppt.time}
-              className="w-full h-12 rounded-2xl bg-[hsl(var(--brand-blue))] text-white text-[14px] font-semibold hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-40 shadow-md shadow-[hsl(var(--brand-blue))]/25"
-            >
-              {savingAppt ? 'Guardando…' : 'Crear cita'}
-            </button>
+            <div className="px-6 py-4 border-t border-zinc-100 bg-white/80 backdrop-blur-sm flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setNewApptOpen(false)}
+                className="h-12 px-5 rounded-2xl text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingAppt || !newAppt.customer.trim() || !newAppt.date || !newAppt.time}
+                className="flex-1 h-12 rounded-2xl bg-[hsl(var(--brand-blue))] text-white text-[14px] font-semibold hover:opacity-90 transition-all active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none shadow-md shadow-[hsl(var(--brand-blue))]/25"
+              >
+                {savingAppt ? 'Guardando…' : 'Crear cita'}
+              </button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>

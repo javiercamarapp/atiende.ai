@@ -34,7 +34,10 @@ export function DashFooter() {
         <SocialLink href="https://instagram.com" label="Instagram">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor"/></svg>
         </SocialLink>
-        <SocialLink href="https://linkedin.com" label="LinkedIn">
+        <SocialLink href="https://tiktok.com" label="TikTok">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M19.3 6.7a5.6 5.6 0 0 1-3.4-1.2 5.6 5.6 0 0 1-2.1-3.5h-3.3v13.4a2.7 2.7 0 1 1-2-2.6V9.4a6 6 0 1 0 5.3 6V9.1a8.9 8.9 0 0 0 5.5 1.9V7.7a5.5 5.5 0 0 1 0-1z"/></svg>
+        </SocialLink>
+        <SocialLink href="https://www.linkedin.com/company/atiende-ai/?viewAsMember=true" label="LinkedIn">
           <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M4 4h4v4H4V4zm0 6h4v10H4V10zm6 0h4v1.5c.6-1 2-1.8 3.5-1.8 3 0 4.5 1.8 4.5 5V20h-4v-5c0-1.3-.5-2.2-1.8-2.2-1 0-1.7.6-2 1.6-.1.3-.2.7-.2 1.1V20h-4V10z"/></svg>
         </SocialLink>
       </div>

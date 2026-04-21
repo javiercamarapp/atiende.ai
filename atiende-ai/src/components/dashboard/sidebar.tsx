@@ -9,6 +9,7 @@ import {
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
+import { AppSearch } from '@/components/dashboard/app-search';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, appointments: Calendar, calendar: CalendarDays,
@@ -151,6 +152,14 @@ export function SidebarContent({
             />
           )}
         </Link>
+      </div>
+
+      {/* Search — only visible when expanded (mobile sheet always expanded) */}
+      <div className={cn(
+        'px-4 pb-3',
+        collapsible && 'hidden group-hover/sidebar:block',
+      )}>
+        <AppSearch variant="mobile" onNavigate={onNavigate} />
       </div>
 
       {/* Nav — grouped into 3 visual sections with subtle dividers */}
