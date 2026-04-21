@@ -190,7 +190,7 @@ export function CalendarView({
   }
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)]">
+    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100svh-10rem)] md:h-[calc(100vh-8rem)]">
       {/* ─── MOBILE FILTERS SHEET ─── */}
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetContent side="left" className="md:hidden p-0 flex flex-col">
