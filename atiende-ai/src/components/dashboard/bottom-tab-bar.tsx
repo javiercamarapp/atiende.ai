@@ -52,7 +52,7 @@ export function BottomTabBar({
     <>
       <nav
         aria-label="Navegación principal"
-        className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-zinc-100 pb-[env(safe-area-inset-bottom)]"
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white/95 backdrop-blur-lg rounded-t-[22px] shadow-[0_-8px_30px_-10px_rgba(0,0,0,0.08)] pb-[env(safe-area-inset-bottom)]"
       >
         <div className="flex items-stretch h-16">
           {visibleTabs.map((tab) => {
