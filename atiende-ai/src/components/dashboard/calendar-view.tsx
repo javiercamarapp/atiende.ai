@@ -185,7 +185,7 @@ export function CalendarView({
   }
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100vh-11rem)]">
+    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100vh-9rem)]">
       <div className="flex h-full">
         {/* ─────────────── LEFT PANEL ─────────────── */}
         <aside className="hidden md:flex w-64 shrink-0 flex-col bg-white">

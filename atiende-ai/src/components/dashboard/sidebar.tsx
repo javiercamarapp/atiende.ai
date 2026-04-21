@@ -27,19 +27,17 @@ const LABELS: Record<string, string> = {
   marketing: 'Marketing', analytics: 'Analytics', settings: 'Ajustes',
 };
 
-/** Final sidebar order — Dashboard + Citas + Calendario + Conversaciones + Pacientes,
- *  then the redesigned modules (Agents, Conocimiento, Pregunta, Marketing, Analytics). */
 const ORDER = [
   'dashboard',
+  'conversations',
+  'analytics',
   'appointments',
   'calendar',
-  'conversations',
   'contacts',
   'agents',
   'knowledge',
   'chat-data',
   'marketing',
-  'analytics',
 ];
 
 type TenantShape = {

@@ -119,7 +119,7 @@ export default function ChatDataPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-11rem)] flex gap-4">
+    <div className="h-[calc(100vh-9rem)] flex gap-4">
       {/* ─────────────── LEFT RAIL ─────────────── */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col glass-card p-4 gap-4 animate-element">
         {/* Mode selector */}

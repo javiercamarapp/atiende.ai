@@ -60,7 +60,7 @@ export default async function WebhooksPage({
   const providers = ['all', 'whatsapp', 'stripe', 'conekta', 'retell'];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Webhook Event Log</h1>
         <div className="flex items-center gap-2">

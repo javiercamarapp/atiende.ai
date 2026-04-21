@@ -61,7 +61,7 @@ export default async function KnowledgePage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="animate-element">
         <p className="text-sm text-zinc-500">
           Configura el cerebro de tu agente: preguntas, documentos, APIs y prompts.
