@@ -91,7 +91,7 @@ export function BottomTabBar({
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         <SheetContent
           side="left"
-          className="p-0 w-72 flex flex-col bg-white border-zinc-200"
+          className="p-0 w-[82%] max-w-[320px] flex flex-col bg-white border-0 rounded-r-[28px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)]"
         >
           <VisuallyHidden>
             <SheetTitle>Menú de navegación</SheetTitle>
