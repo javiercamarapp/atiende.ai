@@ -190,7 +190,7 @@ export function CalendarView({
   }
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100svh-10rem)] md:h-[calc(100vh-8rem)]">
+    <div className="relative bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100dvh-10rem)] md:h-[calc(100vh-8rem)]">
       {/* ─── MOBILE FILTERS SHEET ─── */}
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetContent side="left" className="md:hidden p-0 flex flex-col">
@@ -403,8 +403,8 @@ export function CalendarView({
 
         {/* ─────────────── MAIN ─────────────── */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {/* Top bar */}
-          <div className="flex items-center justify-between gap-3 px-5 py-3 bg-white">
+          {/* Top bar — DESKTOP */}
+          <div className="hidden md:flex items-center justify-between gap-3 px-5 py-3 bg-white">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCursor(startOfWeek(today))}
@@ -430,15 +430,6 @@ export function CalendarView({
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Filters (mobile) */}
-              <button
-                onClick={() => setFiltersOpen(true)}
-                aria-label="Filtros"
-                className="md:hidden p-1.5 rounded-full border border-zinc-200 bg-zinc-50 text-zinc-600 hover:text-zinc-900 transition"
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-              </button>
-              {/* Search */}
               <div className="relative hidden lg:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
                 <input
@@ -449,7 +440,6 @@ export function CalendarView({
                   className="w-48 pl-8 pr-3 h-8 text-[12.5px] rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
                 />
               </div>
-              {/* View toggle */}
               <div className="flex items-center bg-zinc-50 rounded-full p-0.5 border border-zinc-200">
                 {(['lista', 'dia', 'semana', 'agenda'] as View[]).map((v) => (
                   <button
@@ -458,18 +448,68 @@ export function CalendarView({
                     className={cn(
                       'px-3 py-1 rounded-full text-[12px] font-medium transition capitalize',
                       view === v ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900',
-                      (v === 'lista' || v === 'semana') && 'hidden md:inline-flex',
                     )}
                   >
                     {v === 'lista' ? 'Lista' : v === 'dia' ? 'Día' : v === 'semana' ? 'Semana' : 'Agenda'}
                   </button>
                 ))}
               </div>
-              {/* New */}
               <button className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12px] font-medium hover:opacity-90 transition">
                 <Plus className="w-3.5 h-3.5" />
                 Nueva
               </button>
+            </div>
+          </div>
+
+          {/* Top bar — MOBILE */}
+          <div className="md:hidden px-4 pt-3 pb-2 bg-white border-b border-zinc-100">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  onClick={() => setCursor(addDays(cursor, -7))}
+                  className="p-1.5 text-zinc-400 hover:text-zinc-900 transition rounded-full"
+                  aria-label="Semana anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <p className="text-[13px] font-semibold text-zinc-900 tabular-nums truncate">{fmtRange()}</p>
+                <button
+                  onClick={() => setCursor(addDays(cursor, 7))}
+                  className="p-1.5 text-zinc-400 hover:text-zinc-900 transition rounded-full"
+                  aria-label="Semana siguiente"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => setCursor(startOfWeek(today))}
+                  className="h-8 px-2.5 text-[11.5px] font-medium text-zinc-700 rounded-full bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 transition"
+                >
+                  Hoy
+                </button>
+                <button
+                  onClick={() => setFiltersOpen(true)}
+                  aria-label="Filtros"
+                  className="w-8 h-8 rounded-full bg-zinc-50 border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition flex items-center justify-center"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center bg-zinc-50 rounded-full p-0.5 border border-zinc-200 w-fit">
+              {(['dia', 'agenda'] as View[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={cn(
+                    'px-3.5 py-1 rounded-full text-[12px] font-medium transition',
+                    view === v ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500',
+                  )}
+                >
+                  {v === 'dia' ? 'Día' : 'Agenda'}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -702,6 +742,14 @@ export function CalendarView({
           </aside>
         )}
       </div>
+
+      {/* ─── MOBILE FAB — New appointment ─── */}
+      <button
+        aria-label="Nueva cita"
+        className="md:hidden absolute bottom-5 right-5 w-14 h-14 rounded-full bg-[hsl(var(--brand-blue))] text-white shadow-[0_10px_30px_-6px_rgba(59,130,246,0.6)] flex items-center justify-center hover:opacity-95 active:scale-95 transition"
+      >
+        <Plus className="w-6 h-6" strokeWidth={2.25} />
+      </button>
     </div>
   );
 }
