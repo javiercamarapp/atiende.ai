@@ -91,6 +91,36 @@ export function CalendarView({
   const [serviceFilter, setServiceFilter] = useState<Set<string>>(new Set());
   const [servicesOpen, setServicesOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [newApptOpen, setNewApptOpen] = useState(false);
+  const [newAppt, setNewAppt] = useState({ customer: '', phone: '', service: '', date: '', time: '', notes: '' });
+  const [savingAppt, setSavingAppt] = useState(false);
+
+  async function handleCreateAppt(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newAppt.customer.trim() || !newAppt.date || !newAppt.time || savingAppt) return;
+    setSavingAppt(true);
+    try {
+      const res = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: newAppt.customer,
+          customer_phone: newAppt.phone,
+          service_name: newAppt.service,
+          datetime: `${newAppt.date}T${newAppt.time}:00`,
+          notes: newAppt.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error('Error al crear cita');
+      setNewApptOpen(false);
+      setNewAppt({ customer: '', phone: '', service: '', date: '', time: '', notes: '' });
+      window.location.reload();
+    } catch {
+      // stay open on error
+    } finally {
+      setSavingAppt(false);
+    }
+  }
 
   const weekStart = cursor;
   const weekEnd = addDays(weekStart, 6);
@@ -466,7 +496,11 @@ export function CalendarView({
                 ))}
               </div>
               {/* New */}
-              <button className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12px] font-medium hover:opacity-90 transition">
+              <button
+                type="button"
+                onClick={() => setNewApptOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12px] font-medium hover:opacity-90 transition"
+              >
                 <Plus className="w-3.5 h-3.5" />
                 Nueva
               </button>
@@ -702,6 +736,114 @@ export function CalendarView({
           </aside>
         )}
       </div>
+
+      {/* ─── MOBILE FAB — New appointment ─── */}
+      <button
+        onClick={() => setNewApptOpen(true)}
+        aria-label="Nueva cita"
+        className="md:hidden absolute bottom-5 right-5 w-14 h-14 rounded-full bg-[hsl(var(--brand-blue))] text-white shadow-[0_10px_30px_-6px_rgba(59,130,246,0.6)] flex items-center justify-center hover:opacity-95 active:scale-95 transition"
+      >
+        <Plus className="w-6 h-6" strokeWidth={2.25} />
+      </button>
+
+      {/* ─── NEW APPOINTMENT SHEET ─── */}
+      <Sheet open={newApptOpen} onOpenChange={setNewApptOpen}>
+        <SheetContent
+          side="right"
+          className="p-0 flex flex-col bg-white border-0 rounded-l-[28px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)] w-[92%] max-w-[420px]"
+        >
+          <SheetHeader className="px-6 pt-7 pb-5 border-b border-zinc-100">
+            <SheetTitle className="text-[18px] font-semibold text-zinc-900 tracking-tight">Nueva cita</SheetTitle>
+            <p className="text-[13px] text-zinc-500 font-normal">Agenda a un paciente en tu calendario.</p>
+          </SheetHeader>
+          <form onSubmit={handleCreateAppt} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Paciente</span>
+                <input
+                  type="text"
+                  required
+                  value={newAppt.customer}
+                  onChange={(e) => setNewAppt({ ...newAppt, customer: e.target.value })}
+                  placeholder="Nombre completo"
+                  className="w-full h-12 px-4 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Teléfono <span className="text-zinc-400 font-normal">· opcional</span></span>
+                <input
+                  type="tel"
+                  value={newAppt.phone}
+                  onChange={(e) => setNewAppt({ ...newAppt, phone: e.target.value })}
+                  placeholder="52 999 123 4567"
+                  className="w-full h-12 px-4 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Servicio</span>
+                <div className="relative">
+                  <select
+                    value={newAppt.service}
+                    onChange={(e) => setNewAppt({ ...newAppt, service: e.target.value })}
+                    className="w-full h-12 pl-4 pr-10 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition appearance-none text-zinc-900"
+                  >
+                    <option value="">Seleccionar servicio</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
+                  <ChevronRight className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 rotate-90 pointer-events-none" />
+                </div>
+              </label>
+              <div className="space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium block">Fecha y hora</span>
+                <div className="grid grid-cols-5 gap-2">
+                  <input
+                    type="date"
+                    required
+                    value={newAppt.date}
+                    onChange={(e) => setNewAppt({ ...newAppt, date: e.target.value })}
+                    className="col-span-3 h-12 px-4 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition tabular-nums"
+                  />
+                  <input
+                    type="time"
+                    required
+                    value={newAppt.time}
+                    onChange={(e) => setNewAppt({ ...newAppt, time: e.target.value })}
+                    className="col-span-2 h-12 px-3 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition tabular-nums text-center"
+                  />
+                </div>
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Notas <span className="text-zinc-400 font-normal">· opcional</span></span>
+                <textarea
+                  value={newAppt.notes}
+                  onChange={(e) => setNewAppt({ ...newAppt, notes: e.target.value })}
+                  rows={3}
+                  placeholder="Detalles adicionales…"
+                  className="w-full px-4 py-3 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition resize-none leading-relaxed"
+                />
+              </label>
+            </div>
+            <div className="px-6 py-4 border-t border-zinc-100 bg-white/80 backdrop-blur-sm flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setNewApptOpen(false)}
+                className="h-12 px-5 rounded-2xl text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingAppt || !newAppt.customer.trim() || !newAppt.date || !newAppt.time}
+                className="flex-1 h-12 rounded-2xl bg-[hsl(var(--brand-blue))] text-white text-[14px] font-semibold hover:opacity-90 transition-all active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none shadow-md shadow-[hsl(var(--brand-blue))]/25"
+              >
+                {savingAppt ? 'Guardando…' : 'Crear cita'}
+              </button>
+            </div>
+          </form>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
