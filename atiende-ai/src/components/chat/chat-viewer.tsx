@@ -272,30 +272,35 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
 
       {/* ─── MOBILE INFO SHEET ─── */}
       <Sheet open={showInfoSheet} onOpenChange={setShowInfoSheet}>
-        <SheetContent side="right" className="lg:hidden p-0 flex flex-col">
-          <SheetHeader className="px-5 pt-5 pb-3 border-b border-zinc-100">
-            <SheetTitle>Info de cuenta</SheetTitle>
+        <SheetContent
+          side="right"
+          className="lg:hidden p-0 flex flex-col bg-white border-0 rounded-l-[28px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)] w-[85%] max-w-[360px]"
+        >
+          <SheetHeader className="px-6 pt-7 pb-4">
+            <SheetTitle className="text-[15px] font-semibold text-zinc-900 tracking-tight">Info de cuenta</SheetTitle>
           </SheetHeader>
+
           <div className="flex-1 overflow-y-auto">
-            <div className="p-5 text-center border-b border-zinc-100">
-              <div className="w-20 h-20 mx-auto rounded-full bg-zinc-100 flex items-center justify-center text-2xl font-semibold text-zinc-600">
+            {/* Avatar + name */}
+            <div className="px-6 pb-6 text-center">
+              <div className="w-[72px] h-[72px] mx-auto rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center text-[22px] font-semibold text-white shadow-lg shadow-[hsl(var(--brand-blue))]/20">
                 {customerInitials}
               </div>
-              <h4 className="mt-3 text-sm font-semibold text-zinc-900">{customerName}</h4>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <h4 className="mt-3 text-[15px] font-semibold text-zinc-900">{customerName}</h4>
+              <p className="text-[12px] text-zinc-400 mt-0.5">
                 {status === 'human_handoff' ? 'Control humano' : 'Agente IA activo'}
               </p>
             </div>
 
             {/* Actions */}
-            <div className="p-4 border-b border-zinc-100 space-y-2">
+            <div className="px-5 pb-5 space-y-2">
               <button
                 onClick={() => { takeOver(); setShowInfoSheet(false); }}
                 className={cn(
-                  'w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition',
+                  'w-full inline-flex items-center justify-center gap-2 h-11 rounded-2xl text-[13px] font-semibold transition-all active:scale-[0.98]',
                   status === 'human_handoff'
                     ? 'bg-violet-50 text-violet-700 hover:bg-violet-100'
-                    : 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] hover:opacity-80',
+                    : 'bg-[hsl(var(--brand-blue))] text-white hover:opacity-90 shadow-md shadow-[hsl(var(--brand-blue))]/25',
                 )}
               >
                 {status === 'human_handoff' ? (
@@ -305,30 +310,42 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
                 )}
               </button>
               <div className="grid grid-cols-2 gap-2">
-                <button className="inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-zinc-50 text-zinc-700 hover:bg-zinc-100 transition">
+                <button className="inline-flex items-center justify-center gap-2 h-11 rounded-2xl text-[13px] font-medium bg-zinc-50 text-zinc-700 hover:bg-zinc-100 transition-all active:scale-[0.98]">
                   <Phone className="w-4 h-4" /> Llamar
                 </button>
-                <button className="inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-zinc-50 text-zinc-700 hover:bg-zinc-100 transition">
+                <button className="inline-flex items-center justify-center gap-2 h-11 rounded-2xl text-[13px] font-medium bg-zinc-50 text-zinc-700 hover:bg-zinc-100 transition-all active:scale-[0.98]">
                   <Video className="w-4 h-4" /> Video
                 </button>
               </div>
             </div>
 
-            <div className="p-5 border-b border-zinc-100">
-              <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Acerca de</h4>
-              <p className="text-xs text-zinc-700 leading-relaxed">
-                Paciente del {conversation.channel}. Teléfono: {conversation.customer_phone}
-              </p>
+            {/* Details */}
+            <div className="mx-5 rounded-2xl bg-zinc-50/80 divide-y divide-zinc-100/80">
+              <div className="px-4 py-3.5">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Teléfono</p>
+                <p className="text-[13px] text-zinc-800 mt-0.5 tabular-nums">{conversation.customer_phone}</p>
+              </div>
+              <div className="px-4 py-3.5">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Canal</p>
+                <span className="inline-flex items-center mt-1 rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-0.5 text-[11px] font-medium capitalize">
+                  {conversation.channel}
+                </span>
+              </div>
+              <div className="px-4 py-3.5">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Estado</p>
+                <span className={cn(
+                  'inline-flex items-center mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium',
+                  status === 'human_handoff'
+                    ? 'bg-violet-50 text-violet-700'
+                    : 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]',
+                )}>
+                  {status === 'human_handoff' ? 'Humano' : 'IA activo'}
+                </span>
+              </div>
             </div>
 
-            <div className="p-5 border-b border-zinc-100">
-              <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Canal</h4>
-              <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-0.5 text-[11px] font-medium capitalize">
-                {conversation.channel}
-              </span>
-            </div>
-
-            <div className="p-5">
+            {/* Notes */}
+            <div className="px-5 pt-5 pb-6">
               <ConversationNotes conversationId={conversation.id} initialNotes={initialNotes} />
             </div>
           </div>
