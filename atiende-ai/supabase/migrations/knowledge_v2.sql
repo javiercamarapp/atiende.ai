@@ -47,7 +47,38 @@ CREATE POLICY "tenant_data" ON review_candidates FOR ALL
 USING (tenant_id = get_user_tenant_id())
 WITH CHECK (tenant_id = get_user_tenant_id());
 
--- 4. insight_cache
+-- 4. search_knowledge_meta RPC
+-- Returns chunks with category, source, metadata and similarity so the
+-- knowledge preview-chat endpoint can render "source chips" linking an
+-- answer back to its zone. Kept separate from search_knowledge_hybrid
+-- (used by the live WhatsApp bot) to avoid changing production behaviour.
+CREATE OR REPLACE FUNCTION search_knowledge_meta(
+  p_tenant UUID,
+  p_query VECTOR(1536),
+  p_limit INT DEFAULT 5
+)
+RETURNS TABLE (
+  content TEXT,
+  category TEXT,
+  source TEXT,
+  metadata JSONB,
+  similarity FLOAT
+)
+LANGUAGE SQL STABLE AS $$
+  SELECT
+    kc.content,
+    kc.category,
+    kc.source,
+    kc.metadata,
+    1 - (kc.embedding <=> p_query) AS similarity
+  FROM knowledge_chunks kc
+  WHERE kc.tenant_id = p_tenant
+    AND kc.embedding IS NOT NULL
+  ORDER BY kc.embedding <=> p_query
+  LIMIT p_limit;
+$$;
+
+-- 5. insight_cache
 -- Global cache (no RLS, no tenant_id) keyed by deterministic cache_key derived
 -- from business_type + question_key + answer_hash. 7-day TTL cuts ~90% of
 -- smart-insight LLM calls. Safe to share: insight text never references the

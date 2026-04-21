@@ -37,6 +37,9 @@ export const ORCHESTRATOR_MAX_TOKENS_NO_TOOLS = 800;
 export const TOOL_TIMEOUT_MS = 4_000;
 export const TOOL_RESULT_MAX_CHARS = 8_000;
 
+// ─── Response generation (pipeline tradicional) ───────────────────────────
+export const RESPONSE_GENERATION_TIMEOUT_MS = 15_000;
+
 // ─── Multimedia ────────────────────────────────────────────────────────────
 export const EXTRACT_CONTENT_TIMEOUT_MS = 25_000; // Whisper + Gemini budget
 export const MEDIA_DOWNLOAD_TIMEOUT_MS = 15_000;
