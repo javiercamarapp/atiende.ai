@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface CalendarEvent {
   id: string;
@@ -81,11 +82,15 @@ export function CalendarView({
   const today = new Date();
   const [cursor, setCursor] = useState(() => startOfWeek(new Date(initialYear, initialMonth, today.getDate())));
   const [miniCursor, setMiniCursor] = useState(new Date(initialYear, initialMonth, 1));
-  const [view, setView] = useState<View>('semana');
+  const [view, setView] = useState<View>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return 'agenda';
+    return 'semana';
+  });
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
   const [serviceFilter, setServiceFilter] = useState<Set<string>>(new Set());
   const [servicesOpen, setServicesOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const weekStart = cursor;
   const weekEnd = addDays(weekStart, 6);
@@ -185,7 +190,102 @@ export function CalendarView({
   }
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100vh-9rem)]">
+    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100 h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)]">
+      {/* ─── MOBILE FILTERS SHEET ─── */}
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="left" className="md:hidden p-0 flex flex-col">
+          <SheetHeader className="px-5 pt-5 pb-3 border-b border-zinc-100">
+            <SheetTitle>Filtros</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-4 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  onClick={() => setMiniCursor(new Date(miniCursor.getFullYear(), miniCursor.getMonth() - 1, 1))}
+                  className="p-1 text-zinc-400 hover:text-zinc-900 transition"
+                  aria-label="Mes anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <p className="text-[13px] font-medium text-zinc-900">
+                  {MONTHS[miniCursor.getMonth()]} {miniCursor.getFullYear()}
+                </p>
+                <button
+                  onClick={() => setMiniCursor(new Date(miniCursor.getFullYear(), miniCursor.getMonth() + 1, 1))}
+                  className="p-1 text-zinc-400 hover:text-zinc-900 transition"
+                  aria-label="Mes siguiente"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-y-0.5 text-center">
+                {WEEK_SHORT.map((d) => (
+                  <div key={d} className="text-[10px] uppercase tracking-wider text-zinc-400 py-1">{d[0]}</div>
+                ))}
+                {miniCells.map((c, i) => {
+                  const inCurrentWeek = c.date >= weekStart && c.date <= weekEnd;
+                  const isToday = sameDay(c.date, today);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => { setCursor(startOfWeek(c.date)); setFiltersOpen(false); }}
+                      className={cn(
+                        'h-7 w-7 mx-auto text-[11px] tabular-nums rounded-full flex items-center justify-center transition',
+                        !c.current && 'text-zinc-300',
+                        c.current && !isToday && !inCurrentWeek && 'text-zinc-700 hover:bg-zinc-100',
+                        inCurrentWeek && !isToday && 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] font-medium',
+                        isToday && 'bg-[hsl(var(--brand-blue))] text-white font-semibold',
+                      )}
+                    >
+                      {c.date.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="px-4 pt-5">
+              <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-medium mb-2">Servicios</p>
+              <ul className="space-y-1">
+                {uniqueServiceNames().length === 0 && (
+                  <li className="text-[12px] text-zinc-500">Sin servicios</li>
+                )}
+                {uniqueServiceNames().map((name) => {
+                  const checked = serviceFilter.has(name);
+                  return (
+                    <li key={name}>
+                      <label className="flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-zinc-50 transition cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleService(name)}
+                          className="w-4 h-4 rounded border-zinc-300 text-[hsl(var(--brand-blue))] focus:ring-[hsl(var(--brand-blue-soft))]"
+                        />
+                        <span className="text-[13px] text-zinc-700 truncate">{name}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div className="px-4 pt-5 pb-6">
+              <label className="text-[11px] uppercase tracking-wider text-zinc-400 font-medium mb-2 block">Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar cita"
+                  className="w-full pl-8 pr-3 h-9 text-[13px] rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+                />
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
       <div className="flex h-full">
         {/* ─────────────── LEFT PANEL ─────────────── */}
         <aside className="hidden md:flex w-64 shrink-0 flex-col bg-white">
@@ -330,6 +430,14 @@ export function CalendarView({
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Filters (mobile) */}
+              <button
+                onClick={() => setFiltersOpen(true)}
+                aria-label="Filtros"
+                className="md:hidden p-1.5 rounded-full border border-zinc-200 bg-zinc-50 text-zinc-600 hover:text-zinc-900 transition"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
               {/* Search */}
               <div className="relative hidden lg:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
@@ -350,6 +458,7 @@ export function CalendarView({
                     className={cn(
                       'px-3 py-1 rounded-full text-[12px] font-medium transition capitalize',
                       view === v ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900',
+                      (v === 'lista' || v === 'semana') && 'hidden md:inline-flex',
                     )}
                   >
                     {v === 'lista' ? 'Lista' : v === 'dia' ? 'Día' : v === 'semana' ? 'Semana' : 'Agenda'}

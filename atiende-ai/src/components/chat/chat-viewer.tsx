@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { ConversationTags } from '@/components/chat/conversation-tags';
 import { ConversationNotes, type ConversationNote } from '@/components/chat/conversation-notes';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface ChatConversation {
   id: string;
@@ -47,6 +48,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [showInfo, setShowInfo] = useState(true);
+  const [showInfoSheet, setShowInfoSheet] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -92,11 +94,11 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
   };
 
   return (
-    <div className="flex h-[calc(100vh-9rem)] min-h-0">
+    <div className="flex h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)] min-h-0">
       {/* ─── CHAT AREA ─── */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 glass-card overflow-hidden">
         {/* Chat header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-100">
+        <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-3.5 border-b border-zinc-100">
           <div className="flex items-center gap-3">
             <Link href="/conversations" className="lg:hidden text-zinc-400 hover:text-zinc-900 transition">
               <ArrowLeft className="w-5 h-5" />
@@ -129,7 +131,8 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
             </button>
             <button className="p-2 text-zinc-400 hover:text-zinc-600 transition"><Video className="w-4 h-4" /></button>
             <button className="p-2 text-zinc-400 hover:text-zinc-600 transition"><Phone className="w-4 h-4" /></button>
-            <button onClick={() => setShowInfo(!showInfo)} className="p-2 text-zinc-400 hover:text-zinc-600 transition"><MoreHorizontal className="w-4 h-4" /></button>
+            <button onClick={() => setShowInfo(!showInfo)} className="hidden lg:inline-flex p-2 text-zinc-400 hover:text-zinc-600 transition"><MoreHorizontal className="w-4 h-4" /></button>
+            <button onClick={() => setShowInfoSheet(true)} className="lg:hidden p-2 text-zinc-400 hover:text-zinc-600 transition"><MoreHorizontal className="w-4 h-4" /></button>
           </div>
         </div>
 
@@ -258,6 +261,44 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
           </div>
         </div>
       )}
+
+      {/* ─── MOBILE INFO SHEET ─── */}
+      <Sheet open={showInfoSheet} onOpenChange={setShowInfoSheet}>
+        <SheetContent side="right" className="lg:hidden p-0 flex flex-col">
+          <SheetHeader className="px-5 pt-5 pb-3 border-b border-zinc-100">
+            <SheetTitle>Info de cuenta</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-5 text-center border-b border-zinc-100">
+              <div className="w-20 h-20 mx-auto rounded-full bg-zinc-100 flex items-center justify-center text-2xl font-semibold text-zinc-600">
+                {customerInitials}
+              </div>
+              <h4 className="mt-3 text-sm font-semibold text-zinc-900">{customerName}</h4>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
+                {status === 'human_handoff' ? 'Control humano' : 'Agente IA activo'}
+              </p>
+            </div>
+
+            <div className="p-5 border-b border-zinc-100">
+              <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Acerca de</h4>
+              <p className="text-xs text-zinc-700 leading-relaxed">
+                Paciente del {conversation.channel}. Teléfono: {conversation.customer_phone}
+              </p>
+            </div>
+
+            <div className="p-5 border-b border-zinc-100">
+              <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Canal</h4>
+              <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-0.5 text-[11px] font-medium capitalize">
+                {conversation.channel}
+              </span>
+            </div>
+
+            <div className="p-5">
+              <ConversationNotes conversationId={conversation.id} initialNotes={initialNotes} />
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

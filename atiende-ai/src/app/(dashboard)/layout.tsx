@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Sidebar } from '@/components/dashboard/sidebar';
 import { DashHeader } from '@/components/dashboard/header';
 import { DashFooter } from '@/components/dashboard/footer';
+import { BottomTabBar } from '@/components/dashboard/bottom-tab-bar';
 
 export default async function DashboardLayout({ children }:{children:ReactNode}) {
   const supabase = await createServerSupabase();
@@ -55,13 +56,16 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           }
           return null;
         })()}
-        <main className="flex-1 overflow-y-auto mr-6 md:mr-8 px-6 md:px-8 pb-4 pt-4 bg-[hsl(var(--background))] rounded-3xl">
+        <main className="flex-1 overflow-y-auto mr-2 md:mr-8 px-4 md:px-8 pt-4 pb-20 md:pb-4 bg-[hsl(var(--background))] rounded-3xl">
           <div className="animate-element">
             {children}
           </div>
         </main>
-        <DashFooter />
+        <div className="hidden md:block">
+          <DashFooter />
+        </div>
       </div>
+      <BottomTabBar tenant={tenant} modules={modules} />
     </div>
   );
 }
