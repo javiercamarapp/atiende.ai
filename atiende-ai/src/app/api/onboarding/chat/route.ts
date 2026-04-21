@@ -19,6 +19,8 @@ const STANDBY_REJECTION_MESSAGE =
   'Gracias por escribirnos. Por el momento useatiende.ai está enfocado exclusivamente en agentes de reservas para los sectores de salud y estética — médicos, dentistas, psicólogos, estilistas, spas, gimnasios y similares. Estaremos habilitando más industrias próximamente. Si gustas, déjame tu nombre, correo o WhatsApp y te avisamos cuando tu sector esté disponible.';
 import { logger } from '@/lib/logger';
 import { StructuredGenerationError } from '@/lib/llm/openrouter';
+import { createServerSupabase } from '@/lib/supabase/server';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 export const runtime = 'nodejs';
 // Vercel function timeout. Pro default is 15s — not enough for this route
@@ -67,6 +69,19 @@ const ChatRequestSchema = z.object({
 const HISTORY_HARD_CAP = 60;
 
 export async function POST(request: Request) {
+  // AUDIT R19: auth + rate limit defense in depth. El chat hace scrape de URL
+  // + LLM call (Qwen 235B) por turno — abuso puede quemar el presupuesto.
+  // 20 turnos/min por usuario sobra para onboarding real (~1 turno cada 3s).
+  const supabase = await createServerSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const limited = await checkApiRateLimit(`${user.id}:onboarding_chat`, 20, 60);
+  if (limited) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();

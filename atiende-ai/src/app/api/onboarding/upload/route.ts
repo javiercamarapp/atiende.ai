@@ -9,6 +9,8 @@ import {
   ACCEPTED_UPLOAD_TYPES,
 } from '@/lib/onboarding/extract-upload';
 import { logger } from '@/lib/logger';
+import { createServerSupabase } from '@/lib/supabase/server';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -24,6 +26,19 @@ export const maxDuration = 30;
  * bucket, no retention.
  */
 export async function POST(request: Request) {
+  // AUDIT R18: auth + rate limit defense in depth. Middleware redirects
+  // non-auth requests a /login, pero un user autenticado sigue poder abusar
+  // (Gemini costs $). 10 uploads/min por usuario basta para onboarding real.
+  const supabase = await createServerSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const limited = await checkApiRateLimit(`${user.id}:onboarding_upload`, 10, 60);
+  if (limited) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();
