@@ -143,10 +143,6 @@ export default async function ContactsPage({
 
   return (
     <div className="space-y-6">
-      <header className="animate-element">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Pacientes</h1>
-      </header>
-
       {/* Main table card */}
       <div className="glass-card overflow-hidden animate-element animate-delay-100">
         {/* Header with title + filter pills */}
