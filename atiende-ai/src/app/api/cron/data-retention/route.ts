@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -25,10 +26,8 @@ const RETENTION_DAYS_MESSAGES = 395; // ~13 meses
 const RETENTION_DAYS_APPOINTMENTS = 395;
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get('authorization');
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  const authFail = requireCronAuth(req);
+  if (authFail) return authFail;
 
   const start = Date.now();
   const summary: Record<string, unknown> = {};

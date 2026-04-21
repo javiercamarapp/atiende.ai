@@ -46,7 +46,7 @@ welcome_message TEXT DEFAULT 'Hola! Bienvenido(a). Soy su asistente virtual. En 
 -- LLM config
 llm_primary TEXT DEFAULT 'google/gemini-2.5-flash-lite',
 llm_sensitive TEXT DEFAULT 'anthropic/claude-sonnet-4-6',
-llm_classifier TEXT DEFAULT 'openai/gpt-5-nano',
+llm_classifier TEXT DEFAULT 'openai/gpt-4o-mini',
 temperature DECIMAL(2,1) DEFAULT 0.5,
 -- Branding
 bot_name TEXT DEFAULT 'Asistente',

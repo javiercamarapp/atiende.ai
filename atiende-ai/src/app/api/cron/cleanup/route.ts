@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
+import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  // Verify CRON_SECRET authorization (same pattern as other cron routes)
-  const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFail = requireCronAuth(req);
+  if (authFail) return authFail;
 
   const log = logger.child({ job: 'cleanup' });
   const results: Record<string, unknown> = {};

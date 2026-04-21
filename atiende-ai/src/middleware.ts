@@ -60,29 +60,28 @@ export async function middleware(request: NextRequest) {
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-  // AUDIT R15: CSP antes faltaba. Sin CSP no hay defensa contra XSS reflejado
-  // ni inyección de scripts de terceros. Permite:
-  //   - self para HTML/assets de nuestro dominio
-  //   - unsafe-inline/unsafe-eval necesarios para Next.js RSC + hydration
-  //   - supabase.co para realtime/storage
-  //   - OpenRouter + Anthropic para llamadas desde cliente (si aplica)
-  //   - Stripe Elements (billing)
-  //   - Meta WhatsApp CDN (media previews)
+  // AUDIT R15 + R20: CSP endurecida. `img-src` ya no permite `http:` ni wildcard
+  // `https:`; solo allowlist específica (Supabase storage + CDNs de WhatsApp
+  // para previews). `media-src` mismo tratamiento. `connect-src` mantiene
+  // comodín `*.sentry.io` porque Sentry usa N ingest URLs según DSN.
   supabaseResponse.headers.set(
     'Content-Security-Policy',
     [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "img-src 'self' data: blob: https: http:",
+      "img-src 'self' data: blob: https://*.supabase.co https://*.fbcdn.net " +
+        "https://*.whatsapp.net https://lookaside.fbsbx.com " +
+        "https://cdn.atiende.ai",
       "font-src 'self' data: https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co " +
         "https://openrouter.ai https://api.anthropic.com https://api.openai.com " +
         "https://api.stripe.com https://*.upstash.io https://graph.facebook.com " +
         "https://api.deepgram.com " +
-        "https://o4511223361896448.ingest.us.sentry.io",
+        "https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
       "frame-src 'self' https://js.stripe.com",
-      "media-src 'self' blob: https:",
+      "media-src 'self' blob: https://*.supabase.co https://*.fbcdn.net " +
+        "https://*.whatsapp.net",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
