@@ -82,7 +82,7 @@ export function BottomTabBar({
               moreOpen ? 'text-[hsl(var(--brand-blue))]' : 'text-zinc-500 hover:text-zinc-900',
             )}
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5" strokeWidth={1.5} />
             <span className="text-[10px] font-medium tracking-tight">Más</span>
           </button>
         </div>
