@@ -29,7 +29,7 @@ const PLANS: Plan[] = [
   {
     key: 'basic',
     name: 'Basico',
-    price: 499,
+    price: 599,
     msgLimit: 500,
     msgs: '500 msgs/mes',
     features: ['Chatbot WhatsApp', 'Base de conocimiento', 'Dashboard basico'],
@@ -83,29 +83,17 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
     fetchUsage();
   }, [fetchUsage]);
 
-  const upgrade = async (plan: string, method: string) => {
-    setLoading(plan + method);
+  const upgrade = async (plan: string) => {
+    setLoading(plan);
     try {
       const r = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId,
-          email: tenant?.email,
-          plan,
-          method,
-          name: tenant?.name,
-        }),
+        body: JSON.stringify({ plan }),
       });
       if (!r.ok) throw new Error('Checkout failed');
       const d = await r.json();
-      if (method === 'stripe' && d.url) window.location.href = d.url;
-      if (method === 'oxxo' && d.oxxoReference) {
-        window.location.href = `/settings/billing/oxxo?ref=${d.oxxoReference}&amount=${d.amount || ''}&expires=${d.expiresAt || ''}`;
-      }
-      if (method === 'spei' && d.clabe) {
-        window.location.href = `/settings/billing/oxxo?clabe=${d.clabe}&amount=${d.amount || ''}&expires=${d.expiresAt || ''}`;
-      }
+      if (d.url) window.location.href = d.url;
     } catch {
       toast.error('Error al procesar el pago');
     } finally {
@@ -116,11 +104,12 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
   const handleCancel = async () => {
     setCancelling(true);
     try {
-      await fetch('/api/billing/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId }),
-      });
+      const r = await fetch('/api/billing/cancel', { method: 'POST' });
+      if (!r.ok) {
+        toast.error('No se pudo cancelar. Intenta desde el portal de facturación.');
+        return;
+      }
+      toast.success('Suscripción cancelada al fin del periodo actual.');
       setCancelOpen(false);
       window.location.reload();
     } finally {
@@ -131,11 +120,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
   const openPortal = async () => {
     setLoading('portal');
     try {
-      const r = await fetch('/api/billing/portal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId }),
-      });
+      const r = await fetch('/api/billing/portal', { method: 'POST' });
       const d = await r.json();
       if (d.url) window.location.href = d.url;
     } finally {
@@ -229,37 +214,15 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                 ))}
               </ul>
               {tenantPlan !== p.key && (
-                <div className="mt-4 space-y-2">
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    onClick={() => upgrade(p.key, 'stripe')}
-                    disabled={!!loading}
-                  >
-                    {loading === p.key + 'stripe' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    Tarjeta
-                  </Button>
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => upgrade(p.key, 'oxxo')}
-                    disabled={!!loading}
-                  >
-                    {loading === p.key + 'oxxo' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    OXXO
-                  </Button>
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => upgrade(p.key, 'spei')}
-                    disabled={!!loading}
-                  >
-                    {loading === p.key + 'spei' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    SPEI
-                  </Button>
-                </div>
+                <Button
+                  className="w-full mt-4"
+                  size="sm"
+                  onClick={() => upgrade(p.key)}
+                  disabled={!!loading}
+                >
+                  {loading === p.key && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                  Contratar
+                </Button>
               )}
               {tenantPlan === p.key && (
                 <p className="mt-4 text-sm text-blue-600 font-medium text-center">
