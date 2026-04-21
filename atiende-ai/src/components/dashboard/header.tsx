@@ -53,7 +53,7 @@ export function DashHeader({ tenant, user }: { tenant: TenantHeader; user?: User
   const role = tenant.plan === 'free_trial' ? 'Free trial' : (tenant.plan || 'Admin');
 
   return (
-    <header className="h-20 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-white border-b border-zinc-200">
+    <header className="h-20 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-white rounded-tl-3xl">
       {/* Left: Page title */}
       <div className="min-w-0">
         <h1 className="text-[26px] md:text-[28px] font-semibold tracking-tight text-zinc-900 truncate">

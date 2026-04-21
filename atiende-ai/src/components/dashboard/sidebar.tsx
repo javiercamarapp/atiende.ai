@@ -248,7 +248,7 @@ export function Sidebar({
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col glass-panel border-r border-zinc-200 overflow-hidden transition-[width] duration-300">
+      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col overflow-hidden transition-[width] duration-300">
         <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
       </aside>
 
