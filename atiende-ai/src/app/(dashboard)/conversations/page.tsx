@@ -54,18 +54,18 @@ export default async function ConversationsPage({
   const convs = (conversations || []) as ConvRow[];
 
   return (
-    <div className="h-[calc(100svh-10rem)] md:h-[calc(100vh-8rem)] flex">
+    <div className="h-[calc(100dvh-10rem)] md:h-[calc(100vh-8rem)] flex">
       <div className="glass-card overflow-hidden animate-element animate-delay-100 flex-1 flex flex-col min-h-0">
         {/* Search + add header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-100">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-2 md:gap-3 px-3 md:px-5 py-3 md:py-4 border-b border-zinc-100">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <form>
               <input
                 type="search"
                 name="q"
                 defaultValue={search}
-                placeholder="Buscar nombre, chat, etc"
+                placeholder="Buscar nombre, chat…"
                 className="w-full pl-9 pr-4 py-2 text-sm rounded-xl bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
               />
             </form>
@@ -91,7 +91,7 @@ export default async function ConversationsPage({
                 <li key={c.id}>
                   <Link
                     href={`/conversations/${c.id}`}
-                    className="flex items-start gap-3 px-5 py-3.5 border-b border-zinc-100 hover:bg-zinc-50/60 transition"
+                    className="flex items-start gap-3 px-3 md:px-5 py-3.5 border-b border-zinc-100 hover:bg-zinc-50/60 transition"
                   >
                     <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-sm font-semibold text-zinc-600 shrink-0">
                       {initials(c.customer_name, c.customer_phone)}
