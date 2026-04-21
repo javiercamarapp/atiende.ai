@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Clock, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CalendarEvent {
@@ -16,84 +16,97 @@ interface CalendarEvent {
   serviceName: string;
 }
 
-const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+interface ServiceOption {
+  id: string;
+  name: string;
+  category: string | null;
+}
+
+const WEEK_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
-const CATEGORIES = [
-  { key: 'scheduled', label: 'Programadas', color: 'hsl(235 84% 55%)', bg: 'bg-[hsl(235_84%_92%)]', text: 'text-[hsl(235_84%_45%)]' },
-  { key: 'confirmed', label: 'Confirmadas', color: 'hsl(235 70% 72%)', bg: 'bg-[hsl(235_60%_88%)]', text: 'text-[hsl(235_60%_35%)]' },
-  { key: 'completed', label: 'Completadas', color: 'hsl(158 64% 52%)', bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  { key: 'cancelled', label: 'Canceladas', color: 'hsl(349 89% 60%)', bg: 'bg-rose-50', text: 'text-rose-700' },
-  { key: 'no_show', label: 'No se presentó', color: 'hsl(38 92% 50%)', bg: 'bg-amber-50', text: 'text-amber-700' },
-  { key: 'ongoing', label: 'En curso', color: 'hsl(271 76% 53%)', bg: 'bg-violet-50', text: 'text-violet-700' },
-];
+const START_HOUR = 7;
+const END_HOUR = 21;
+const SLOT_MINUTES = 30;
+const SLOT_HEIGHT = 28;
 
+const STATUS_STYLES: Record<string, { block: string; strip: string; text: string }> = {
+  scheduled: { block: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100', strip: 'bg-emerald-400', text: 'text-emerald-900' },
+  confirmed: { block: 'bg-sky-50 border-sky-200 hover:bg-sky-100', strip: 'bg-sky-400', text: 'text-sky-900' },
+  completed: { block: 'bg-zinc-50 border-zinc-200 hover:bg-zinc-100', strip: 'bg-zinc-400', text: 'text-zinc-700' },
+  cancelled: { block: 'bg-rose-50 border-rose-200 hover:bg-rose-100', strip: 'bg-rose-400', text: 'text-rose-900' },
+  no_show: { block: 'bg-amber-50 border-amber-200 hover:bg-amber-100', strip: 'bg-amber-400', text: 'text-amber-900' },
+  ongoing: { block: 'bg-violet-50 border-violet-200 hover:bg-violet-100', strip: 'bg-violet-400', text: 'text-violet-900' },
+};
+
+function pad(n: number) { return n < 10 ? `0${n}` : `${n}`; }
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-MX', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+function fmtTimeLabel(h: number, m: number) { return `${pad(h)}:${pad(m)}`; }
 
-function fmtFullDate(d: Date): string {
-  return d.toLocaleDateString('es-MX', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+function startOfWeek(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - dow);
+  return x;
 }
-
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
 function sameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
+
+type View = 'semana' | 'dia' | 'agenda' | 'lista';
 
 export function CalendarView({
   events,
+  services,
   initialYear,
   initialMonth,
 }: {
   events: CalendarEvent[];
+  services: ServiceOption[];
   initialYear: number;
   initialMonth: number;
 }) {
-  const [cursor, setCursor] = useState(new Date(initialYear, initialMonth, 1));
-  const [selected, setSelected] = useState<Date>(new Date());
   const today = new Date();
+  const [cursor, setCursor] = useState(() => startOfWeek(new Date(initialYear, initialMonth, today.getDate())));
+  const [miniCursor, setMiniCursor] = useState(new Date(initialYear, initialMonth, 1));
+  const [view, setView] = useState<View>('semana');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<CalendarEvent | null>(null);
+  const [serviceFilter, setServiceFilter] = useState<Set<string>>(new Set());
+  const [servicesOpen, setServicesOpen] = useState(true);
 
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
+  const weekStart = cursor;
+  const weekEnd = addDays(weekStart, 6);
 
-  const cells = useMemo(() => {
-    const firstDay = new Date(year, month, 1).getDay();
-    const offset = firstDay === 0 ? 6 : firstDay - 1;
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const prevMonthDays = new Date(year, month, 0).getDate();
-    const arr: { date: Date; current: boolean }[] = [];
-    for (let i = offset - 1; i >= 0; i--) {
-      arr.push({ date: new Date(year, month - 1, prevMonthDays - i), current: false });
-    }
-    for (let i = 1; i <= daysInMonth; i++) {
-      arr.push({ date: new Date(year, month, i), current: true });
-    }
-    while (arr.length < 42) {
-      const nextDay = arr.length - (offset + daysInMonth) + 1;
-      arr.push({ date: new Date(year, month + 1, nextDay), current: false });
-    }
-    return arr;
-  }, [year, month]);
+  const filteredEvents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return events.filter((e) => {
+      if (serviceFilter.size > 0 && !serviceFilter.has(e.serviceName)) return false;
+      if (!q) return true;
+      return (
+        e.customer_name?.toLowerCase().includes(q) ||
+        e.customer_phone.toLowerCase().includes(q) ||
+        e.serviceName.toLowerCase().includes(q) ||
+        e.staffName.toLowerCase().includes(q)
+      );
+    });
+  }, [events, search, serviceFilter]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    for (const e of events) {
+    for (const e of filteredEvents) {
       const d = new Date(e.datetime);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       const arr = map.get(key) || [];
@@ -101,241 +114,185 @@ export function CalendarView({
       map.set(key, arr);
     }
     return map;
-  }, [events]);
+  }, [filteredEvents]);
 
-  const selectedEvents = useMemo(() => {
-    const key = `${selected.getFullYear()}-${selected.getMonth()}-${selected.getDate()}`;
-    return (eventsByDay.get(key) || []).sort(
-      (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime(),
-    );
-  }, [selected, eventsByDay]);
+  const todaysAppointments = useMemo(
+    () => filteredEvents.filter((e) => sameDay(new Date(e.datetime), today)).sort((a, b) => a.datetime.localeCompare(b.datetime)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredEvents],
+  );
 
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const e of events) {
-      counts.set(e.status, (counts.get(e.status) || 0) + 1);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  const miniCells = useMemo(() => {
+    const y = miniCursor.getFullYear();
+    const m = miniCursor.getMonth();
+    const firstDow = (new Date(y, m, 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const prevDays = new Date(y, m, 0).getDate();
+    const arr: { date: Date; current: boolean }[] = [];
+    for (let i = firstDow - 1; i >= 0; i--) arr.push({ date: new Date(y, m - 1, prevDays - i), current: false });
+    for (let i = 1; i <= daysInMonth; i++) arr.push({ date: new Date(y, m, i), current: true });
+    while (arr.length < 42) {
+      const d = arr.length - (firstDow + daysInMonth) + 1;
+      arr.push({ date: new Date(y, m + 1, d), current: false });
     }
-    return counts;
-  }, [events]);
+    return arr;
+  }, [miniCursor]);
 
-  function goPrev() {
-    setCursor(new Date(year, month - 1, 1));
+  const timeSlots = useMemo(() => {
+    const slots: { h: number; m: number }[] = [];
+    for (let h = START_HOUR; h < END_HOUR; h++) {
+      slots.push({ h, m: 0 });
+      slots.push({ h, m: 30 });
+    }
+    slots.push({ h: END_HOUR, m: 0 });
+    return slots;
+  }, []);
+
+  function fmtRange() {
+    if (weekStart.getMonth() === weekEnd.getMonth()) {
+      return `${weekStart.getDate()} - ${weekEnd.getDate()} ${MONTHS_SHORT[weekStart.getMonth()]}, ${weekStart.getFullYear()}`;
+    }
+    return `${weekStart.getDate()} ${MONTHS_SHORT[weekStart.getMonth()]} - ${weekEnd.getDate()} ${MONTHS_SHORT[weekEnd.getMonth()]}, ${weekStart.getFullYear()}`;
   }
-  function goNext() {
-    setCursor(new Date(year, month + 1, 1));
+
+  function uniqueServiceNames(): string[] {
+    const set = new Set<string>();
+    for (const s of services) set.add(s.name);
+    for (const e of events) if (e.serviceName) set.add(e.serviceName);
+    return Array.from(set).sort();
   }
-  function goToday() {
-    const t = new Date();
-    setCursor(new Date(t.getFullYear(), t.getMonth(), 1));
-    setSelected(t);
+
+  function toggleService(name: string) {
+    setServiceFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  function eventPosition(e: CalendarEvent): { top: number; height: number } {
+    const start = new Date(e.datetime);
+    const end = e.end_datetime ? new Date(e.end_datetime) : new Date(start.getTime() + 30 * 60000);
+    const mins = (start.getHours() - START_HOUR) * 60 + start.getMinutes();
+    const duration = Math.max(15, (end.getTime() - start.getTime()) / 60000);
+    return {
+      top: (mins / SLOT_MINUTES) * SLOT_HEIGHT,
+      height: Math.max(24, (duration / SLOT_MINUTES) * SLOT_HEIGHT - 2),
+    };
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between animate-element">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Panel</p>
-          <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">
-            Calendario
-          </h1>
-          <p className="mt-1.5 text-sm text-zinc-500">
-            {events.length} eventos en {MONTHS[month]} {year}.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={goToday}
-            className="px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-medium text-zinc-700 hover:border-zinc-300 transition"
-          >
-            Hoy
-          </button>
-          <div className="flex items-center rounded-xl bg-white border border-zinc-200">
-            <button
-              onClick={goPrev}
-              className="px-2 py-2 text-zinc-500 hover:text-zinc-900 transition"
-              aria-label="Mes anterior"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-3 text-xs font-medium text-zinc-900 tabular-nums min-w-[140px] text-center">
-              {MONTHS[month]} {year}
-            </span>
-            <button
-              onClick={goNext}
-              className="px-2 py-2 text-zinc-500 hover:text-zinc-900 transition"
-              aria-label="Mes siguiente"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <button className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[hsl(var(--brand-blue))] text-white text-xs font-medium hover:opacity-90 transition">
-            <Plus className="w-3.5 h-3.5" />
-            Evento
-          </button>
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-        <div className="xl:col-span-3 glass-card overflow-hidden animate-element animate-delay-100">
-          <div className="grid grid-cols-7 border-b border-zinc-100">
-            {DAYS.map((d) => (
-              <div
-                key={d}
-                className="px-3 py-3 text-[10px] uppercase tracking-wider text-zinc-400 font-medium"
+    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100">
+      <div className="flex min-h-[640px]">
+        {/* ─────────────── LEFT PANEL ─────────────── */}
+        <aside className="hidden md:flex w-64 shrink-0 flex-col bg-white">
+          {/* Mini calendar */}
+          <div className="px-4 pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                onClick={() => setMiniCursor(new Date(miniCursor.getFullYear(), miniCursor.getMonth() - 1, 1))}
+                className="p-1 text-zinc-400 hover:text-zinc-900 transition"
+                aria-label="Mes anterior"
               >
-                {d}
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 grid-rows-6 h-[640px]">
-            {cells.map((c, i) => {
-              const key = `${c.date.getFullYear()}-${c.date.getMonth()}-${c.date.getDate()}`;
-              const dayEvents = eventsByDay.get(key) || [];
-              const isToday = sameDay(c.date, today);
-              const isSelected = sameDay(c.date, selected);
-              return (
-                <button
-                  key={i}
-                  onClick={() => setSelected(c.date)}
-                  className={cn(
-                    'text-left p-2 border-r border-b border-zinc-100 last:border-r-0 transition overflow-hidden flex flex-col gap-1',
-                    (i + 1) % 7 === 0 && 'border-r-0',
-                    i >= 35 && 'border-b-0',
-                    !c.current && 'bg-zinc-50/40',
-                    isSelected && 'bg-[hsl(var(--brand-blue-soft))]',
-                    !isSelected && c.current && 'hover:bg-zinc-50',
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={cn(
-                        'text-xs tabular-nums inline-flex items-center justify-center w-6 h-6 rounded-full',
-                        !c.current && 'text-zinc-300',
-                        c.current && !isToday && 'text-zinc-700',
-                        isToday && 'bg-[hsl(var(--brand-blue))] text-white font-semibold',
-                      )}
-                    >
-                      {c.date.getDate()}
-                    </span>
-                    {dayEvents.length > 0 && (
-                      <span className="text-[10px] text-zinc-400 tabular-nums">
-                        {dayEvents.length}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 space-y-0.5 overflow-hidden">
-                    {dayEvents.slice(0, 3).map((e) => {
-                      const cat = CATEGORIES.find((c) => c.key === e.status) || CATEGORIES[0];
-                      return (
-                        <div
-                          key={e.id}
-                          className={cn(
-                            'text-[10px] px-1.5 py-0.5 rounded-md truncate',
-                            cat.bg,
-                            cat.text,
-                          )}
-                        >
-                          <span className="tabular-nums font-medium">{fmtTime(e.datetime)}</span>{' '}
-                          {e.customer_name || e.serviceName}
-                        </div>
-                      );
-                    })}
-                    {dayEvents.length > 3 && (
-                      <p className="text-[10px] text-zinc-400 px-1.5">
-                        +{dayEvents.length - 3} más
-                      </p>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <aside className="space-y-6">
-          <div className="glass-card p-5 animate-element animate-delay-200">
-            <h3 className="text-sm font-semibold text-zinc-900 mb-4">Categorías</h3>
-            <ul className="space-y-2.5">
-              {CATEGORIES.map((cat) => (
-                <li key={cat.key} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2.5">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ background: cat.color }}
-                    />
-                    <span className="text-zinc-700">{cat.label}</span>
-                  </span>
-                  <span className="text-xs text-zinc-500 tabular-nums">
-                    {categoryCounts.get(cat.key) || 0}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="glass-card p-5 animate-element animate-delay-300">
-            <div className="mb-4">
-              <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">
-                Agenda
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <p className="text-[13px] font-medium text-zinc-900">
+                {MONTHS[miniCursor.getMonth()]} {miniCursor.getFullYear()}
               </p>
-              <h3 className="text-sm font-semibold text-zinc-900 capitalize mt-0.5">
-                {fmtFullDate(selected)}
-              </h3>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                {selectedEvents.length === 0
-                  ? 'Sin eventos programados'
-                  : `${selectedEvents.length} evento${selectedEvents.length === 1 ? '' : 's'}`}
-              </p>
+              <button
+                onClick={() => setMiniCursor(new Date(miniCursor.getFullYear(), miniCursor.getMonth() + 1, 1))}
+                className="p-1 text-zinc-400 hover:text-zinc-900 transition"
+                aria-label="Mes siguiente"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
+            <div className="grid grid-cols-7 gap-y-0.5 text-center">
+              {WEEK_SHORT.map((d) => (
+                <div key={d} className="text-[10px] uppercase tracking-wider text-zinc-400 py-1">{d[0]}</div>
+              ))}
+              {miniCells.map((c, i) => {
+                const inCurrentWeek = c.date >= weekStart && c.date <= weekEnd;
+                const isToday = sameDay(c.date, today);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setCursor(startOfWeek(c.date))}
+                    className={cn(
+                      'h-7 w-7 mx-auto text-[11px] tabular-nums rounded-full flex items-center justify-center transition',
+                      !c.current && 'text-zinc-300',
+                      c.current && !isToday && !inCurrentWeek && 'text-zinc-700 hover:bg-zinc-100',
+                      inCurrentWeek && !isToday && 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] font-medium',
+                      isToday && 'bg-[hsl(var(--brand-blue))] text-white font-semibold',
+                    )}
+                  >
+                    {c.date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-            {selectedEvents.length === 0 ? (
-              <div className="rounded-xl bg-zinc-50 p-6 text-center">
-                <p className="text-xs text-zinc-500">Día libre.</p>
-              </div>
+          {/* Bloquear fechas */}
+          <div className="px-4 pt-4">
+            <button className="inline-flex items-center gap-2 text-[12.5px] font-medium text-[hsl(var(--brand-blue))] hover:opacity-80 transition">
+              <Lock className="w-3.5 h-3.5" />
+              Bloquear fechas
+            </button>
+          </div>
+
+          {/* Visitas de hoy */}
+          <div className="px-4 pt-5">
+            <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-medium mb-2">Visitas de hoy</p>
+            {todaysAppointments.length === 0 ? (
+              <p className="text-[12px] text-zinc-500">No hay citas para hoy</p>
             ) : (
-              <ul className="space-y-2.5">
-                {selectedEvents.map((e) => {
-                  const cat = CATEGORIES.find((c) => c.key === e.status) || CATEGORIES[0];
-                  return (
-                    <li
-                      key={e.id}
-                      className="relative rounded-xl bg-white border border-zinc-100 p-3 hover:border-zinc-200 transition"
+              <ul className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                {todaysAppointments.map((e) => (
+                  <li key={e.id}>
+                    <button
+                      onClick={() => setSelected(e)}
+                      className="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-zinc-50 transition"
                     >
-                      <span
-                        className="absolute left-0 top-3 bottom-3 w-0.5 rounded-full"
-                        style={{ background: cat.color }}
-                      />
-                      <div className="pl-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium text-zinc-900 truncate">
-                            {e.serviceName}
-                          </p>
-                          <span
-                            className={cn(
-                              'text-[10px] font-medium rounded-full px-2 py-0.5 shrink-0',
-                              cat.bg,
-                              cat.text,
-                            )}
-                          >
-                            {cat.label}
-                          </span>
-                        </div>
-                        <div className="mt-1.5 flex items-center gap-3 text-[11px] text-zinc-500">
-                          <span className="inline-flex items-center gap-1 tabular-nums">
-                            <Clock className="w-3 h-3" />
-                            {fmtTime(e.datetime)}
-                            {e.end_datetime && ` – ${fmtTime(e.end_datetime)}`}
-                          </span>
-                          <span className="inline-flex items-center gap-1 truncate">
-                            <User className="w-3 h-3" />
-                            {e.customer_name || e.customer_phone}
-                          </span>
-                        </div>
-                        {e.staffName && (
-                          <p className="text-[11px] text-zinc-400 mt-1">Con {e.staffName}</p>
-                        )}
-                      </div>
+                      <span className="text-[10.5px] tabular-nums text-zinc-500 mt-0.5 shrink-0">{fmtTime(e.datetime)}</span>
+                      <span className="text-[12px] text-zinc-800 truncate">{e.customer_name || e.serviceName}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Servicios filter */}
+          <div className="px-4 pt-5 pb-4 flex-1 flex flex-col min-h-0">
+            <button
+              onClick={() => setServicesOpen(!servicesOpen)}
+              className="flex items-center justify-between w-full mb-2"
+            >
+              <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-medium">Servicios</span>
+              <ChevronDown className={cn('w-3.5 h-3.5 text-zinc-400 transition-transform', !servicesOpen && '-rotate-90')} />
+            </button>
+            {servicesOpen && (
+              <ul className="space-y-1 overflow-y-auto pr-1">
+                {uniqueServiceNames().length === 0 && (
+                  <li className="text-[12px] text-zinc-500">Sin servicios</li>
+                )}
+                {uniqueServiceNames().map((name) => {
+                  const checked = serviceFilter.has(name);
+                  return (
+                    <li key={name}>
+                      <label className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-zinc-50 transition cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleService(name)}
+                          className="w-3.5 h-3.5 rounded border-zinc-300 text-[hsl(var(--brand-blue))] focus:ring-[hsl(var(--brand-blue-soft))]"
+                        />
+                        <span className="text-[12px] text-zinc-700 truncate">{name}</span>
+                      </label>
                     </li>
                   );
                 })}
@@ -343,6 +300,298 @@ export function CalendarView({
             )}
           </div>
         </aside>
+
+        {/* ─────────────── MAIN ─────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Top bar */}
+          <div className="flex items-center justify-between gap-3 px-5 py-3 bg-white">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCursor(startOfWeek(today))}
+                className="px-3 py-1.5 text-[12.5px] font-medium text-zinc-700 rounded-full border border-zinc-200 hover:bg-zinc-50 transition"
+              >
+                Esta semana
+              </button>
+              <button
+                onClick={() => setCursor(addDays(cursor, -7))}
+                className="p-1.5 text-zinc-400 hover:text-zinc-900 transition rounded-full hover:bg-zinc-50"
+                aria-label="Semana anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCursor(addDays(cursor, 7))}
+                className="p-1.5 text-zinc-400 hover:text-zinc-900 transition rounded-full hover:bg-zinc-50"
+                aria-label="Semana siguiente"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <p className="text-[13px] font-medium text-zinc-900 ml-1 tabular-nums">{fmtRange()}</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Search */}
+              <div className="relative hidden lg:block">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar cita"
+                  className="w-48 pl-8 pr-3 h-8 text-[12.5px] rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+                />
+              </div>
+              {/* View toggle */}
+              <div className="flex items-center bg-zinc-50 rounded-full p-0.5 border border-zinc-200">
+                {(['lista', 'dia', 'semana', 'agenda'] as View[]).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={cn(
+                      'px-3 py-1 rounded-full text-[12px] font-medium transition capitalize',
+                      view === v ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900',
+                    )}
+                  >
+                    {v === 'lista' ? 'Lista' : v === 'dia' ? 'Día' : v === 'semana' ? 'Semana' : 'Agenda'}
+                  </button>
+                ))}
+              </div>
+              {/* New */}
+              <button className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12px] font-medium hover:opacity-90 transition">
+                <Plus className="w-3.5 h-3.5" />
+                Nueva
+              </button>
+            </div>
+          </div>
+
+          {/* Content area */}
+          {view === 'semana' && (
+            <div className="flex-1 overflow-auto">
+              {/* Day headers */}
+              <div className="grid sticky top-0 z-20 bg-white" style={{ gridTemplateColumns: '64px repeat(7, minmax(0,1fr))' }}>
+                <div />
+                {weekDays.map((d, i) => {
+                  const isToday = sameDay(d, today);
+                  return (
+                    <div key={i} className="px-2 py-3 text-center">
+                      <p className="text-[10.5px] uppercase tracking-wider text-zinc-400">{WEEK_SHORT[i]}. {d.getDate()}</p>
+                      {isToday && (
+                        <span className="inline-block mt-1 w-5 h-5 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[10.5px] font-semibold leading-5">
+                          {d.getDate()}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Time grid */}
+              <div className="grid relative" style={{ gridTemplateColumns: '64px repeat(7, minmax(0,1fr))' }}>
+                {/* Time column */}
+                <div className="bg-white">
+                  {timeSlots.map((s, i) => (
+                    <div key={i} className="relative text-right pr-2" style={{ height: SLOT_HEIGHT }}>
+                      {s.m === 0 && (
+                        <span className="absolute -top-1.5 right-2 text-[10px] text-zinc-400 tabular-nums">{fmtTimeLabel(s.h, 0)}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Day columns */}
+                {weekDays.map((d, di) => {
+                  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+                  const dayEvents = eventsByDay.get(key) || [];
+                  return (
+                    <div key={di} className="relative">
+                      {/* background slots */}
+                      {timeSlots.map((s, i) => (
+                        <div
+                          key={i}
+                          className={s.m === 0 ? 'border-t border-zinc-100/60' : ''}
+                          style={{ height: SLOT_HEIGHT }}
+                        />
+                      ))}
+                      {/* events */}
+                      {dayEvents.map((e) => {
+                        const pos = eventPosition(e);
+                        const styles = STATUS_STYLES[e.status] || STATUS_STYLES.scheduled;
+                        return (
+                          <button
+                            key={e.id}
+                            onClick={() => setSelected(e)}
+                            className={cn(
+                              'absolute left-1 right-1 rounded-md border text-left px-2 py-1 overflow-hidden transition',
+                              styles.block, styles.text,
+                            )}
+                            style={{ top: pos.top, height: pos.height }}
+                          >
+                            <span className="absolute left-0 top-0 bottom-0 w-1 rounded-l-md" aria-hidden />
+                            <span className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-l-md', styles.strip)} aria-hidden />
+                            <p className="text-[10px] font-medium tabular-nums opacity-80 pl-1.5">
+                              {fmtTime(e.datetime)}{e.end_datetime && ` - ${fmtTime(e.end_datetime)}`}
+                            </p>
+                            <p className="text-[11.5px] font-semibold truncate pl-1.5">
+                              {e.customer_name || e.serviceName}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {view === 'dia' && (
+            <div className="flex-1 overflow-auto px-5 py-4">
+              <p className="text-[13px] font-semibold text-zinc-900 mb-3">
+                {weekStart.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              <div className="grid" style={{ gridTemplateColumns: '64px 1fr' }}>
+                <div>
+                  {timeSlots.map((s, i) => (
+                    <div key={i} className="relative text-right pr-2" style={{ height: SLOT_HEIGHT }}>
+                      {s.m === 0 && (
+                        <span className="absolute -top-1.5 right-2 text-[10px] text-zinc-400 tabular-nums">{fmtTimeLabel(s.h, 0)}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="relative">
+                  {timeSlots.map((s, i) => (
+                    <div
+                      key={i}
+                      className={s.m === 0 ? 'border-t border-zinc-100/60' : ''}
+                      style={{ height: SLOT_HEIGHT }}
+                    />
+                  ))}
+                  {(eventsByDay.get(`${weekStart.getFullYear()}-${weekStart.getMonth()}-${weekStart.getDate()}`) || []).map((e) => {
+                    const pos = eventPosition(e);
+                    const styles = STATUS_STYLES[e.status] || STATUS_STYLES.scheduled;
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => setSelected(e)}
+                        className={cn(
+                          'absolute left-1 right-4 rounded-md border text-left px-3 py-1.5 transition',
+                          styles.block, styles.text,
+                        )}
+                        style={{ top: pos.top, height: pos.height }}
+                      >
+                        <span className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-l-md', styles.strip)} aria-hidden />
+                        <p className="text-[11px] tabular-nums opacity-80 pl-1.5">
+                          {fmtTime(e.datetime)}{e.end_datetime && ` - ${fmtTime(e.end_datetime)}`}
+                        </p>
+                        <p className="text-[13px] font-semibold truncate pl-1.5">{e.customer_name || e.serviceName}</p>
+                        <p className="text-[11px] opacity-70 pl-1.5 truncate">{e.serviceName}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(view === 'agenda' || view === 'lista') && (
+            <div className="flex-1 overflow-auto px-5 py-4">
+              {filteredEvents.length === 0 ? (
+                <p className="text-sm text-zinc-500 py-10 text-center">Sin citas en este rango</p>
+              ) : (
+                <ul className="space-y-1">
+                  {filteredEvents
+                    .filter((e) => {
+                      const d = new Date(e.datetime);
+                      return d >= weekStart && d <= addDays(weekEnd, 1);
+                    })
+                    .map((e) => {
+                      const styles = STATUS_STYLES[e.status] || STATUS_STYLES.scheduled;
+                      const d = new Date(e.datetime);
+                      return (
+                        <li key={e.id}>
+                          <button
+                            onClick={() => setSelected(e)}
+                            className="w-full flex items-center gap-4 py-3 text-left hover:bg-zinc-50 transition px-2 rounded-lg"
+                          >
+                            <span className={cn('w-1 h-10 rounded-full shrink-0', styles.strip)} />
+                            <div className="w-24 shrink-0">
+                              <p className="text-[11.5px] text-zinc-500 tabular-nums">
+                                {WEEK_SHORT[(d.getDay() + 6) % 7]}. {d.getDate()} {MONTHS_SHORT[d.getMonth()]}
+                              </p>
+                              <p className="text-[12.5px] font-medium text-zinc-900 tabular-nums">
+                                {fmtTime(e.datetime)}
+                              </p>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-semibold text-zinc-900 truncate">{e.customer_name || e.customer_phone}</p>
+                              <p className="text-[12px] text-zinc-500 truncate">{e.serviceName} · {e.staffName}</p>
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ─────────────── DETAILS DRAWER ─────────────── */}
+        {selected && (
+          <aside className="hidden lg:flex w-72 shrink-0 flex-col bg-white">
+            <div className="flex items-center justify-between px-5 py-4">
+              <h3 className="text-sm font-semibold text-zinc-900">Detalles de la cita</h3>
+              <button onClick={() => setSelected(null)} className="text-zinc-400 hover:text-zinc-900 transition" aria-label="Cerrar">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4 overflow-y-auto">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Servicio</p>
+                <p className="text-[14px] font-semibold text-zinc-900">{selected.serviceName}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Fecha y hora</p>
+                <div className="flex items-center gap-2 text-[13px] text-zinc-800">
+                  <CalendarDays className="w-3.5 h-3.5 text-zinc-400" />
+                  {new Date(selected.datetime).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-[13px] text-zinc-800">
+                  <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                  {fmtTime(selected.datetime)}{selected.end_datetime && ` - ${fmtTime(selected.end_datetime)}`}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Paciente</p>
+                <div className="flex items-center gap-2 text-[13px] text-zinc-800">
+                  <User className="w-3.5 h-3.5 text-zinc-400" />
+                  {selected.customer_name || selected.customer_phone}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Especialista</p>
+                <p className="text-[13px] text-zinc-800">{selected.staffName}</p>
+              </div>
+              {selected.notes && (
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Notas</p>
+                  <p className="text-[12.5px] text-zinc-700 leading-relaxed">{selected.notes}</p>
+                </div>
+              )}
+              <div className="pt-2">
+                <span className={cn(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium',
+                  (STATUS_STYLES[selected.status] || STATUS_STYLES.scheduled).block,
+                  (STATUS_STYLES[selected.status] || STATUS_STYLES.scheduled).text,
+                )}>
+                  <span className={cn('w-1.5 h-1.5 rounded-full', (STATUS_STYLES[selected.status] || STATUS_STYLES.scheduled).strip)} />
+                  {selected.status}
+                </span>
+              </div>
+            </div>
+          </aside>
+        )}
       </div>
     </div>
   );

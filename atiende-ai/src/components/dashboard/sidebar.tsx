@@ -1,35 +1,51 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, MessageSquare, Calendar, CalendarDays, Bot,
-  BookOpen, BarChart3, Settings, TrendingUp, Menu, UserCircle2,
-  Sparkles, Megaphone, HelpCircle,
+  BookOpen, BarChart3, Settings, Menu, UserCircle2,
+  Sparkles, Megaphone, LogOut, Crown, TrendingUp,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { createClient } from '@/lib/supabase/client';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  dashboard: LayoutDashboard, conversations: MessageSquare, appointments: Calendar,
-  calendar: CalendarDays, contacts: UserCircle2, agents: Bot, knowledge: BookOpen,
-  'chat-data': Sparkles, marketing: Megaphone, analytics: BarChart3, settings: Settings,
+  dashboard: LayoutDashboard, appointments: Calendar, calendar: CalendarDays,
+  conversations: MessageSquare, contacts: UserCircle2, agents: Bot,
+  knowledge: BookOpen, 'chat-data': Sparkles, marketing: Megaphone,
+  analytics: BarChart3, settings: Settings,
 };
 const LABELS: Record<string, string> = {
-  dashboard: 'Dashboard', conversations: 'Conversaciones', appointments: 'Citas',
-  calendar: 'Calendario', contacts: 'Pacientes', agents: 'Agents',
+  dashboard: 'Dashboard', appointments: 'Citas', calendar: 'Calendario',
+  conversations: 'Conversaciones', contacts: 'Pacientes', agents: 'Agents',
   knowledge: 'Conocimiento', 'chat-data': 'Pregunta a tus datos',
   marketing: 'Marketing', analytics: 'Analytics', settings: 'Ajustes',
 };
 
-const TOP_GROUP = new Set(['dashboard', 'appointments', 'calendar', 'conversations', 'contacts', 'agents']);
+/** Final sidebar order — Dashboard + Citas + Calendario + Conversaciones + Pacientes,
+ *  then the redesigned modules (Agents, Conocimiento, Pregunta, Marketing, Analytics). */
+const ORDER = [
+  'dashboard',
+  'appointments',
+  'calendar',
+  'conversations',
+  'contacts',
+  'agents',
+  'knowledge',
+  'chat-data',
+  'marketing',
+  'analytics',
+];
 
 type TenantShape = {
   name?: string | null;
   plan?: string | null;
+  trial_ends_at?: string | null;
   has_chat_agent?: boolean | null;
   has_voice_agent?: boolean | null;
 };
@@ -51,7 +67,7 @@ function NavLink({
       aria-current={active ? 'page' : undefined}
       title={label}
       className={cn(
-        'relative flex items-center py-2.5 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
+        'relative flex items-center h-10 rounded-lg text-[13.5px] transition-all duration-200 whitespace-nowrap',
         collapsible
           ? 'justify-center group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3'
           : 'gap-3 px-3',
@@ -87,13 +103,11 @@ function SidebarContent({
   onNavigate?: () => void;
   collapsible?: boolean;
 }) {
-  const navModules = modules.filter(m => m !== 'settings');
-  const primaryMods = navModules.filter(m => TOP_GROUP.has(m));
-  const secondaryMods = navModules.filter(m => !TOP_GROUP.has(m));
+  const router = useRouter();
+  const navModules = ORDER.filter(m => modules.includes(m));
 
   function getHref(mod: string) {
     if (mod === 'dashboard') return '/home';
-    if (mod === 'settings') return '/settings/agent';
     return '/' + mod;
   }
   function isActive(mod: string) {
@@ -101,13 +115,27 @@ function SidebarContent({
     return path.startsWith('/' + mod);
   }
 
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  const isFreeTrial = tenant.plan === 'free_trial' || !tenant.plan;
+  const daysLeft = tenant.trial_ends_at
+    ? Math.max(
+        0,
+        Math.ceil(
+          // eslint-disable-next-line react-hooks/purity
+          (new Date(tenant.trial_ends_at).getTime() - Date.now()) / 86_400_000,
+        ),
+      )
+    : null;
+
   return (
     <>
-      {/* Logo */}
-      <div className={cn(
-        'px-4 pt-5 pb-4',
-        collapsible && 'flex flex-col items-center group-hover/sidebar:items-start',
-      )}>
+      {/* Logo — fixed height so nav never shifts when expanding */}
+      <div className="h-[68px] px-4 pt-5 pb-4 flex items-center">
         <Link href="/home" className="block w-fit" onClick={onNavigate}>
           {collapsible ? (
             <>
@@ -130,31 +158,12 @@ function SidebarContent({
             />
           )}
         </Link>
-        <p className={cn(
-          'text-xs text-zinc-500 truncate mt-2 whitespace-nowrap',
-          collapsible && 'hidden group-hover/sidebar:block',
-        )}>
-          {tenant.name}
-        </p>
       </div>
 
-      {/* ROI pill — only when expanded */}
-      <div className={cn(
-        'mx-4 mt-2 glass-card px-3 py-2.5',
-        collapsible && 'hidden group-hover/sidebar:block',
-      )}>
-        <div className="flex items-center gap-2 whitespace-nowrap">
-          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">
-            ROI este mes
-          </span>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 px-3 pt-3 pb-3 overflow-y-auto overflow-x-hidden">
+      {/* Nav — always at top, icons never shift vertically on hover */}
+      <nav className="flex-1 px-3 pt-1 pb-2 overflow-y-auto overflow-x-hidden">
         <div className="space-y-0.5">
-          {primaryMods.map(mod => (
+          {navModules.map(mod => (
             <NavLink
               key={mod} href={getHref(mod)} label={LABELS[mod] || mod}
               icon={ICONS[mod] || LayoutDashboard} active={isActive(mod)}
@@ -162,68 +171,65 @@ function SidebarContent({
             />
           ))}
         </div>
-        {secondaryMods.length > 0 && (
-          <>
-            <div className={cn(
-              'my-2 border-t border-zinc-200',
-              collapsible && 'mx-2 group-hover/sidebar:mx-0',
-            )} />
-            <div className="space-y-0.5">
-              {secondaryMods.map(mod => (
-                <NavLink
-                  key={mod} href={getHref(mod)} label={LABELS[mod] || mod}
-                  icon={ICONS[mod] || LayoutDashboard} active={isActive(mod)}
-                  collapsible={collapsible} onNavigate={onNavigate}
-                />
-              ))}
-            </div>
-          </>
-        )}
       </nav>
 
-      {/* Bottom — settings + help */}
-      <div className="px-3 pb-3 border-t border-zinc-200 pt-2 space-y-0.5">
-        {modules.includes('settings') && (
-          <NavLink
-            href="/settings/agent" label="Ajustes" icon={Settings}
-            active={path.startsWith('/settings')} collapsible={collapsible}
-            onNavigate={onNavigate}
-          />
-        )}
-        <NavLink
-          href="https://wa.me/5215512345678" label="Ayuda" icon={HelpCircle}
-          active={false} collapsible={collapsible}
-          onNavigate={onNavigate}
-        />
-      </div>
-
-      {/* Plan card — only when expanded */}
+      {/* ROI pill — right above the plan card (only when expanded) */}
       <div className={cn(
-        'px-4 pb-4 pt-3 border-t border-zinc-200',
+        'px-4 pt-2',
         collapsible && 'hidden group-hover/sidebar:block',
       )}>
-        <div className="glass-card px-3 py-2.5">
-          <p className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 whitespace-nowrap">
-            Plan
-          </p>
-          <p className="text-sm text-zinc-900 mt-0.5 capitalize whitespace-nowrap">
-            {tenant.plan || 'free trial'}
-          </p>
-          {(tenant.has_chat_agent || tenant.has_voice_agent) && (
-            <div className="flex gap-1.5 mt-2">
-              {tenant.has_chat_agent && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] font-medium">
-                  Chat
-                </span>
-              )}
-              {tenant.has_voice_agent && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] font-medium">
-                  Voz
-                </span>
-              )}
-            </div>
-          )}
+        <div className="rounded-xl bg-white border border-zinc-200 px-3 py-2 flex items-center gap-2 whitespace-nowrap">
+          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">
+            ROI este mes
+          </span>
         </div>
+      </div>
+
+      {/* Free trial / Upgrade card — only when expanded */}
+      <div className={cn(
+        'px-4 pt-2',
+        collapsible && 'hidden group-hover/sidebar:block',
+      )}>
+        <div className="rounded-2xl bg-[hsl(var(--brand-blue-soft))] p-4 text-center">
+          <div className="w-10 h-10 mx-auto rounded-full bg-white flex items-center justify-center shadow-sm">
+            <Crown className="w-5 h-5 text-[hsl(var(--brand-blue))]" />
+          </div>
+          <p className="mt-2.5 text-[13px] font-semibold text-zinc-900">
+            {isFreeTrial ? 'Free trial' : 'Upgrade to Pro'}
+          </p>
+          <p className="text-[11px] text-zinc-600 mt-1 leading-snug">
+            {isFreeTrial && daysLeft !== null
+              ? `Te quedan ${daysLeft} día${daysLeft !== 1 ? 's' : ''} de prueba.`
+              : 'Desbloquea todas las funciones premium.'}
+          </p>
+          <Link
+            href="/settings/billing"
+            onClick={onNavigate}
+            className="mt-2.5 inline-flex w-full items-center justify-center rounded-full bg-[hsl(var(--brand-blue))] text-white text-[11.5px] font-medium px-3 py-1.5 hover:opacity-90 transition"
+          >
+            {isFreeTrial ? 'Ver planes' : 'Upgrade Now'}
+          </Link>
+        </div>
+      </div>
+
+      {/* Sign Out — always visible, below the trial card */}
+      <div className="px-3 py-3">
+        <button
+          onClick={handleLogout}
+          title="Sign Out"
+          className={cn(
+            'w-full flex items-center h-10 rounded-lg text-[13.5px] text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition',
+            collapsible
+              ? 'justify-center group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3'
+              : 'gap-3 px-3',
+          )}
+        >
+          <LogOut className="w-5 h-5 shrink-0" />
+          <span className={cn(collapsible && 'hidden group-hover/sidebar:inline')}>
+            Sign Out
+          </span>
+        </button>
       </div>
     </>
   );
@@ -242,7 +248,7 @@ export function Sidebar({
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col glass-panel border-r border-zinc-200 overflow-hidden transition-[width] duration-300">
+      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col overflow-hidden transition-[width] duration-300">
         <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
       </aside>
 

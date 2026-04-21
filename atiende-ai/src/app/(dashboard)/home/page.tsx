@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { Users, Calendar, MessageSquare } from 'lucide-react';
+import { Users, Calendar, MessageSquare, ChevronRight } from 'lucide-react';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { StatCard } from '@/components/dashboard/stat-card';
 import { WeekdayBarChart, ServicesDonut, RevenueLineChart } from '@/components/dashboard/kpi-charts';
 import { MiniCalendar } from '@/components/dashboard/mini-calendar';
 import { AgendaWidget } from '@/components/dashboard/agenda-widget';
 import { IntelligenceAlerts } from '@/components/dashboard/intelligence-alerts';
+import { cn } from '@/lib/utils';
 
 const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -18,6 +19,15 @@ const DONUT_COLORS = [
   'hsl(220 13% 70%)',
   'hsl(220 13% 88%)',
 ];
+
+const STATUS_STYLES: Record<string, string> = {
+  scheduled: 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]',
+  confirmed: 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]',
+  completed: 'bg-emerald-50 text-emerald-700',
+  cancelled: 'bg-rose-50 text-rose-700',
+  no_show: 'bg-amber-50 text-amber-700',
+  ongoing: 'bg-violet-50 text-violet-700',
+};
 
 function pctDelta(curr: number, prev: number): { value: number; positive: boolean } | undefined {
   if (prev === 0) {
@@ -53,6 +63,8 @@ export default async function DashboardPage() {
     weekAppointmentsR,
     upcomingAppointmentsR,
     servicesR,
+    staffR,
+    recentAptsR,
   ] = await Promise.all([
     supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant.id),
     supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant.id)
@@ -67,9 +79,16 @@ export default async function DashboardPage() {
       .gte('created_at', prevWeekStart.toISOString()).lt('created_at', weekStart.toISOString()),
     supabase.from('appointments').select('datetime, service_id, price_mxn, status').eq('tenant_id', tenant.id)
       .gte('datetime', prevWeekStart.toISOString()).lt('datetime', new Date(weekStart.getTime() + 7 * 86_400_000).toISOString()),
-    supabase.from('appointments').select('id, customer_name, customer_phone, datetime, status, services(name)').eq('tenant_id', tenant.id)
+    supabase.from('appointments').select('id, customer_name, customer_phone, datetime, status, services:service_id(name)').eq('tenant_id', tenant.id)
       .gte('datetime', now.toISOString()).order('datetime').limit(5),
     supabase.from('services').select('id, name').eq('tenant_id', tenant.id).limit(6),
+    supabase.from('staff').select('id, name, role, speciality, active').eq('tenant_id', tenant.id).limit(10),
+    supabase.from('appointments')
+      .select('id, customer_name, customer_phone, datetime, end_datetime, status, services:service_id(name), staff:staff_id(name, speciality)')
+      .eq('tenant_id', tenant.id)
+      .gte('datetime', new Date(today.getTime() - 7 * 86_400_000).toISOString())
+      .order('datetime', { ascending: false })
+      .limit(6),
   ]);
 
   const patientsTotal = patientsTotalR.count ?? 0;
@@ -115,7 +134,6 @@ export default async function DashboardPage() {
     .sort((a, b) => b.value - a.value);
   const donutTotal = donutData.reduce((sum, d) => sum + d.value, 0);
 
-  // Revenue — last 6 months
   const revenueStart = sixMonthsAgo.toISOString();
   const { data: revenueRowsRaw } = await supabase
     .from('appointments')
@@ -143,7 +161,8 @@ export default async function DashboardPage() {
     return { month: MONTHS_SHORT[m] + ' ' + String(y).slice(-2), income: Math.round(v.income), expense: Math.round(v.expense) };
   });
 
-  const upcoming = (upcomingAppointmentsR.data || []) as unknown as { id: string; customer_name: string | null; customer_phone: string; datetime: string; status: string | null; services: { name: string } | { name: string }[] | null }[];
+  type UpcomingRow = { id: string; customer_name: string | null; customer_phone: string; datetime: string; status: string | null; services: { name: string } | { name: string }[] | null };
+  const upcoming = (upcomingAppointmentsR.data || []) as unknown as UpcomingRow[];
   const agendaItems = upcoming.map((a) => {
     const d = new Date(a.datetime);
     const end = new Date(d.getTime() + 30 * 60_000);
@@ -160,64 +179,82 @@ export default async function DashboardPage() {
 
   const highlightedDates = upcoming.map((a) => new Date(a.datetime).toISOString().slice(0, 10));
 
+  type RecentAptRow = {
+    id: string; customer_name: string | null; customer_phone: string;
+    datetime: string; end_datetime: string | null; status: string;
+    services: { name: string } | { name: string }[] | null;
+    staff: { name: string; speciality: string | null } | { name: string; speciality: string | null }[] | null;
+  };
+  const recentApts = ((recentAptsR.data || []) as unknown as RecentAptRow[]).map((a) => {
+    const svc = Array.isArray(a.services) ? a.services[0] : a.services;
+    const doc = Array.isArray(a.staff) ? a.staff[0] : a.staff;
+    return { ...a, serviceName: svc?.name ?? '—', staffName: doc?.name ?? '—', staffSpeciality: doc?.speciality ?? '' };
+  });
+
+  const allStaff = (staffR.data || []) as { id: string; name: string; role: string | null; speciality: string | null; active: boolean }[];
+  const activeStaff = allStaff.filter((s) => s.active);
+  const inactiveStaff = allStaff.filter((s) => !s.active);
+
   return (
     <div className="space-y-6">
       <header className="animate-element">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="text-sm text-zinc-500">
           Hola {tenant.name?.split(' ')[0] || 'doctor'}, bienvenido de vuelta.
         </p>
       </header>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        {/* ─── MAIN CONTENT (3 cols) ─── */}
         <div className="xl:col-span-3 space-y-6">
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Stat cards row */}
+          <section className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-element">
             <StatCard
               label="Conversaciones"
               value={conversationsWeek.toLocaleString('es-MX')}
               delta={conversationsDelta}
-              subtitle="vs semana previa"
+              description="vs semana previa"
               icon={MessageSquare}
-              variant="primary"
             />
             <StatCard
               label="Pacientes totales"
               value={patientsTotal.toLocaleString('es-MX')}
               delta={patientsDelta}
-              subtitle="vs mes pasado"
+              description="vs mes pasado"
               icon={Users}
             />
             <StatCard
               label="Citas hoy"
               value={appointmentsToday}
               delta={appointmentsDelta}
-              subtitle="vs ayer"
+              description="vs ayer"
               icon={Calendar}
             />
           </section>
 
-          <section className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {/* Charts row: bar chart + donut */}
+          <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 animate-element animate-delay-100">
             <div className="glass-card p-5 lg:col-span-3">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-semibold text-zinc-900">Citas por día</h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">Esta semana vs la semana previa</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Total citas{' '}
+                    <span className="text-xl font-semibold text-zinc-900 tabular-nums ml-1">
+                      {weekdayCurr.reduce((a: number, b: number) => a + b, 0)}
+                    </span>
+                  </p>
                 </div>
-                <span className="text-[11px] text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
-                  Semana actual
+                <span className="text-[11px] text-zinc-600 bg-zinc-100 rounded-full px-3 py-1.5 font-medium">
+                  Esta semana
                 </span>
               </div>
-              <p className="text-2xl font-semibold tabular-nums text-zinc-900 mb-3">
-                {weekdayCurr.reduce((a, b) => a + b, 0)}
-                <span className="text-xs font-normal text-zinc-500 ml-2">citas totales</span>
-              </p>
               <WeekdayBarChart data={weekdayData} />
             </div>
 
             <div className="glass-card p-5 lg:col-span-2">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-zinc-900">Servicios</h3>
-                <button className="text-zinc-400 text-xs">•••</button>
+                <button className="text-zinc-400 hover:text-zinc-600 text-xs">•••</button>
               </div>
               {donutTotal > 0 ? (
                 <>
@@ -244,42 +281,166 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          <section className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {/* Revenue + Reports/Alerts */}
+          <section className="grid grid-cols-1 lg:grid-cols-5 gap-4 animate-element animate-delay-200">
             <div className="glass-card p-5 lg:col-span-3">
               <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-900">Ingresos</h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">Últimos 6 meses</p>
-                </div>
-                <span className="text-[11px] text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
+                <h3 className="text-sm font-semibold text-zinc-900">Ingresos</h3>
+                <span className="text-[11px] text-zinc-600 bg-zinc-100 rounded-full px-3 py-1.5 font-medium">
                   6 meses
                 </span>
               </div>
               <RevenueLineChart data={revenueData} />
             </div>
 
-            <div className="glass-card p-5 lg:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-zinc-900">Alertas</h3>
-                <button className="text-zinc-400 text-xs">•••</button>
-              </div>
+            <div className="lg:col-span-2">
               <IntelligenceAlerts tenantId={tenant.id} />
+            </div>
+          </section>
+
+          {/* Patient Appointment table */}
+          <section className="glass-card overflow-hidden animate-element animate-delay-300">
+            <div className="flex items-center justify-between px-6 py-4">
+              <h3 className="text-sm font-semibold text-zinc-900">Citas recientes</h3>
+              <Link
+                href="/appointments"
+                className="text-[11px] text-zinc-600 bg-zinc-100 rounded-full px-3 py-1.5 font-medium hover:bg-zinc-200 transition inline-flex items-center gap-1"
+              >
+                Ver todas <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-t border-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+                    <th className="px-6 py-3 text-left font-medium">Nombre</th>
+                    <th className="px-6 py-3 text-left font-medium">Doctor</th>
+                    <th className="px-6 py-3 text-left font-medium">Servicio</th>
+                    <th className="px-6 py-3 text-left font-medium">Fecha y hora</th>
+                    <th className="px-6 py-3 text-right font-medium">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentApts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-xs text-zinc-400">
+                        Sin citas recientes
+                      </td>
+                    </tr>
+                  ) : (
+                    recentApts.map((a) => {
+                      const d = new Date(a.datetime);
+                      const endD = a.end_datetime ? new Date(a.end_datetime) : new Date(d.getTime() + 30 * 60_000);
+                      const name = a.customer_name || a.customer_phone;
+                      const shortId = `#${a.id.slice(0, 8).toUpperCase()}`;
+                      const initials = name.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+                      return (
+                        <tr key={a.id} className="border-t border-zinc-100 hover:bg-zinc-50/60 transition">
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-[11px] font-semibold text-zinc-600 shrink-0">
+                                {initials}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-zinc-900 truncate">{name}</p>
+                                <p className="text-[11px] text-zinc-400 tabular-nums">{shortId}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <p className="text-sm text-zinc-900">{a.staffName}</p>
+                            <p className="text-[11px] text-zinc-400">{a.staffSpeciality}</p>
+                          </td>
+                          <td className="px-6 py-3.5 text-zinc-700">{a.serviceName}</td>
+                          <td className="px-6 py-3.5 tabular-nums whitespace-nowrap">
+                            <p className="text-sm text-zinc-900">
+                              {d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </p>
+                            <p className="text-[11px] text-zinc-400">
+                              {d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })} - {endD.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </td>
+                          <td className="px-6 py-3.5 text-right">
+                            <span className={cn(
+                              'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize',
+                              STATUS_STYLES[a.status] ?? 'bg-zinc-100 text-zinc-600',
+                            )}>
+                              {a.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         </div>
 
+        {/* ─── RIGHT SIDEBAR (1 col) ─── */}
         <aside className="space-y-4">
+          {/* Mini Calendar */}
           <MiniCalendar highlightedDates={highlightedDates} />
+
+          {/* Agenda */}
           <AgendaWidget items={agendaItems} />
+
+          {/* Doctors' Schedule / Staff */}
+          <div className="glass-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-zinc-900">Equipo</h3>
+              <button className="text-zinc-400 hover:text-zinc-600 text-xs">•••</button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 text-center mb-4">
+              <div>
+                <p className="text-xl font-semibold tabular-nums text-zinc-900">{allStaff.length}</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">Total</p>
+              </div>
+              <div>
+                <p className="text-xl font-semibold tabular-nums text-zinc-900">{activeStaff.length}</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">Activos</p>
+              </div>
+              <div>
+                <p className="text-xl font-semibold tabular-nums text-zinc-900">{inactiveStaff.length}</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider">Inactivos</p>
+              </div>
+            </div>
+
+            <ul className="space-y-2.5">
+              {allStaff.slice(0, 5).map((s) => (
+                <li key={s.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-[11px] font-semibold text-zinc-600 shrink-0">
+                      {s.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-zinc-900 truncate">{s.name}</p>
+                      <p className="text-[10px] text-zinc-400 truncate">{s.speciality || s.role || '—'}</p>
+                    </div>
+                  </div>
+                  <span className={cn(
+                    'text-[10px] font-medium rounded-full px-2 py-0.5 shrink-0',
+                    s.active ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600',
+                  )}>
+                    {s.active ? 'Activo' : 'Inactivo'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Agent status */}
           <div className="glass-card p-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-zinc-900">Agente</h3>
+              <h3 className="text-sm font-semibold text-zinc-900">Agente IA</h3>
               <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Activo
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-2 gap-3 text-center">
               <div>
                 <p className="text-xl font-semibold tabular-nums text-zinc-900">24/7</p>
                 <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">Disponible</p>
@@ -288,13 +449,7 @@ export default async function DashboardPage() {
                 <p className="text-xl font-semibold tabular-nums text-zinc-900">
                   {conversationsWeek}
                 </p>
-                <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">Semana</p>
-              </div>
-              <div>
-                <p className="text-xl font-semibold tabular-nums text-zinc-900">
-                  {appointmentsToday}
-                </p>
-                <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">Hoy</p>
+                <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">Esta semana</p>
               </div>
             </div>
             <Link
