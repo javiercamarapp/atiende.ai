@@ -68,6 +68,19 @@ const mockCtx = {
   },
 };
 
+// AUDIT R20: fechas calculadas dinámicamente para que los tests no se
+// pudran con el paso del tiempo. Buscamos el próximo domingo (día cerrado)
+// y el próximo lunes (día abierto) relativos a la fecha actual.
+function nextWeekday(dow: number): string {
+  const d = new Date();
+  d.setUTCHours(12, 0, 0, 0); // noon UTC para evitar edge cases de TZ
+  const diff = (dow - d.getUTCDay() + 7) % 7 || 7;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+const FUTURE_SUNDAY = nextWeekday(0); // día cerrado
+const FUTURE_MONDAY = nextWeekday(1); // día abierto
+
 /** Helper para crear un mock chainable de Supabase query builder. */
 function makeQuery(finalData: unknown, count?: number) {
   const chain: Record<string, unknown> = {
@@ -113,7 +126,7 @@ describe('check_availability', () => {
     // Día sin business_hours configurado (por ejemplo "sab" o "dom")
     const result = await executeTool(
       'check_availability',
-      { date: '2026-04-19', service_type: 'limpieza' }, // domingo
+      { date: FUTURE_SUNDAY, service_type: 'limpieza' }, // domingo
       { ...mockCtx, tenant: { ...mockCtx.tenant, business_hours: mockCtx.tenant.business_hours } } as never,
     );
 
@@ -145,7 +158,7 @@ describe('check_availability', () => {
 
     const result = await executeTool(
       'check_availability',
-      { date: '2026-04-20', service_type: 'limpieza', duration_minutes: 30 }, // lunes
+      { date: FUTURE_MONDAY, service_type: 'limpieza', duration_minutes: 30 }, // lunes
       mockCtx as never,
     );
 
@@ -184,7 +197,7 @@ describe('book_appointment', () => {
     const result = await executeTool(
       'book_appointment',
       {
-        date: '2026-04-20',
+        date: FUTURE_MONDAY,
         time: '10:00',
         service_type: 'limpieza',
         patient_name: 'María García',
@@ -224,7 +237,7 @@ describe('book_appointment', () => {
     const result = await executeTool(
       'book_appointment',
       {
-        date: '2026-04-20',
+        date: FUTURE_MONDAY,
         time: '10:00',
         service_type: 'limpieza',
         patient_name: 'María García',

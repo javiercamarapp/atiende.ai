@@ -165,16 +165,18 @@ export function listRegisteredTools(): string[] {
 }
 
 /**
- * AUDIT R14 BUG-010: devuelve si una tool está marcada como mutación.
+ * AUDIT R14 BUG-010 + R20: devuelve si una tool está marcada como mutación.
  * Usado por el orchestrator para decidir si una tool ejecutada por el primario
  * debe evitarse en el fallback (anti ghost-mutation).
  *
- * Retorna false para tools no registradas (conservador; el fallback puede
- * re-intentarlas sin consecuencias externas).
+ * Default-safe: si la tool NO está registrada (p.ej. drift de deploy, registry
+ * vacío en worker nuevo), asumimos que ES mutación. Repetir una lectura es
+ * barato; repetir un "book_appointment" silenciosamente es doble-booking.
  */
 export function isMutationTool(name: string): boolean {
   const def = toolRegistry.get(name);
-  return def?.isMutation === true;
+  if (!def) return true; // unknown → tratar como mutación
+  return def.isMutation !== false;
 }
 
 /**

@@ -121,7 +121,9 @@ export async function releaseMonthlyReservation(tenantId: string): Promise<void>
   if (!redis) return;
   try {
     await redis.decr(monthKey(tenantId));
-  } catch { /* no-op */ }
+  } catch (err) {
+    console.warn('[rate-limit-monthly] release decr failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 /**
@@ -155,7 +157,9 @@ export async function getMonthlyMessageCount(tenantId: string): Promise<number> 
   if (redis && value > 0) {
     try {
       await redis.set(monthKey(tenantId), value, { ex: secondsUntilMonthEnd() });
-    } catch { /* no-op */ }
+    } catch (err) {
+      console.warn('[rate-limit-monthly] warm cache failed:', err instanceof Error ? err.message : err);
+    }
   }
 
   return value;

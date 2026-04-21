@@ -423,7 +423,9 @@ async function runOrchestratorInner(
           },
           'fatal',
         );
-      } catch { /* no-op */ }
+      } catch (err) {
+        console.error('[orchestrator] captureError failed on both-failed path:', err instanceof Error ? err.message : err);
+      }
       throw new OrchestratorBothFailedError(
         `Primary (${errName}: ${errMsg}); Fallback (${fbName}: ${fbMsg})`,
         primaryErr,

@@ -1041,7 +1041,9 @@ async function handleThanks(ctx: ActionContext): Promise<ActionResult> {
   try {
     const { executeEventAgents } = await import('@/lib/marketplace/engine');
     await executeEventAgents('review.positive', { tenant_id: ctx.tenantId, customer_phone: ctx.customerPhone, customer_name: ctx.customerName });
-  } catch { /* best effort */ }
+  } catch (err) {
+    console.warn('[actions] thanks event agents failed:', err instanceof Error ? err.message : err);
+  }
 
   return { actionTaken: true, actionType: 'thanks.captured' };
   // No follow-up — the LLM already said "de nada"
@@ -1057,5 +1059,7 @@ async function updateContact(ctx: ActionContext, newTags: string[]) {
       last_contact_at: new Date().toISOString(),
       tags: mergedTags,
     }).eq('id', ctx.contactId);
-  } catch { /* best effort */ }
+  } catch (err) {
+    console.warn('[actions] updateContact failed:', err instanceof Error ? err.message : err);
+  }
 }

@@ -115,7 +115,9 @@ export async function GET(req: NextRequest) {
     if (redis) {
       try {
         prev = await redis.get<[number, number]>(`model_prices:${m.id}`);
-      } catch { /* best effort */ }
+      } catch (err) {
+        console.warn('[refresh-model-prices] redis get failed:', m.id, err instanceof Error ? err.message : err);
+      }
     }
     if (prev && Array.isArray(prev) && prev.length === 2) {
       const avgPrev = (prev[0] + prev[1]) / 2;
@@ -137,7 +139,9 @@ export async function GET(req: NextRequest) {
     if (redis) {
       try {
         await redis.set(`model_prices:${m.id}`, rates, { ex: 30 * 24 * 3600 });
-      } catch { /* best effort */ }
+      } catch (err) {
+        console.warn('[refresh-model-prices] redis set failed:', m.id, err instanceof Error ? err.message : err);
+      }
     }
     updated++;
   }

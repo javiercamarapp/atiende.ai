@@ -72,7 +72,9 @@ export async function checkTenantRateLimit(
       try {
         await redis.sadd(uniqKey, senderPhone);
         await redis.expire(uniqKey, HOUR_SECONDS);
-      } catch { /* best effort */ }
+      } catch (err) {
+        console.warn('[rate-limit] uniqphones tracking failed:', err instanceof Error ? err.message : err);
+      }
     }
     return { allowed: true };
   }

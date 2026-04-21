@@ -602,7 +602,9 @@ async function handleSingleMessage(
           { route: 'processor.tenant_resolve', phone: phoneNumberId },
           'fatal',
         );
-      } catch { /* no-op */ }
+      } catch (err) {
+        console.error('[processor] captureError failed on duplicate tenant:', err instanceof Error ? err.message : err);
+      }
     }
     return;
   }
@@ -622,7 +624,9 @@ async function handleSingleMessage(
         senderPhone,
         'Gracias por contactarnos. En este momento nuestro servicio no está disponible. Por favor intente más tarde o contáctenos directamente.',
       );
-    } catch { /* best effort */ }
+    } catch (err) {
+      console.warn('[processor] inactive-tenant notice send failed:', err instanceof Error ? err.message : err);
+    }
     return;
   }
 
@@ -727,7 +731,9 @@ async function handleSingleMessageInner(
     try {
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
       await releaseMonthlyReservation(tenant.id as string);
-    } catch { /* no-op */ }
+    } catch (err) {
+      console.warn('[processor] release monthly (empty content) failed:', err instanceof Error ? err.message : err);
+    }
     return;
   }
 
@@ -771,7 +777,9 @@ async function handleSingleMessageInner(
       phoneNumberId,
       senderPhone,
       'Tuvimos un problema técnico. Por favor intente de nuevo en un momento.',
-    ).catch(() => { /* best effort */ });
+    ).catch((err) => {
+      console.warn('[processor] send technical-error notice failed:', err instanceof Error ? err.message : err);
+    });
     return;
   }
 
@@ -783,7 +791,9 @@ async function handleSingleMessageInner(
     try {
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
       await releaseMonthlyReservation(tenant.id as string);
-    } catch { /* no-op */ }
+    } catch (err) {
+      console.warn('[processor] release monthly (dup webhook) failed:', err instanceof Error ? err.message : err);
+    }
     return;
   }
 
@@ -792,7 +802,9 @@ async function handleSingleMessageInner(
     try {
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
       await releaseMonthlyReservation(tenant.id as string);
-    } catch { /* no-op */ }
+    } catch (err) {
+      console.warn('[processor] release monthly (handoff) failed:', err instanceof Error ? err.message : err);
+    }
     return;
   }
 
@@ -940,7 +952,9 @@ async function handleSingleMessageInner(
       tags: { model: response.model },
     });
     if (response.cost) cost(response.cost, tenant.id as string, response.model);
-  } catch { /* no-op */ }
+  } catch (err) {
+    console.warn('[processor] emit metrics failed:', err instanceof Error ? err.message : err);
+  }
 
   // 16. Update conversation timestamp
   await supabaseAdmin

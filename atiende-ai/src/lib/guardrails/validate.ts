@@ -168,27 +168,57 @@ export function validateResponse(
 // paciente (no en el output del LLM).
 // ═══════════════════════════════════════════════════════════════════════════
 
+// AUDIT R20: normalizamos acentos y lowercase antes del match. La lista previa
+// fallaba en "Creo Que Tengo" (capitalización) y en usuarios que omiten
+// acentos ("sintomas", "sintomas de"). También ampliamos cobertura a expresiones
+// comunes en México que la lista anterior no capturaba.
+function normalizeForMedicalCheck(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, ''); // strip combining accents
+}
+
 const MEDICAL_QUERY_PATTERNS = [
-  /creo que tengo/i,
-  /podr[íi]a ser/i,
-  /s[íi]ntomas? de/i,
-  /parece que es/i,
-  /qu[ée] medicina/i,
-  /qu[ée] pastilla/i,
-  /qu[ée] dosis/i,
-  /me duele (el|la|los|las|un|una)/i,
-  /tengo (fiebre|dolor|infecci[óo]n|inflamaci[óo]n)/i,
-  /es (grave|serio|peligroso)/i,
+  /creo que tengo/,
+  /podria ser/,
+  /sintomas? de/,
+  /parece que (es|tengo|sea)/,
+  /que (medicina|medicamento|pastilla|antibi[oó]tico|dosis|tratamiento)/,
+  /me duele (el |la |los |las |un |una |mi |mucho|bastante)/,
+  /me arde/,
+  /me pica/,
+  /siento (un|una|mucho|mucha|que)/,
+  /tengo (fiebre|dolor|infeccion|inflamacion|mareo|nauseas|vomito|diarrea|tos|gripa|gripe)/,
+  /es (grave|serio|peligroso|malo|normal)/,
+  /se me (hincho|inflamo|durmio|entumio)/,
+  /puedo tomar/,
+  /deberia (tomar|usar|aplicar)/,
 ];
 
 const MEDICAL_DISCLAIMER =
   '\n\nPara cualquier consulta médica, le recomendamos agendar una cita ' +
   'con el doctor para una evaluación profesional.';
 
+// AUDIT R20: la idempotencia previa dependía de que el agente usara EXACTAMENTE
+// la frase "evaluación profesional". Si la respuesta del LLM mencionaba
+// "valoración profesional" o "cita con el médico", duplicábamos disclaimer.
+// Ahora detectamos múltiples variantes normalizadas.
+const EXISTING_DISCLAIMER_MARKERS = [
+  'evaluacion profesional',
+  'valoracion profesional',
+  'consulta profesional',
+  'evaluacion medica',
+  'valoracion medica',
+  'cita con el doctor',
+  'cita con el medico',
+  'agendar una cita',
+];
+
 /**
  * Si el mensaje del paciente contiene patrones de auto-diagnóstico o consulta
  * médica directa, agrega un disclaimer al final de la respuesta del agente.
- * Idempotente: si el agente ya incluyó "evaluación profesional", no duplica.
+ * Idempotente: detecta múltiples variantes del disclaimer en la respuesta.
  */
 export function appendMedicalDisclaimer(
   userMessage: string,
@@ -196,11 +226,13 @@ export function appendMedicalDisclaimer(
 ): string {
   if (!userMessage || !agentResponse) return agentResponse;
 
-  const hasMedicalQuery = MEDICAL_QUERY_PATTERNS.some((p) => p.test(userMessage));
+  const normUser = normalizeForMedicalCheck(userMessage);
+  const hasMedicalQuery = MEDICAL_QUERY_PATTERNS.some((p) => p.test(normUser));
   if (!hasMedicalQuery) return agentResponse;
 
-  if (agentResponse.includes('evaluación profesional')) {
-    return agentResponse; // ya tiene el disclaimer
+  const normResp = normalizeForMedicalCheck(agentResponse);
+  if (EXISTING_DISCLAIMER_MARKERS.some((m) => normResp.includes(m))) {
+    return agentResponse;
   }
 
   return agentResponse + MEDICAL_DISCLAIMER;
