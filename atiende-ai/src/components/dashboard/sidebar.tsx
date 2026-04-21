@@ -23,21 +23,18 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard', appointments: 'Citas', calendar: 'Calendario',
   conversations: 'Conversaciones', contacts: 'Pacientes', agents: 'Agents',
-  knowledge: 'Conocimiento', 'chat-data': 'Pregunta a tus datos',
-  marketing: 'Marketing', analytics: 'Analytics', settings: 'Ajustes',
+  knowledge: 'Conocimiento', 'chat-data': 'Personal AI',
+  marketing: 'Marketing AI Content', analytics: 'Analytics', settings: 'Ajustes',
 };
 
-const ORDER = [
-  'dashboard',
-  'conversations',
-  'analytics',
-  'appointments',
-  'calendar',
-  'contacts',
-  'agents',
-  'knowledge',
-  'chat-data',
-  'marketing',
+/** Sidebar order split into 3 visual sections:
+ *  1) Operational — Dashboard, Conversaciones, Analytics, Citas, Calendario, Pacientes
+ *  2) Conocimiento — biblioteca
+ *  3) AI tools    — Agents, Personal AI, Marketing AI Content */
+const SECTIONS: string[][] = [
+  ['dashboard', 'conversations', 'analytics', 'appointments', 'calendar', 'contacts'],
+  ['knowledge'],
+  ['agents', 'chat-data', 'marketing'],
 ];
 
 type TenantShape = {
@@ -102,7 +99,9 @@ function SidebarContent({
   collapsible?: boolean;
 }) {
   const router = useRouter();
-  const navModules = ORDER.filter(m => modules.includes(m));
+  const navSections = SECTIONS
+    .map(sec => sec.filter(m => modules.includes(m)))
+    .filter(sec => sec.length > 0);
 
   function getHref(mod: string) {
     if (mod === 'dashboard') return '/home';
@@ -158,17 +157,25 @@ function SidebarContent({
         </Link>
       </div>
 
-      {/* Nav — always at top, icons never shift vertically on hover */}
+      {/* Nav — grouped into 3 visual sections with subtle dividers */}
       <nav className="flex-1 px-3 pt-1 pb-2 overflow-y-auto overflow-x-hidden">
-        <div className="space-y-0.5">
-          {navModules.map(mod => (
-            <NavLink
-              key={mod} href={getHref(mod)} label={LABELS[mod] || mod}
-              icon={ICONS[mod] || LayoutDashboard} active={isActive(mod)}
-              collapsible={collapsible} onNavigate={onNavigate}
-            />
-          ))}
-        </div>
+        {navSections.map((section, idx) => (
+          <div
+            key={idx}
+            className={cn(
+              'space-y-0.5',
+              idx > 0 && 'mt-3 pt-3 border-t border-zinc-100',
+            )}
+          >
+            {section.map(mod => (
+              <NavLink
+                key={mod} href={getHref(mod)} label={LABELS[mod] || mod}
+                icon={ICONS[mod] || LayoutDashboard} active={isActive(mod)}
+                collapsible={collapsible} onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        ))}
       </nav>
 
       {/* ROI pill — right above the plan card (only when expanded) */}
