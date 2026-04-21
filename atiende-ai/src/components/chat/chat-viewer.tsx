@@ -92,9 +92,9 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)]">
+    <div className="flex h-[calc(100vh-9rem)] min-h-0">
       {/* ─── CHAT AREA ─── */}
-      <div className="flex flex-col flex-1 min-w-0 glass-card overflow-hidden">
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 glass-card overflow-hidden">
         {/* Chat header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-100">
           <div className="flex items-center gap-3">
@@ -139,7 +139,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-[hsl(var(--background))]">
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3 bg-[hsl(var(--background))]">
           {messages.map((m, idx) => (
             <div key={m.id}>
               {shouldShowDate(messages, idx) && (
@@ -221,7 +221,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
 
       {/* ─── ACCOUNT INFO SIDEBAR ─── */}
       {showInfo && (
-        <div className="hidden lg:flex w-80 shrink-0 flex-col glass-card ml-4 overflow-y-auto">
+        <div className="hidden lg:flex w-80 shrink-0 flex-col glass-card ml-4 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-100">
             <h3 className="text-sm font-semibold text-zinc-900">Info de cuenta</h3>
             <button onClick={() => setShowInfo(false)} className="text-zinc-400 hover:text-zinc-600">

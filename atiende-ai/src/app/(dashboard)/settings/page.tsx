@@ -53,7 +53,7 @@ export default async function SettingsHubPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="animate-element">
         <p className="text-sm text-zinc-500">
           Personaliza tu cuenta, agente y preferencias del consultorio.

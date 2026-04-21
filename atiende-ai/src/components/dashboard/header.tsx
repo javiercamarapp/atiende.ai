@@ -13,8 +13,8 @@ const PAGE_NAMES: Record<string, string> = {
   '/contacts': 'Pacientes',
   '/agents': 'Agents',
   '/knowledge': 'Conocimiento',
-  '/chat-data': 'Pregunta a tus datos',
-  '/marketing': 'Marketing',
+  '/chat-data': 'Personal AI',
+  '/marketing': 'Marketing AI Content',
   '/analytics': 'Analytics',
   '/settings': 'Ajustes',
   '/playground': 'Playground',
@@ -53,10 +53,10 @@ export function DashHeader({ tenant, user }: { tenant: TenantHeader; user?: User
   const role = tenant.plan === 'free_trial' ? 'Free trial' : (tenant.plan || 'Admin');
 
   return (
-    <header className="h-20 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-white rounded-tl-3xl">
+    <header className="h-16 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-white">
       {/* Left: Page title */}
       <div className="min-w-0">
-        <h1 className="text-[26px] md:text-[28px] font-semibold tracking-tight text-zinc-900 truncate">
+        <h1 className="text-[22px] md:text-[24px] font-semibold tracking-tight text-zinc-900 truncate">
           {title}
         </h1>
       </div>

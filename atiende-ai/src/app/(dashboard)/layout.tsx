@@ -21,9 +21,9 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
   };
 
   return (
-    <div className="dashboard-shell flex h-screen">
+    <div className="dashboard-shell flex h-screen bg-white">
       <Sidebar tenant={tenant} modules={modules} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-white">
         <DashHeader tenant={tenant} user={userHeader} />
         {tenant.plan === 'free_trial' && tenant.trial_ends_at && (() => {
           // eslint-disable-next-line react-hooks/purity
@@ -31,7 +31,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           const daysLeft = Math.ceil((new Date(tenant.trial_ends_at).getTime() - now) / 86400000);
           if (daysLeft <= 7 && daysLeft > 0) {
             return (
-              <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between">
+              <div className="bg-amber-50 px-6 py-2 flex items-center justify-between">
                 <p className="text-sm text-amber-800">
                   Tu prueba gratis termina en <strong>{daysLeft} dia{daysLeft !== 1 ? 's' : ''}</strong>.
                 </p>
@@ -43,7 +43,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           }
           if (daysLeft <= 0) {
             return (
-              <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center justify-between">
+              <div className="bg-red-50 px-6 py-2 flex items-center justify-between">
                 <p className="text-sm text-red-700">
                   Tu prueba gratis ha terminado. Elige un plan para seguir usando el servicio.
                 </p>
@@ -55,7 +55,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           }
           return null;
         })()}
-        <main className="flex-1 overflow-y-auto px-6 md:px-8 pb-8 pt-2 bg-[hsl(var(--background))]">
+        <main className="flex-1 overflow-y-auto mr-6 md:mr-8 px-6 md:px-8 pb-4 pt-4 bg-[hsl(var(--background))] rounded-3xl">
           <div className="animate-element">
             {children}
           </div>
