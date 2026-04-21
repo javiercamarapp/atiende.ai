@@ -17,6 +17,7 @@ import { getToolSchemas } from '@/lib/llm/tool-executor';
 import { buildTenantContext } from '@/lib/agents';
 import { getNoShowPrompt } from '@/lib/agents/no-show/prompt';
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
+import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
 // Side-effect import — asegura que las tools de no-show estén registradas
 // cuando corre el handler del cron (los imports de agents/* lo hacen también,
@@ -54,14 +55,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const start = Date.now();
 
   // ── 1. Auth — Vercel cron manda Bearer con CRON_SECRET ───────────────────
-  const auth = req.headers.get('authorization');
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
-  if (!process.env.CRON_SECRET || auth !== expected) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 },
-    );
-  }
+  const authFail = requireCronAuth(req);
+  if (authFail) return authFail;
 
   // ── 2. Tenants elegibles ─────────────────────────────────────────────────
   //    - status = 'active'

@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { ingestKnowledgeBatchWithMetadata } from '@/lib/rag/search';
 import { ZONES, zoneForQuestionKey } from '@/lib/knowledge/zone-map';
 import { getQuestions } from '@/lib/onboarding/questions';
+import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
 // Backfill existing tenants with metadata-tagged knowledge chunks.
 // Wipes legacy untagged `source='onboarding'` chunks and re-ingests from
@@ -31,10 +32,8 @@ function answerToText(answer: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFail = requireCronAuth(req);
+  if (authFail) return authFail;
 
   const url = new URL(req.url);
   const onlyTenant = url.searchParams.get('tenantId');
