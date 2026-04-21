@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { Search, Plus } from 'lucide-react';
 import { createServerSupabase } from '@/lib/supabase/server';
-import { cn } from '@/lib/utils';
 
 type Msg = { content: string; direction: string; sender_type: string; created_at: string };
 
@@ -56,10 +55,6 @@ export default async function ConversationsPage({
 
   return (
     <div className="space-y-6">
-      <header className="animate-element">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Conversaciones</h1>
-      </header>
-
       <div className="glass-card overflow-hidden animate-element animate-delay-100">
         {/* Search + add header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-100">

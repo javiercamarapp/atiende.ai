@@ -1,124 +1,104 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { LogOut, ChevronRight } from 'lucide-react';
-import { NotificationCenter } from '@/components/dashboard/notification-center';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { createClient } from '@/lib/supabase/client';
-import { useRouter, usePathname } from 'next/navigation';
-import { getPlanLimit } from '@/lib/analytics/roi';
+import { useState } from 'react';
+import { Search, Settings } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { NotificationCenter } from '@/components/dashboard/notification-center';
 
 const PAGE_NAMES: Record<string, string> = {
-  '/': 'Dashboard',
   '/home': 'Dashboard',
   '/conversations': 'Conversaciones',
   '/appointments': 'Citas',
-  '/orders': 'Pedidos',
-  '/leads': 'Leads',
-  '/calls': 'Llamadas',
-  '/agents': 'Agents Marketplace',
-  '/knowledge': 'Base Conocimiento',
+  '/calendar': 'Calendario',
+  '/contacts': 'Pacientes',
+  '/agents': 'Agents',
+  '/knowledge': 'Conocimiento',
+  '/chat-data': 'Pregunta a tus datos',
+  '/marketing': 'Marketing',
   '/analytics': 'Analytics',
-  '/settings': 'Configuracion',
+  '/settings': 'Ajustes',
   '/playground': 'Playground',
   '/webhooks': 'Webhooks',
 };
 
-interface TenantHeader { id: string; plan: string; status: string; }
-export function DashHeader({ tenant }: { tenant: TenantHeader }) {
-  const router = useRouter();
+interface TenantHeader {
+  id: string;
+  name?: string | null;
+  plan: string;
+  status: string;
+}
+
+interface UserHeader {
+  email?: string | null;
+  name?: string | null;
+}
+
+function initialsFrom(source: string): string {
+  const parts = source.trim().split(/[\s@._-]+/).filter(Boolean);
+  if (parts.length === 0) return 'U';
+  const a = parts[0][0] || '';
+  const b = parts[1]?.[0] || '';
+  return (a + b).toUpperCase() || 'U';
+}
+
+export function DashHeader({ tenant, user }: { tenant: TenantHeader; user?: UserHeader }) {
   const pathname = usePathname();
-  const [usage, setUsage] = useState<number | null>(null);
-  const limit = getPlanLimit(tenant.plan);
+  const [q, setQ] = useState('');
 
-  const currentPage = PAGE_NAMES[pathname] || PAGE_NAMES['/' + pathname.split('/')[1]] || pathname.split('/').pop() || 'Dashboard';
-  const isHome = pathname === '/' || pathname === '/home';
+  const seg = '/' + (pathname.split('/')[1] || 'home');
+  const title = PAGE_NAMES[seg] || 'Dashboard';
 
-  useEffect(() => {
-    async function fetchUsage() {
-      try {
-        const res = await fetch(`/api/usage?tenantId=${tenant.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setUsage(data.count);
-        }
-      } catch {
-        // Usage fetch is best-effort
-      }
-    }
-    fetchUsage();
-  }, [tenant.id]);
-
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
-
-  const percent = usage !== null ? Math.min((usage / limit) * 100, 100) : 0;
-  const getColor = () => {
-    if (percent > 90) return 'text-red-600';
-    if (percent >= 70) return 'text-amber-600';
-    return 'text-emerald-600';
-  };
-  const getProgressClass = () => {
-    if (percent > 90) return '[&>div]:bg-red-500';
-    if (percent >= 70) return '[&>div]:bg-amber-500';
-    return '[&>div]:bg-emerald-500';
-  };
+  const displayName = user?.name || tenant.name || user?.email?.split('@')[0] || 'Usuario';
+  const initials = initialsFrom(displayName);
+  const role = tenant.plan === 'free_trial' ? 'Free trial' : (tenant.plan || 'Admin');
 
   return (
-    <header className="h-14 flex items-center justify-between px-6 pl-14 md:pl-6">
-      <div>
-        <div className="text-sm flex items-center">
-          <Link
-            href="/home"
-            className="text-zinc-500 hover:text-zinc-900 transition-colors"
-          >
-            Dashboard
-          </Link>
-          {!isHome && (
-            <>
-              <ChevronRight className="w-3 h-3 inline mx-1.5 text-zinc-400" />
-              <span className="text-zinc-900 font-medium">{currentPage}</span>
-            </>
-          )}
-        </div>
-        <p className="text-[11px] text-zinc-500 mt-0.5">
-          {tenant.status === 'active' ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Agente activo
-            </span>
-          ) : (
-            tenant.status
-          )}
-        </p>
+    <header className="h-20 flex items-center justify-between gap-4 px-6 md:px-8 pl-14 md:pl-8 bg-[hsl(var(--background))] border-b border-transparent">
+      {/* Left: Page title */}
+      <div className="min-w-0">
+        <h1 className="text-[26px] md:text-[28px] font-semibold tracking-tight text-zinc-900 truncate">
+          {title}
+        </h1>
       </div>
-      <div className="flex items-center gap-4">
-        {usage !== null && (
-          <div className="hidden sm:flex items-center gap-2">
-            <Progress
-              value={percent}
-              className={`w-24 h-1.5 bg-zinc-100 ${getProgressClass()}`}
-            />
-            <span className={`text-xs font-medium tabular-nums ${getColor()}`}>
-              {usage}/{limit === 999999 ? '∞' : limit}
-            </span>
-          </div>
-        )}
-        <div className="flex items-center gap-1">
-          <NotificationCenter tenantId={tenant.id} />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleLogout}
-            className="text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-          >
-            <LogOut className="w-4 h-4" />
-          </Button>
+
+      {/* Right: Search + user + actions */}
+      <div className="flex items-center gap-3 md:gap-4">
+        {/* Search */}
+        <div className="relative hidden md:block">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search anything"
+            className="w-64 lg:w-80 pl-10 pr-4 h-10 text-sm rounded-full bg-white border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] shadow-sm"
+          />
         </div>
+
+        {/* User profile */}
+        <div className="hidden sm:flex items-center gap-2.5 pr-1">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] text-white flex items-center justify-center text-xs font-semibold shadow-sm">
+            {initials}
+          </div>
+          <div className="leading-tight">
+            <p className="text-sm font-semibold text-zinc-900 truncate max-w-[140px]">{displayName}</p>
+            <p className="text-[11px] text-zinc-500 capitalize truncate">{role}</p>
+          </div>
+        </div>
+
+        {/* Bell */}
+        <div className="relative">
+          <NotificationCenter tenantId={tenant.id} />
+        </div>
+
+        {/* Settings gear */}
+        <Link
+          href="/settings"
+          aria-label="Ajustes"
+          className="inline-flex w-10 h-10 items-center justify-center rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] hover:opacity-80 transition shadow-sm"
+        >
+          <Settings className="w-4 h-4" />
+        </Link>
       </div>
     </header>
   );

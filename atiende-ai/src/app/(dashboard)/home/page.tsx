@@ -198,8 +198,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <header className="animate-element">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
-        <p className="mt-0.5 text-sm text-zinc-500">
+        <p className="text-sm text-zinc-500">
           Hola {tenant.name?.split(' ')[0] || 'doctor'}, bienvenido de vuelta.
         </p>
       </header>

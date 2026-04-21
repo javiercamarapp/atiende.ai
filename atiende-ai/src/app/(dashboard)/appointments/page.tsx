@@ -121,8 +121,7 @@ export default async function AppointmentsPage() {
   return (
     <div className="space-y-6">
       <header className="animate-element">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Citas</h1>
-        <p className="mt-0.5 text-sm text-zinc-500">
+        <p className="text-sm text-zinc-500">
           Control de citas, tendencias y tipos de servicio.
         </p>
       </header>
