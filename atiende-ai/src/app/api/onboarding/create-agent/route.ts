@@ -191,6 +191,25 @@ REGLAS PARA EL PROMPT:
       welcome_message: `Hola! Bienvenido(a) a ${businessInfo.name}. Soy su asistente virtual, disponible 24/7. En que le puedo ayudar?`,
     }).eq('id', tenant.id);
 
+    // 5b. PROVISION RETELL VOICE AGENT (best-effort)
+    if (tenant.has_voice_agent) {
+      try {
+        const { createRetellAgent } = await import('@/lib/voice/retell');
+        const voicePrompt = getVoiceTemplate(businessType)
+          .replace('{{NOMBRE_NEGOCIO}}', businessInfo.name);
+        const agent = await createRetellAgent({
+          name: businessInfo.name,
+          voice_system_prompt: voicePrompt,
+        });
+        await supabaseAdmin.from('tenants').update({
+          retell_agent_id: agent.agent_id,
+          voice_system_prompt: voicePrompt,
+        }).eq('id', tenant.id);
+      } catch (voiceErr) {
+        console.error('[create-agent] Retell provisioning failed:', voiceErr);
+      }
+    }
+
     // 6. GENERAR SYSTEM PROMPTS POR AGENTE (fire-and-forget)
     // Corre async para no bloquear el response al cliente. Los prompts
     // personalizados quedarán en tenant_prompts en ~30-60s. Mientras tanto
