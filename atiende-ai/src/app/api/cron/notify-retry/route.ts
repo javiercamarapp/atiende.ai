@@ -143,7 +143,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // (`failed > 0 ? 1 : 0`) subcontaba cuando N tenants fallaban simultáneos.
   const failedTenantIds = new Set<string>();
 
-  await Promise.allSettled(
+  // AUDIT R32: Promise.allSettled traga rejections silenciosamente. Log cada
+  // rechazo para que los errores inesperados (p.ej. network transient) sean
+  // visibles en Vercel logs sin romper el cron.
+  const settled = await Promise.allSettled(
     Array.from(byTenant.entries()).map(async ([tenantId, appts]) => {
       const tenant = tenantMap.get(tenantId);
       const timezone = tenant?.timezone || 'America/Merida';
@@ -196,6 +199,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     }),
   );
+
+  for (const r of settled) {
+    if (r.status === 'rejected') {
+      console.warn('[cron/notify-retry] tenant batch rejected:', r.reason);
+    }
+  }
 
   await logCronRun({
     jobName: 'notify-retry',
