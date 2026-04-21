@@ -1,66 +1,60 @@
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, ArrowDownRight, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, MoreHorizontal, type LucideIcon } from 'lucide-react';
 
 export function StatCard({
   label,
   value,
   delta,
-  subtitle,
+  description,
   icon: Icon,
-  variant = 'default',
 }: {
   label: string;
   value: string | number;
   delta?: { value: number; positive: boolean };
-  subtitle?: string;
+  description?: string;
   icon?: LucideIcon;
-  variant?: 'default' | 'primary';
 }) {
   return (
-    <div className="glass-card p-5 flex flex-col gap-4">
-      <div className="flex items-start justify-between">
-        <span className="text-sm text-zinc-600 font-medium">{label}</span>
-        {Icon && (
-          <div
+    <div className="glass-card p-5 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          {Icon && (
+            <div className="w-8 h-8 rounded-lg bg-[hsl(var(--brand-blue-soft))] flex items-center justify-center shrink-0">
+              <Icon className="w-4 h-4 text-[hsl(var(--brand-blue))]" />
+            </div>
+          )}
+          <span className="text-sm text-zinc-600 font-medium">{label}</span>
+        </div>
+        <button className="text-zinc-400 hover:text-zinc-600 transition">
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex items-end justify-between gap-3">
+        <p className="text-3xl font-semibold tabular-nums text-zinc-900 tracking-tight leading-none">
+          {value}
+        </p>
+        {delta && (
+          <span
             className={cn(
-              'w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
-              variant === 'primary'
-                ? 'bg-[hsl(var(--brand-blue))] text-white'
-                : 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]',
+              'inline-flex items-center gap-0.5 text-[11px] font-medium tabular-nums rounded-md px-1.5 py-0.5',
+              delta.positive
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-red-50 text-red-600',
             )}
           >
-            <Icon className="w-4 h-4" />
-          </div>
+            {delta.positive ? (
+              <ArrowUpRight className="w-3 h-3" />
+            ) : (
+              <ArrowDownRight className="w-3 h-3" />
+            )}
+            {delta.value}%
+          </span>
         )}
       </div>
 
-      <p className="text-4xl font-semibold tabular-nums text-zinc-900 tracking-tight">
-        {value}
-      </p>
-
-      {(delta || subtitle) && (
-        <div
-          className={cn(
-            'flex items-center gap-2 text-xs rounded-lg px-3 py-2 -mx-1 -mb-1',
-            delta
-              ? delta.positive
-                ? 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]'
-                : 'bg-red-50 text-red-700'
-              : 'bg-zinc-50 text-zinc-600',
-          )}
-        >
-          {delta && (
-            <span className="inline-flex items-center gap-0.5 font-medium">
-              {delta.positive ? (
-                <ArrowUpRight className="w-3 h-3" />
-              ) : (
-                <ArrowDownRight className="w-3 h-3" />
-              )}
-              {Math.abs(delta.value)}%
-            </span>
-          )}
-          {subtitle && <span className="truncate">{subtitle}</span>}
-        </div>
+      {description && (
+        <p className="text-xs text-zinc-500 leading-snug">{description}</p>
       )}
     </div>
   );

@@ -13,6 +13,12 @@ interface CalendarEvent {
   serviceName: string;
 }
 
+interface ServiceOption {
+  id: string;
+  name: string;
+  category: string | null;
+}
+
 export default async function CalendarPage({
   searchParams,
 }: {
@@ -23,7 +29,7 @@ export default async function CalendarPage({
   const month = params.month ? parseInt(params.month, 10) - 1 : now.getMonth();
   const year = params.year ? parseInt(params.year, 10) : now.getFullYear();
 
-  const start = new Date(year, month, 1);
+  const start = new Date(year, month - 1, 1);
   const end = new Date(year, month + 2, 1);
 
   const supabase = await createServerSupabase();
@@ -44,7 +50,14 @@ export default async function CalendarPage({
     .gte('datetime', start.toISOString())
     .lt('datetime', end.toISOString())
     .order('datetime', { ascending: true })
-    .limit(400);
+    .limit(800);
+
+  const { data: servicesRaw } = await supabase
+    .from('services')
+    .select('id, name, category')
+    .eq('tenant_id', tenant.id)
+    .eq('active', true)
+    .order('name', { ascending: true });
 
   type AptRow = {
     id: string;
@@ -74,5 +87,7 @@ export default async function CalendarPage({
     };
   });
 
-  return <CalendarView events={events} initialYear={year} initialMonth={month} />;
+  const services: ServiceOption[] = (servicesRaw || []) as ServiceOption[];
+
+  return <CalendarView events={events} services={services} initialYear={year} initialMonth={month} />;
 }
