@@ -185,10 +185,10 @@ export function CalendarView({
   }
 
   return (
-    <div className="glass-card overflow-hidden animate-element animate-delay-100">
+    <div className="bg-white rounded-2xl overflow-hidden animate-element animate-delay-100">
       <div className="flex min-h-[640px]">
         {/* ─────────────── LEFT PANEL ─────────────── */}
-        <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-zinc-100 bg-white">
+        <aside className="hidden md:flex w-64 shrink-0 flex-col bg-white">
           {/* Mini calendar */}
           <div className="px-4 pt-4">
             <div className="flex items-center justify-between mb-2">
@@ -304,7 +304,7 @@ export function CalendarView({
         {/* ─────────────── MAIN ─────────────── */}
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Top bar */}
-          <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-zinc-100 bg-white">
+          <div className="flex items-center justify-between gap-3 px-5 py-3 bg-white">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCursor(startOfWeek(today))}
@@ -368,12 +368,12 @@ export function CalendarView({
           {view === 'semana' && (
             <div className="flex-1 overflow-auto">
               {/* Day headers */}
-              <div className="grid sticky top-0 z-20 bg-white border-b border-zinc-100" style={{ gridTemplateColumns: '64px repeat(7, minmax(0,1fr))' }}>
+              <div className="grid sticky top-0 z-20 bg-white" style={{ gridTemplateColumns: '64px repeat(7, minmax(0,1fr))' }}>
                 <div />
                 {weekDays.map((d, i) => {
                   const isToday = sameDay(d, today);
                   return (
-                    <div key={i} className="px-2 py-3 text-center border-l border-zinc-100">
+                    <div key={i} className="px-2 py-3 text-center">
                       <p className="text-[10.5px] uppercase tracking-wider text-zinc-400">{WEEK_SHORT[i]}. {d.getDate()}</p>
                       {isToday && (
                         <span className="inline-block mt-1 w-5 h-5 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[10.5px] font-semibold leading-5">
@@ -403,15 +403,12 @@ export function CalendarView({
                   const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
                   const dayEvents = eventsByDay.get(key) || [];
                   return (
-                    <div key={di} className="relative border-l border-zinc-100">
+                    <div key={di} className="relative">
                       {/* background slots */}
-                      {timeSlots.map((_, i) => (
+                      {timeSlots.map((s, i) => (
                         <div
                           key={i}
-                          className={cn(
-                            'border-b',
-                            i % 2 === 0 ? 'border-zinc-100' : 'border-zinc-50',
-                          )}
+                          className={s.m === 0 ? 'border-t border-zinc-100/60' : ''}
                           style={{ height: SLOT_HEIGHT }}
                         />
                       ))}
@@ -462,11 +459,11 @@ export function CalendarView({
                     </div>
                   ))}
                 </div>
-                <div className="relative border-l border-zinc-100">
-                  {timeSlots.map((_, i) => (
+                <div className="relative">
+                  {timeSlots.map((s, i) => (
                     <div
                       key={i}
-                      className={cn('border-b', i % 2 === 0 ? 'border-zinc-100' : 'border-zinc-50')}
+                      className={s.m === 0 ? 'border-t border-zinc-100/60' : ''}
                       style={{ height: SLOT_HEIGHT }}
                     />
                   ))}
@@ -502,7 +499,7 @@ export function CalendarView({
               {filteredEvents.length === 0 ? (
                 <p className="text-sm text-zinc-500 py-10 text-center">Sin citas en este rango</p>
               ) : (
-                <ul className="divide-y divide-zinc-100">
+                <ul className="space-y-1">
                   {filteredEvents
                     .filter((e) => {
                       const d = new Date(e.datetime);
@@ -542,8 +539,8 @@ export function CalendarView({
 
         {/* ─────────────── DETAILS DRAWER ─────────────── */}
         {selected && (
-          <aside className="hidden lg:flex w-72 shrink-0 flex-col border-l border-zinc-100 bg-white">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
+          <aside className="hidden lg:flex w-72 shrink-0 flex-col bg-white">
+            <div className="flex items-center justify-between px-5 py-4">
               <h3 className="text-sm font-semibold text-zinc-900">Detalles de la cita</h3>
               <button onClick={() => setSelected(null)} className="text-zinc-400 hover:text-zinc-900 transition" aria-label="Cerrar">
                 <X className="w-4 h-4" />
