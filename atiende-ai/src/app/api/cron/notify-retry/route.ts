@@ -139,8 +139,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let failed = 0;
   let permanentlyFailed = 0;
   const permanentlyFailedIds: string[] = [];
+  // AUDIT R31: Set per-tenant para SLA metrics correctas. La fórmula anterior
+  // (`failed > 0 ? 1 : 0`) subcontaba cuando N tenants fallaban simultáneos.
+  const failedTenantIds = new Set<string>();
 
-  await Promise.allSettled(
+  // AUDIT R32: Promise.allSettled traga rejections silenciosamente. Log cada
+  // rechazo para que los errores inesperados (p.ej. network transient) sean
+  // visibles en Vercel logs sin romper el cron.
+  const settled = await Promise.allSettled(
     Array.from(byTenant.entries()).map(async ([tenantId, appts]) => {
       const tenant = tenantMap.get(tenantId);
       const timezone = tenant?.timezone || 'America/Merida';
@@ -171,6 +177,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('id', a.id);
         } else {
           failed++;
+          failedTenantIds.add(tenantId);
           const nextCount = (a.owner_notify_retry_count ?? 0) + 1;
           await supabaseAdmin
             .from('appointments')
@@ -193,12 +200,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }),
   );
 
+  for (const r of settled) {
+    if (r.status === 'rejected') {
+      console.warn('[cron/notify-retry] tenant batch rejected:', r.reason);
+    }
+  }
+
   await logCronRun({
     jobName: 'notify-retry',
     startedAt,
     tenantsProcessed: byTenant.size,
-    tenantsSucceeded: byTenant.size - (failed > 0 ? 1 : 0),
-    tenantsFailed: failed > 0 ? 1 : 0,
+    tenantsSucceeded: byTenant.size - failedTenantIds.size,
+    tenantsFailed: failedTenantIds.size,
     details: {
       processed: eligible.length,
       succeeded,

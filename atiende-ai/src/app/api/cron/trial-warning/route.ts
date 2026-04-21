@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     const { data: trialTenants, error } = await supabaseAdmin
       .from('tenants')
       .select('id, name, email')
-      .eq('plan', 'trial')
+      .eq('plan', 'free_trial')
       .eq('status', 'active')
       .gte('created_at', twelveDaysAgo.toISOString())
       .lte('created_at', elevenDaysAgo.toISOString());
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
     const { data: urgentTenants } = await supabaseAdmin
       .from('tenants')
       .select('id, name, email')
-      .eq('plan', 'trial')
+      .eq('plan', 'free_trial')
       .eq('status', 'active')
       .gte('created_at', fourteenDaysAgo.toISOString())
       .lte('created_at', thirteenDaysAgo.toISOString());

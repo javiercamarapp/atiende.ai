@@ -26,6 +26,18 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
+vi.mock('@/lib/supabase/server', () => ({
+  createServerSupabase: vi.fn().mockResolvedValue({
+    auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-test' } } }),
+    },
+  }),
+}));
+
+vi.mock('@/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue(false),
+}));
+
 import { POST } from '../route';
 
 function makeRequest(body: unknown): Request {

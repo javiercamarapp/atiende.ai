@@ -18,9 +18,12 @@ export async function GET(req: NextRequest) {
 
   // ═══ 24-HOUR REMINDERS ═══
   try {
+    // AUDIT R27: `wa_token` quitado del SELECT. `sendTemplate()` usa
+    // `WA_SYSTEM_TOKEN` global (env var), no el token per-tenant. Pedirlo
+    // solo expande la superficie de exposición en logs/errores sin aportar.
     const { data: a24 } = await supabaseAdmin
       .from('appointments')
-      .select('*, tenants(wa_phone_number_id, wa_token, name)')
+      .select('*, tenants(wa_phone_number_id, name)')
       .gte('datetime', in23.toISOString())
       .lte('datetime', in24.toISOString())
       .eq('status', 'scheduled')
@@ -28,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     for (const appt of a24 || []) {
       try {
-        const tenant = appt.tenants as { wa_phone_number_id: string; wa_token: string; name: string };
+        const tenant = appt.tenants as { wa_phone_number_id: string; name: string };
         await sendTemplate(
           tenant.wa_phone_number_id,
           appt.customer_phone,
@@ -53,7 +56,7 @@ export async function GET(req: NextRequest) {
     const in1 = new Date(now.getTime() + 60 * 60 * 1000);
     const { data: a1 } = await supabaseAdmin
       .from('appointments')
-      .select('*, tenants(wa_phone_number_id, wa_token, name)')
+      .select('*, tenants(wa_phone_number_id, name)')
       .gte('datetime', now.toISOString())
       .lte('datetime', in1.toISOString())
       .in('status', ['scheduled', 'confirmed'])
@@ -61,7 +64,7 @@ export async function GET(req: NextRequest) {
 
     for (const appt of a1 || []) {
       try {
-        const tenant = appt.tenants as { wa_phone_number_id: string; wa_token: string; name: string };
+        const tenant = appt.tenants as { wa_phone_number_id: string; name: string };
         await sendTemplate(
           tenant.wa_phone_number_id,
           appt.customer_phone,

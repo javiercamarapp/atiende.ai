@@ -1,3 +1,6 @@
+import { resolve4, resolve6 } from 'node:dns/promises';
+import { isIP } from 'node:net';
+
 // Web scraping for the onboarding URL shortcut.
 //
 // Two-tier strategy:
@@ -92,6 +95,11 @@ function normalizeUrl(raw: string): URL {
   }
 
   const host = parsed.hostname.toLowerCase();
+  // AUDIT R21: blocklist ampliada. Cubre:
+  //  - IPv4: loopback, RFC1918, link-local (AWS metadata 169.254.169.254),
+  //    CGNAT (100.64.0.0/10 — operadores de cable reutilizan estos IPs),
+  //  - IPv6: loopback (::1), link-local (fe80::/10), ULA (fc00::/7),
+  //    IPv4-mapped (::ffff:127.0.0.1 bypass clásico).
   if (
     host === 'localhost' ||
     host === '0.0.0.0' ||
@@ -101,12 +109,78 @@ function normalizeUrl(raw: string): URL {
     /^10\./.test(host) ||
     /^192\.168\./.test(host) ||
     /^169\.254\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    // CGNAT 100.64.0.0/10 → rangos 100.64.x.x … 100.127.x.x
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
+    // IPv6 ULA (fc00::/7) — private addresses
+    /^f[cd][0-9a-f]{2}:/i.test(host) ||
+    // IPv6 link-local (fe80::/10)
+    /^fe[89ab][0-9a-f]?:/i.test(host) ||
+    // IPv4-mapped IPv6 (::ffff:a.b.c.d)
+    /^::ffff:/i.test(host)
   ) {
     throw new ScrapeError('BLOCKED', `Private/loopback host blocked: ${host}`);
   }
 
   return parsed;
+}
+
+// AUDIT R21: prevención de DNS rebinding. Resuelve el hostname antes del
+// fetch y valida que las IPs resultantes no apunten a rangos privados. Un
+// atacante puede registrar `attacker.com` con DNS que inicialmente resuelve
+// a una IP pública (pasa la validación) pero cambia a 127.0.0.1 en la
+// segunda consulta — los fetches de Node.js hacen resolución independiente.
+// Mitigación: hacer UNA resolución aquí y validar cada IP. El fetch
+// subsiguiente puede re-resolver, pero si el dueño del dominio juega limpio
+// hoy y mañana, no hay problema; si cambia, el fetch irá a la IP actual
+// pero esta guard ya bloqueó antes. No es 100% hermética pero eleva la
+// barrera significativamente. Solo se llama antes del fetch directo
+// (scrapeWithOgMeta) — Jina es proxy confiable, no necesita este check.
+const PRIVATE_IPV4_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
+  /^0\./,
+];
+const PRIVATE_IPV6_RANGES = [
+  /^::1$/i,
+  /^::$/,
+  /^fe[89ab][0-9a-f]?:/i,
+  /^f[cd][0-9a-f]{2}:/i,
+  /^::ffff:/i,
+];
+
+function isPrivateIp(ip: string): boolean {
+  const fam = isIP(ip);
+  if (fam === 4) return PRIVATE_IPV4_RANGES.some((r) => r.test(ip));
+  if (fam === 6) return PRIVATE_IPV6_RANGES.some((r) => r.test(ip));
+  return false;
+}
+
+async function assertHostResolvesToPublicIp(host: string): Promise<void> {
+  // Si el host ya es IP literal, la validación sintáctica en normalizeUrl lo
+  // cubre. Solo resolvemos DNS para hostnames.
+  if (isIP(host)) return;
+
+  const resolved: string[] = [];
+  const results = await Promise.allSettled([resolve4(host), resolve6(host)]);
+  for (const r of results) {
+    if (r.status === 'fulfilled') resolved.push(...r.value);
+  }
+  if (resolved.length === 0) {
+    throw new ScrapeError('BLOCKED', `DNS resolution failed for ${host}`);
+  }
+  for (const ip of resolved) {
+    if (isPrivateIp(ip)) {
+      throw new ScrapeError(
+        'BLOCKED',
+        `Host ${host} resolves to private IP ${ip}`,
+      );
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -246,6 +320,11 @@ function parseMetaTags(html: string): MetaTags {
 }
 
 async function scrapeWithOgMeta(target: URL): Promise<ScrapeResult> {
+  // AUDIT R21: DNS-rebinding guard antes del fetch directo. Jina es proxy
+  // (scrapeWithJina hace fetch a r.jina.ai, no al target) — por eso solo
+  // aquí.
+  await assertHostResolvesToPublicIp(target.hostname.toLowerCase());
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 

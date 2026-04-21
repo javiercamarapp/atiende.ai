@@ -132,7 +132,7 @@ export default async function TenantDetailPage({
               <ActionButton tenantId={tenant.id} field="status" value="cancelled" label="Cancel" color="red" />
             </div>
             <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100">
-              <ActionButton tenantId={tenant.id} field="plan" value="trial" label="Set Trial" color="zinc" />
+              <ActionButton tenantId={tenant.id} field="plan" value="free_trial" label="Set Trial" color="zinc" />
               <ActionButton tenantId={tenant.id} field="plan" value="starter" label="Set Starter" color="blue" />
               <ActionButton tenantId={tenant.id} field="plan" value="professional" label="Set Professional" color="purple" />
               <ActionButton tenantId={tenant.id} field="plan" value="business" label="Set Business" color="emerald" />
@@ -321,7 +321,7 @@ async function handleUpdateAction(formData: FormData) {
 
 function PlanBadge({ plan }: { plan: string }) {
   const colors: Record<string, string> = {
-    trial: 'bg-amber-100 text-amber-700',
+    free_trial: 'bg-amber-100 text-amber-700',
     starter: 'bg-blue-100 text-blue-700',
     professional: 'bg-purple-100 text-purple-700',
     business: 'bg-emerald-100 text-emerald-700',

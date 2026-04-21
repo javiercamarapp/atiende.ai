@@ -143,4 +143,42 @@ describe('scrapeUrl', () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.code).toBe('TIMEOUT');
   });
+
+  // AUDIT R21: SSRF blocklist extendida.
+  it('throws BLOCKED for CGNAT 100.64.x.x', async () => {
+    await expect(scrapeUrl('http://100.64.0.1/x')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+  });
+
+  it('throws BLOCKED for CGNAT 100.127.x.x', async () => {
+    await expect(scrapeUrl('http://100.127.255.1/x')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+  });
+
+  it('allows public 100.128.x.x (not CGNAT)', async () => {
+    global.fetch = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+    // Should NOT throw BLOCKED — 100.128+ is public.
+    const r = await scrapeUrl('http://100.128.0.1');
+    expect(r.url).toContain('100.128.0.1');
+  });
+
+  it('throws BLOCKED for IPv6 ULA fd00::1', async () => {
+    await expect(scrapeUrl('http://[fd00::1]/')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+  });
+
+  it('throws BLOCKED for IPv6 link-local fe80::1', async () => {
+    await expect(scrapeUrl('http://[fe80::1]/')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+  });
+
+  it('throws BLOCKED for IPv4-mapped IPv6 ::ffff:127.0.0.1', async () => {
+    await expect(scrapeUrl('http://[::ffff:127.0.0.1]/')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+  });
 });
