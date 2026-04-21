@@ -3,7 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, MessageSquare, Calendar, Bot,
+  LayoutDashboard, MessageSquare, Calendar, CalendarDays, Bot,
   BookOpen, BarChart3, Settings, TrendingUp, Menu, UserCircle2,
   Sparkles, Megaphone, HelpCircle,
 } from 'lucide-react';
@@ -15,17 +15,17 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, conversations: MessageSquare, appointments: Calendar,
-  contacts: UserCircle2, agents: Bot, knowledge: BookOpen, 'chat-data': Sparkles,
-  marketing: Megaphone, analytics: BarChart3, settings: Settings,
+  calendar: CalendarDays, contacts: UserCircle2, agents: Bot, knowledge: BookOpen,
+  'chat-data': Sparkles, marketing: Megaphone, analytics: BarChart3, settings: Settings,
 };
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard', conversations: 'Conversaciones', appointments: 'Citas',
-  contacts: 'Pacientes', agents: 'Agents', knowledge: 'Conocimiento',
-  'chat-data': 'Pregunta a tus datos', marketing: 'Marketing',
-  analytics: 'Analytics', settings: 'Ajustes',
+  calendar: 'Calendario', contacts: 'Pacientes', agents: 'Agents',
+  knowledge: 'Conocimiento', 'chat-data': 'Pregunta a tus datos',
+  marketing: 'Marketing', analytics: 'Analytics', settings: 'Ajustes',
 };
 
-const TOP_GROUP = new Set(['dashboard', 'appointments', 'conversations', 'contacts', 'agents']);
+const TOP_GROUP = new Set(['dashboard', 'appointments', 'calendar', 'conversations', 'contacts', 'agents']);
 
 type TenantShape = {
   name?: string | null;
