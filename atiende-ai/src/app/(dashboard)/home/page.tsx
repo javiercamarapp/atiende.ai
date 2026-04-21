@@ -196,7 +196,7 @@ export default async function DashboardPage() {
   const inactiveStaff = allStaff.filter((s) => !s.active);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="animate-element">
         <p className="text-sm text-zinc-500">
           Hola {tenant.name?.split(' ')[0] || 'doctor'}, bienvenido de vuelta.
@@ -205,7 +205,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         {/* ─── MAIN CONTENT (3 cols) ─── */}
-        <div className="xl:col-span-3 space-y-6">
+        <div className="xl:col-span-3 space-y-4">
           {/* Stat cards row */}
           <section className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-element">
             <StatCard

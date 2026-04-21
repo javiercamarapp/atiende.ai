@@ -142,7 +142,7 @@ export default async function ContactsPage({
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Main table card */}
       <div className="glass-card overflow-hidden animate-element animate-delay-100">
         {/* Header with title + filter pills */}

@@ -179,7 +179,7 @@ export default async function AnalyticsPage() {
   const avgLabel = avgSec < 60 ? `${avgSec}s` : `${Math.round(avgSec / 60)} min`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="animate-element">
         <p className="text-sm text-zinc-500">
           Rendimiento de los últimos 30 días contra el periodo anterior.

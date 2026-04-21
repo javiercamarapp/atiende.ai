@@ -119,7 +119,7 @@ export default async function AppointmentsPage() {
   const cancelledDelta = pctDelta(cancelledCount, cancelledYestR.count ?? 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="animate-element">
         <p className="text-sm text-zinc-500">
           Control de citas, tendencias y tipos de servicio.

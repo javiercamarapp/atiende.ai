@@ -25,7 +25,7 @@ export default async function AgentsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="animate-element">
         <p className="text-sm text-zinc-500">
           Activa agentes autónomos que trabajan 24/7 por tu consultorio.
