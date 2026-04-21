@@ -54,14 +54,22 @@ export interface ToolContext {
 
 /**
  * AUDIT R18: construye la clave del cache para un (toolName, args).
- * Usamos JSON.stringify estable; si args tiene orden de keys distinto
- * entre calls, el LLM los reproduce en el mismo orden 99% del tiempo,
- * y los edge cases (distinto orden) son aceptables para una cache de
- * defense-in-depth (fail-open: no encontrar en cache → re-ejecuta).
+ * AUDIT R19 #16: key ordenada recursivamente para que {a:1,b:2} y {b:2,a:1}
+ * produzcan la misma cache key. Antes: cache miss → double mutation.
  */
+function sortKeysDeep(v: unknown): unknown {
+  if (v === null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return v.map(sortKeysDeep);
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+    out[k] = sortKeysDeep((v as Record<string, unknown>)[k]);
+  }
+  return out;
+}
+
 export function buildToolCallCacheKey(name: string, args: unknown): string {
   try {
-    return `${name}:${JSON.stringify(args)}`;
+    return `${name}:${JSON.stringify(sortKeysDeep(args))}`;
   } catch {
     return `${name}:[unserializable]`;
   }

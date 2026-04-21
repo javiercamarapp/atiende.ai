@@ -29,6 +29,28 @@ export async function POST(req: NextRequest) {
     ? (obj.metadata as Record<string, string>)?.tenant_id
     : undefined;
 
+  // AUDIT R19 #9 — idempotency check contra processed_stripe_events.
+  // Stripe reintenta el mismo event.id con semántica at-least-once.
+  const { error: dedupError } = await supabaseAdmin
+    .from('processed_stripe_events')
+    .insert({ event_id: event.id, event_type: event.type });
+  if (dedupError) {
+    // Código 23505 = unique_violation → evento ya procesado. Ack con 200.
+    if (dedupError.code === '23505') {
+      logWebhook({
+        tenantId,
+        provider: 'stripe',
+        eventType: 'duplicate_skip',
+        statusCode: 200,
+        payload: { event_id: event.id, type: event.type },
+        durationMs: Date.now() - startTime,
+      });
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+    // Error real de DB — log y continuar (fail-open para no bloquear Stripe).
+    console.error('[stripe-webhook] idempotency insert failed:', dedupError.message);
+  }
+
   logWebhook({
     tenantId,
     provider: 'stripe',
@@ -110,6 +132,56 @@ export async function POST(req: NextRequest) {
         voice_minutes_included: 0,
         stripe_subscription_item_voice_id: null,
       }).eq('id', t.id);
+    }
+  }
+
+  // AUDIT R19 #10 — Payment failure: pausar tenant hasta que el pago se
+  // resuelva. Sin este handler el tenant seguía activo post-tarjeta-declinada
+  // y nos sangraba en LLM+WhatsApp+infra.
+  if (event.type === 'invoice.payment_failed') {
+    const inv = event.data.object as unknown as Record<string, unknown>;
+    const customerId = inv.customer as string | undefined;
+    if (customerId) {
+      await supabaseAdmin
+        .from('tenants')
+        .update({ status: 'past_due' })
+        .eq('stripe_customer_id', customerId);
+    }
+  }
+
+  // AUDIT R19 #10 — Subscription updates (upgrade/downgrade desde el portal
+  // de Stripe). Sin este handler la app quedaba desincronizada con el plan
+  // real pagado. Se detecta el plan por el product.metadata.plan o por el
+  // precio — aquí priorizamos el metered voice item para detectar premium.
+  if (event.type === 'customer.subscription.updated') {
+    const sub = event.data.object as unknown as {
+      customer?: string;
+      status?: string;
+      items?: { data?: Array<{ id?: string; price?: { recurring?: { usage_type?: string }; metadata?: Record<string, string> } }> };
+      cancel_at_period_end?: boolean;
+    };
+    const customerId = sub.customer;
+    if (customerId) {
+      const meteredItem = sub.items?.data?.find(
+        (it) => it.price?.recurring?.usage_type === 'metered',
+      );
+      const isPremium = Boolean(meteredItem);
+      const patch: Record<string, unknown> = {
+        status: sub.status === 'active' ? 'active' : 'past_due',
+      };
+      if (isPremium) {
+        patch.plan = 'premium';
+        patch.voice_minutes_included = 300;
+        patch.stripe_subscription_item_voice_id = meteredItem?.id ?? null;
+      } else {
+        // Downgrade desde premium: el metered item desapareció.
+        patch.voice_minutes_included = 0;
+        patch.stripe_subscription_item_voice_id = null;
+      }
+      await supabaseAdmin
+        .from('tenants')
+        .update(patch)
+        .eq('stripe_customer_id', customerId);
     }
   }
 
