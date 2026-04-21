@@ -54,8 +54,8 @@ export default async function ConversationsPage({
   const convs = (conversations || []) as ConvRow[];
 
   return (
-    <div className="space-y-6">
-      <div className="glass-card overflow-hidden animate-element animate-delay-100">
+    <div className="h-[calc(100vh-11rem)] flex">
+      <div className="glass-card overflow-hidden animate-element animate-delay-100 flex-1 flex flex-col min-h-0">
         {/* Search + add header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-100">
           <div className="relative flex-1">
@@ -79,7 +79,7 @@ export default async function ConversationsPage({
         {convs.length === 0 ? (
           <div className="py-16 text-center text-sm text-zinc-500">Sin conversaciones.</div>
         ) : (
-          <ul>
+          <ul className="flex-1 overflow-y-auto min-h-0">
             {convs.map((c) => {
               const msgs = (c.messages || []) as Msg[];
               const lastMsg = msgs.length > 0
