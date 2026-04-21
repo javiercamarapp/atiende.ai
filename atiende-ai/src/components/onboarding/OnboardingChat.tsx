@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { TypewriterMessage } from './TypewriterMessage';
 import { ChannelSelector } from './ChannelSelector';
 import { ChatInput } from './ChatInput';
@@ -456,7 +457,15 @@ export function OnboardingChat() {
     <div className="h-[100dvh] flex flex-col bg-white">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-        <h1 className="text-lg font-semibold tracking-tight">useatiende.ai</h1>
+        <Image
+          src="/logo.png"
+          alt="atiende.ai"
+          width={472}
+          height={200}
+          priority
+          style={{ height: '32px', width: 'auto' }}
+          className="shrink-0"
+        />
         {phase === 'conversation' && vertical && totalRequired > 0 && (
           <ProgressIndicator
             current={capturedRequired}
@@ -472,7 +481,7 @@ export function OnboardingChat() {
           {/* Welcome header */}
           <div className="text-center mb-6 animate-element animate-delay-100">
             <h2 className="text-3xl font-light tracking-tighter mb-2">
-              Bienvenido a <span className="font-semibold">useatiende.ai</span>
+              Bienvenido a <span className="font-semibold text-[hsl(var(--brand-blue))]">useatiende.ai</span>
             </h2>
             <p className="text-muted-foreground text-sm">
               Configura tu agente AI en minutos
