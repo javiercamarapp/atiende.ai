@@ -46,7 +46,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
           }
           return null;
         })()}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-8 bg-[hsl(var(--background))]">
           <div className="animate-element">
             {children}
           </div>
