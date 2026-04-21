@@ -54,7 +54,7 @@ export default async function ConversationsPage({
   const convs = (conversations || []) as ConvRow[];
 
   return (
-    <div className="h-[calc(100vh-9rem)] flex">
+    <div className="h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)] flex">
       <div className="glass-card overflow-hidden animate-element animate-delay-100 flex-1 flex flex-col min-h-0">
         {/* Search + add header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-100">

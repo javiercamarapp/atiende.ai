@@ -1,17 +1,13 @@
 'use client';
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, MessageSquare, Calendar, CalendarDays, Bot,
-  BookOpen, BarChart3, Settings, Menu, UserCircle2,
+  BookOpen, BarChart3, Settings, UserCircle2,
   Sparkles, Megaphone, LogOut, Crown, TrendingUp,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { createClient } from '@/lib/supabase/client';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -89,7 +85,7 @@ function NavLink({
   );
 }
 
-function SidebarContent({
+export function SidebarContent({
   tenant, modules, path, onNavigate, collapsible = false,
 }: {
   tenant: TenantShape;
@@ -248,44 +244,10 @@ export function Sidebar({
   modules: string[];
 }) {
   const path = usePathname();
-  const [open, setOpen] = useState(false);
 
   return (
-    <>
-      {/* Desktop sidebar */}
-      <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col bg-white overflow-hidden transition-[width] duration-300">
-        <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
-      </aside>
-
-      {/* Mobile hamburger */}
-      <div className="fixed top-3 left-3 z-50 md:hidden">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setOpen(true)}
-          className="bg-white/90 backdrop-blur border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
-        >
-          <Menu className="w-5 h-5" />
-        </Button>
-      </div>
-
-      {/* Mobile sheet sidebar */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="left"
-          className="p-0 w-64 flex flex-col dashboard-shell glass-panel border-zinc-200"
-        >
-          <VisuallyHidden>
-            <SheetTitle>Menu de navegacion</SheetTitle>
-          </VisuallyHidden>
-          <SidebarContent
-            tenant={tenant}
-            modules={modules}
-            path={path}
-            onNavigate={() => setOpen(false)}
-          />
-        </SheetContent>
-      </Sheet>
-    </>
+    <aside className="group/sidebar hidden md:flex w-[72px] hover:w-64 shrink-0 flex-col bg-white overflow-hidden transition-[width] duration-300">
+      <SidebarContent tenant={tenant} modules={modules} path={path} collapsible />
+    </aside>
   );
 }
