@@ -154,13 +154,12 @@ export function SidebarContent({
         </Link>
       </div>
 
-      {/* Search — only visible when expanded (mobile sheet always expanded) */}
-      <div className={cn(
-        'px-4 pb-3',
-        collapsible && 'hidden group-hover/sidebar:block',
-      )}>
-        <AppSearch variant="mobile" onNavigate={onNavigate} />
-      </div>
+      {/* Search — mobile sheet only (collapsible=false). Desktop uses header search. */}
+      {!collapsible && (
+        <div className="px-4 pb-3">
+          <AppSearch variant="mobile" onNavigate={onNavigate} />
+        </div>
+      )}
 
       {/* Nav — grouped into 3 visual sections with subtle dividers */}
       <nav className="flex-1 px-3 pt-1 pb-2 overflow-y-auto overflow-x-hidden">
