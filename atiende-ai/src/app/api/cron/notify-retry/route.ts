@@ -139,6 +139,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let failed = 0;
   let permanentlyFailed = 0;
   const permanentlyFailedIds: string[] = [];
+  // AUDIT R31: Set per-tenant para SLA metrics correctas. La fórmula anterior
+  // (`failed > 0 ? 1 : 0`) subcontaba cuando N tenants fallaban simultáneos.
+  const failedTenantIds = new Set<string>();
 
   await Promise.allSettled(
     Array.from(byTenant.entries()).map(async ([tenantId, appts]) => {
@@ -171,6 +174,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('id', a.id);
         } else {
           failed++;
+          failedTenantIds.add(tenantId);
           const nextCount = (a.owner_notify_retry_count ?? 0) + 1;
           await supabaseAdmin
             .from('appointments')
@@ -197,8 +201,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     jobName: 'notify-retry',
     startedAt,
     tenantsProcessed: byTenant.size,
-    tenantsSucceeded: byTenant.size - (failed > 0 ? 1 : 0),
-    tenantsFailed: failed > 0 ? 1 : 0,
+    tenantsSucceeded: byTenant.size - failedTenantIds.size,
+    tenantsFailed: failedTenantIds.size,
     details: {
       processed: eligible.length,
       succeeded,

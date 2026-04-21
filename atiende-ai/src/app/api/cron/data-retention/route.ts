@@ -73,6 +73,21 @@ export async function GET(req: NextRequest) {
     summary.optedout_contacts_error = err instanceof Error ? err.message : String(err);
   }
 
+  // AUDIT R28: audit_log guarda PII en `details` JSONB (phone, name, email,
+  // event data). LFPDPPP ARCO exige retención limitada — 13 meses iguala la
+  // política de messages/appointments.
+  try {
+    const cutoff = new Date(Date.now() - RETENTION_DAYS_MESSAGES * 86_400_000).toISOString();
+    const { count, error } = await supabaseAdmin
+      .from('audit_log')
+      .delete({ count: 'exact' })
+      .lt('created_at', cutoff);
+    if (error) throw error;
+    summary.audit_log_deleted = count ?? 0;
+  } catch (err) {
+    summary.audit_log_error = err instanceof Error ? err.message : String(err);
+  }
+
   return NextResponse.json({
     status: 'ok',
     duration_ms: Date.now() - start,

@@ -114,6 +114,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let failed = 0;
   let deferred = 0;
   const failureSamples: Array<{ id: string; tenant: string; error: string }> = [];
+  // AUDIT R31: rastrear tenants con cualquier fallo definitivo. El cálculo
+  // previo `tenantIds.length - (failed > 0 ? 1 : 0)` contaba máximo 1 tenant
+  // fallido aunque N tenants tuvieran mensajes fallidos — corrompe SLA metrics.
+  const failedTenantIds = new Set<string>();
 
   for (const msg of batch) {
     const tInfo = tenantMap.get(msg.tenant_id);
@@ -129,6 +133,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         })
         .eq('id', msg.id);
       failed++;
+      failedTenantIds.add(msg.tenant_id);
       continue;
     }
 
@@ -175,6 +180,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           })
           .eq('id', msg.id);
         failed++;
+        failedTenantIds.add(msg.tenant_id);
         failureSamples.push({ id: msg.id, tenant: tInfo?.name || msg.tenant_id, error: errMsg });
 
         // notifyOwner del tenant (best effort)
@@ -210,8 +216,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     jobName: 'scheduled-messages',
     startedAt: new Date(start),
     tenantsProcessed: tenantIds.length,
-    tenantsSucceeded: tenantIds.length - (failed > 0 ? 1 : 0),
-    tenantsFailed: failed > 0 ? 1 : 0,
+    tenantsSucceeded: tenantIds.length - failedTenantIds.size,
+    tenantsFailed: failedTenantIds.size,
     details: { total_messages: batch.length, sent, failed, deferred, failure_samples: failureSamples.slice(0, 5) },
   });
 
