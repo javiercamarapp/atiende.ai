@@ -175,6 +175,34 @@ export async function ingestKnowledgeWithMetadata(
   });
 }
 
+// Variant of ingestKnowledgeBatch that writes per-chunk metadata JSONB.
+// Uses a single OpenAI embeddings API call (supports up to 2048 inputs)
+// so tagging metadata doesn't cost extra network trips — critical for the
+// initial onboarding path which ingests ~10 chunks at once.
+export async function ingestKnowledgeBatchWithMetadata(
+  tenantId: string,
+  chunks: { content: string; category: string; metadata: Record<string, unknown> }[],
+  source: string = 'onboarding',
+): Promise<void> {
+  if (chunks.length === 0) return;
+
+  const embResponse = await getOpenAI().embeddings.create({
+    model: 'text-embedding-3-small',
+    input: chunks.map((c) => c.content),
+  });
+
+  const rows = chunks.map((chunk, i) => ({
+    tenant_id: tenantId,
+    content: chunk.content,
+    embedding: embResponse.data[i].embedding,
+    category: chunk.category,
+    source,
+    metadata: chunk.metadata,
+  }));
+
+  await supabaseAdmin.from('knowledge_chunks').insert(rows);
+}
+
 // Ingestar multiples chunks de una vez (batch)
 export async function ingestKnowledgeBatch(
   tenantId: string,

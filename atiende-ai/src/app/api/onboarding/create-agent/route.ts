@@ -2,9 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
-import { ingestKnowledgeBatch } from '@/lib/rag/search';
+import { ingestKnowledgeBatchWithMetadata } from '@/lib/rag/search';
 import { getChatTemplate } from '@/lib/templates/chat/index';
 import { getVoiceTemplate } from '@/lib/templates/voice/index';
+import { getQuestions } from '@/lib/onboarding/questions';
+import { ZONES, zoneForQuestionKey } from '@/lib/knowledge/zone-map';
+
+function answerToText(answer: unknown): string {
+  if (answer === null || answer === undefined) return '';
+  if (typeof answer === 'string') return answer.trim();
+  if (typeof answer === 'number' || typeof answer === 'boolean') return String(answer);
+  if (Array.isArray(answer)) return answer.map((a) => answerToText(a)).filter(Boolean).join(', ');
+  if (typeof answer === 'object') {
+    const obj = answer as Record<string, unknown>;
+    if (typeof obj.text === 'string') return obj.text.trim();
+    if ('value' in obj) return answerToText(obj.value);
+    return JSON.stringify(obj);
+  }
+  return '';
+}
 
 // Heavy route: generates a system prompt, ingests knowledge chunks with
 // OpenAI embeddings, and optionally provisions a Retell voice agent. Can
@@ -127,88 +143,46 @@ REGLAS PARA EL PROMPT:
     });
 
     // 4. CREAR KNOWLEDGE BASE (ANTI-ALUCINACION)
-    const chunks: { content: string; category: string }[] = [];
-
-    // Servicios y precios
-    if (answers.services_prices) {
-      chunks.push({
-        content: `SERVICIOS Y PRECIOS de ${businessInfo.name}:\n${answers.services_prices}`,
-        category: 'servicios',
-      });
-      // Cada servicio como chunk individual tambien
-      const lines = String(answers.services_prices).split('\n');
-      for (const line of lines) {
-        if (line.trim()) {
-          chunks.push({ content: line.trim(), category: 'precios' });
-        }
-      }
+    // One chunk per answer, tagged with metadata.question_key so the
+    // knowledge editor (POST /api/knowledge/save-answer) can DELETE+INSERT
+    // a single answer without disturbing the rest. Plus one untagged
+    // "profile" chunk for location/phone data coming from businessInfo.
+    const questionLabelByKey = new Map<string, string>();
+    for (const q of getQuestions(businessType)) {
+      questionLabelByKey.set(q.key, q.label);
     }
 
-    // Menu (restaurantes)
-    if (answers.menu) {
-      chunks.push({
-        content: `MENU COMPLETO de ${businessInfo.name}:\n${answers.menu}`,
-        category: 'menu',
-      });
-    }
+    const chunks: { content: string; category: string; metadata: Record<string, unknown> }[] = [];
 
-    // Staff/Doctores
-    if (answers.doctors || answers.stylists) {
+    for (const [key, rawValue] of Object.entries(answers as Record<string, unknown>)) {
+      const text = answerToText(rawValue);
+      if (!text) continue;
+      const zoneId = zoneForQuestionKey(key);
+      const zone = ZONES.find((z) => z.id === zoneId)!;
+      const label = questionLabelByKey.get(key);
+      const content = label ? `${label.toUpperCase()}: ${text}` : text;
       chunks.push({
-        content: `EQUIPO de ${businessInfo.name}:\n${answers.doctors || answers.stylists}`,
-        category: 'staff',
+        content,
+        category: zone.category,
+        metadata: {
+          question_key: key,
+          zone: zoneId,
+          question_label: label ?? null,
+        },
       });
     }
 
-    // Horario y ubicacion
+    // Location + hours composite — derived from businessInfo, not from a
+    // quiz answer, so tagged with kind='profile' (no question_key) so
+    // save-answer never tries to replace it.
     chunks.push({
-      content: `UBICACION: ${businessInfo.address || 'No especificada'}, ${businessInfo.city || 'Merida'}.\nHORARIO: Lunes a Viernes 9:00-18:00, Sabado 9:00-14:00.\nTELEFONO: ${businessInfo.phone || 'No especificado'}.\nESTACIONAMIENTO: ${answers.parking || 'No especificado'}.`,
+      content: `UBICACION: ${businessInfo.address || 'No especificada'}, ${businessInfo.city || 'Merida'}.\nHORARIO: Lunes a Viernes 9:00-18:00, Sabado 9:00-14:00.\nTELEFONO: ${businessInfo.phone || 'No especificado'}.`,
       category: 'ubicacion',
+      metadata: { kind: 'profile', zone: 'location' },
     });
 
-    // Formas de pago
-    if (answers.payment_methods) {
-      chunks.push({
-        content: `FORMAS DE PAGO: ${Array.isArray(answers.payment_methods) ? answers.payment_methods.join(', ') : answers.payment_methods}`,
-        category: 'faq',
-      });
-    }
-
-    // Seguros
-    if (answers.insurances) {
-      chunks.push({
-        content: `SEGUROS ACEPTADOS: ${answers.insurances}`,
-        category: 'faq',
-      });
-    }
-
-    // Politica cancelacion
-    if (answers.cancellation) {
-      chunks.push({
-        content: `POLITICA DE CANCELACION: ${answers.cancellation}`,
-        category: 'politicas',
-      });
-    }
-
-    // Primera visita
-    if (answers.first_visit) {
-      chunks.push({
-        content: `PRIMERA CITA - QUE TRAER: ${answers.first_visit}`,
-        category: 'faq',
-      });
-    }
-
-    // Delivery (restaurantes)
-    if (answers.delivery !== undefined) {
-      chunks.push({
-        content: `DELIVERY: ${answers.delivery ? 'Si disponible' : 'No disponible'}. ${answers.delivery_detail || ''}`,
-        category: 'faq',
-      });
-    }
-
-    // Ingestar todos los chunks en pgvector
     if (chunks.length > 0) {
-      await ingestKnowledgeBatch(tenant.id, chunks, 'onboarding');
+      await ingestKnowledgeBatchWithMetadata(tenant.id, chunks, 'onboarding');
     }
 
     // 5. ACTUALIZAR TENANT CON PROMPT
