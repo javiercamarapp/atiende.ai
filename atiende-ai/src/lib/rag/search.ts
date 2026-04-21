@@ -87,6 +87,32 @@ export async function ingestKnowledge(
   });
 }
 
+// Ingestar un chunk con metadata JSONB para trazabilidad.
+// Usado por save-answer (metadata.question_key/zone), report-correction
+// (metadata.origin='faq') y uploads de docs (metadata.doc_id). La metadata
+// permite DELETE+INSERT dirigido sin afectar chunks de otras fuentes.
+export async function ingestKnowledgeWithMetadata(
+  tenantId: string,
+  content: string,
+  category: string,
+  source: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  const embResponse = await getOpenAI().embeddings.create({
+    model: 'text-embedding-3-small',
+    input: content,
+  });
+
+  await supabaseAdmin.from('knowledge_chunks').insert({
+    tenant_id: tenantId,
+    content,
+    embedding: embResponse.data[0].embedding,
+    category,
+    source,
+    metadata,
+  });
+}
+
 // Ingestar multiples chunks de una vez (batch)
 export async function ingestKnowledgeBatch(
   tenantId: string,
