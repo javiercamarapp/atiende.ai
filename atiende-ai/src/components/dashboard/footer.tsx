@@ -25,7 +25,7 @@ export function DashFooter() {
         <Link href="/settings/contact" className="hover:text-zinc-700 transition">Contacto</Link>
       </div>
       <div className="flex items-center gap-1.5">
-        <SocialLink href="https://facebook.com" label="Facebook">
+        <SocialLink href="https://www.facebook.com/profile.php?id=61573265924803" label="Facebook">
           <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M13 22v-8h3l.5-4H13V7.5c0-1 .5-2 2-2h2v-3.5S15.5 2 13.5 2C11 2 9 3.5 9 6.5V10H6v4h3v8h4z"/></svg>
         </SocialLink>
         <SocialLink href="https://x.com" label="X">
