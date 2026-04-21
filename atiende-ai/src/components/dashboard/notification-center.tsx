@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore, useCallback } from 'react';
 import { Bell, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -14,16 +14,28 @@ type Notification = {
   created_at: string;
 };
 
-function readLastSeen(): number {
-  if (typeof window === 'undefined') return 0;
+// ---- localStorage-backed store for lastSeen ----
+const seenListeners = new Set<() => void>();
+function emitSeenChange() {
+  seenListeners.forEach((l) => l());
+}
+function subscribeSeen(cb: () => void) {
+  seenListeners.add(cb);
+  return () => { seenListeners.delete(cb); };
+}
+function getSeenSnapshot(): number {
   const raw = localStorage.getItem(SEEN_KEY);
   return raw ? Number(raw) : 0;
 }
-
-function writeLastSeen(ts: number) {
+function getSeenServerSnapshot(): number {
+  return Date.now();
+}
+function writeSeen(ts: number) {
   localStorage.setItem(SEEN_KEY, String(ts));
+  emitSeenChange();
 }
 
+// ---- helpers ----
 function timeAgo(date: string): string {
   const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
   if (mins < 1) return 'ahora';
@@ -45,8 +57,9 @@ function getIcon(action: string): string {
 export function NotificationCenter({ tenantId }: { tenantId: string }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
-  const [lastSeen, setLastSeen] = useState(readLastSeen);
   const supabaseRef = useRef(createClient());
+
+  const lastSeen = useSyncExternalStore(subscribeSeen, getSeenSnapshot, getSeenServerSnapshot);
 
   useEffect(() => {
     supabaseRef.current
@@ -58,7 +71,7 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
       .then(({ data }) => setNotifications(data || []));
   }, [tenantId]);
 
-  const fetchNotifications = () => {
+  const fetchNotifications = useCallback(() => {
     supabaseRef.current
       .from('audit_log')
       .select('id, action, details, created_at')
@@ -66,22 +79,20 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
       .order('created_at', { ascending: false })
       .limit(10)
       .then(({ data }) => setNotifications(data || []));
-  };
+  }, [tenantId]);
 
-  const markAllRead = () => {
-    const now = Date.now();
-    writeLastSeen(now);
-    setLastSeen(now);
-  };
+  const markAllRead = useCallback(() => {
+    writeSeen(Date.now());
+  }, []);
 
-  const handleOpenChange = (isOpen: boolean) => {
+  const handleOpenChange = useCallback((isOpen: boolean) => {
     setOpen(isOpen);
     if (isOpen) {
       fetchNotifications();
     } else {
       markAllRead();
     }
-  };
+  }, [fetchNotifications, markAllRead]);
 
   const unread = notifications.filter(
     (n) => new Date(n.created_at).getTime() > lastSeen,
