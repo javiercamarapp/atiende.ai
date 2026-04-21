@@ -58,7 +58,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
 
 function getModules(type: string, hasVoice: boolean) {
   const base = ['dashboard','conversations','agents','knowledge','chat-data','marketing','analytics','settings'];
-  const withAppointments = [...base, 'appointments'];
+  const withAppointments = [...base, 'appointments', 'calendar'];
   const withContacts = [...withAppointments, 'contacts'];
   const healthTypes = ['dental','medical','nutritionist','psychologist','dermatologist',
     'gynecologist','pediatrician','ophthalmologist','veterinary','optics'];
