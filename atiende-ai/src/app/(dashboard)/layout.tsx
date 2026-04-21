@@ -22,7 +22,7 @@ export default async function DashboardLayout({ children }:{children:ReactNode})
   };
 
   return (
-    <div className="dashboard-shell flex h-screen bg-white">
+    <div className="dashboard-shell flex h-[100dvh] bg-white">
       <Sidebar tenant={tenant} modules={modules} />
       <div className="flex-1 flex flex-col overflow-hidden bg-white">
         <DashHeader tenant={tenant} user={userHeader} />

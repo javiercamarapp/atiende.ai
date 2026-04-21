@@ -94,26 +94,27 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
   };
 
   return (
-    <div className="flex h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)] min-h-0">
+    <div className="flex h-[calc(100dvh-10rem)] md:h-[calc(100vh-8rem)] min-h-0">
       {/* ─── CHAT AREA ─── */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 glass-card overflow-hidden">
         {/* Chat header */}
-        <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-3.5 border-b border-zinc-100">
-          <div className="flex items-center gap-3">
-            <Link href="/conversations" className="lg:hidden text-zinc-400 hover:text-zinc-900 transition">
+        <div className="sticky top-0 z-10 bg-white flex items-center justify-between gap-2 px-3 md:px-5 py-3 border-b border-zinc-100">
+          <div className="flex items-center gap-2.5 md:gap-3 min-w-0 flex-1">
+            <Link href="/conversations" className="lg:hidden text-zinc-400 hover:text-zinc-900 transition shrink-0">
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-sm font-semibold text-zinc-600 shrink-0">
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-zinc-100 flex items-center justify-center text-sm font-semibold text-zinc-600 shrink-0">
               {customerInitials}
             </div>
-            <div>
-              <p className="text-sm font-semibold text-zinc-900">{customerName}</p>
-              <p className="text-[11px] text-zinc-400">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-zinc-900 truncate">{customerName}</p>
+              <p className="text-[11px] text-zinc-400 truncate">
                 {status === 'human_handoff' ? 'Control humano' : 'Agente IA activo'}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          {/* Desktop actions */}
+          <div className="hidden md:flex items-center gap-1.5 shrink-0">
             <button
               onClick={takeOver}
               className={cn(
@@ -132,8 +133,15 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
             <button className="p-2 text-zinc-400 hover:text-zinc-600 transition"><Video className="w-4 h-4" /></button>
             <button className="p-2 text-zinc-400 hover:text-zinc-600 transition"><Phone className="w-4 h-4" /></button>
             <button onClick={() => setShowInfo(!showInfo)} className="hidden lg:inline-flex p-2 text-zinc-400 hover:text-zinc-600 transition"><MoreHorizontal className="w-4 h-4" /></button>
-            <button onClick={() => setShowInfoSheet(true)} className="lg:hidden p-2 text-zinc-400 hover:text-zinc-600 transition"><MoreHorizontal className="w-4 h-4" /></button>
           </div>
+          {/* Mobile: single action button */}
+          <button
+            onClick={() => setShowInfoSheet(true)}
+            className="md:hidden w-9 h-9 rounded-full bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition flex items-center justify-center shrink-0"
+            aria-label="Opciones"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Tags bar */}
@@ -196,7 +204,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
             </p>
           )}
           <div className="flex items-center gap-2">
-            <button className="p-2 text-zinc-400 hover:text-zinc-600 transition shrink-0">
+            <button className="hidden md:inline-flex p-2 text-zinc-400 hover:text-zinc-600 transition shrink-0">
               <Smile className="w-5 h-5" />
             </button>
             <input
@@ -206,15 +214,15 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
               onKeyDown={(e) => e.key === 'Enter' && status === 'human_handoff' && sendReply()}
               placeholder={status === 'human_handoff' ? 'Escribe un mensaje...' : 'Toma control para responder'}
               disabled={status !== 'human_handoff'}
-              className="flex-1 text-sm bg-zinc-50 rounded-full px-4 py-2.5 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 min-w-0 text-sm bg-zinc-50 rounded-full px-4 py-2.5 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))] disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            <button className="p-2 text-zinc-400 hover:text-zinc-600 transition shrink-0">
+            <button className="hidden md:inline-flex p-2 text-zinc-400 hover:text-zinc-600 transition shrink-0">
               <Paperclip className="w-5 h-5" />
             </button>
             <button
               onClick={sendReply}
               disabled={sending || status !== 'human_handoff' || !reply.trim()}
-              className="w-9 h-9 rounded-full bg-[hsl(var(--brand-blue))] text-white flex items-center justify-center hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="w-10 h-10 rounded-full bg-[hsl(var(--brand-blue))] text-white flex items-center justify-center hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
@@ -264,36 +272,80 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
 
       {/* ─── MOBILE INFO SHEET ─── */}
       <Sheet open={showInfoSheet} onOpenChange={setShowInfoSheet}>
-        <SheetContent side="right" className="lg:hidden p-0 flex flex-col">
-          <SheetHeader className="px-5 pt-5 pb-3 border-b border-zinc-100">
-            <SheetTitle>Info de cuenta</SheetTitle>
+        <SheetContent
+          side="right"
+          className="lg:hidden p-0 flex flex-col bg-white border-0 rounded-l-[28px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.18)] w-[85%] max-w-[360px]"
+        >
+          <SheetHeader className="px-6 pt-7 pb-4">
+            <SheetTitle className="text-[15px] font-semibold text-zinc-900 tracking-tight">Info de cuenta</SheetTitle>
           </SheetHeader>
+
           <div className="flex-1 overflow-y-auto">
-            <div className="p-5 text-center border-b border-zinc-100">
-              <div className="w-20 h-20 mx-auto rounded-full bg-zinc-100 flex items-center justify-center text-2xl font-semibold text-zinc-600">
+            {/* Avatar + name */}
+            <div className="px-6 pb-6 text-center">
+              <div className="w-[72px] h-[72px] mx-auto rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center text-[22px] font-semibold text-white shadow-lg shadow-[hsl(var(--brand-blue))]/20">
                 {customerInitials}
               </div>
-              <h4 className="mt-3 text-sm font-semibold text-zinc-900">{customerName}</h4>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <h4 className="mt-3 text-[15px] font-semibold text-zinc-900">{customerName}</h4>
+              <p className="text-[12px] text-zinc-400 mt-0.5">
                 {status === 'human_handoff' ? 'Control humano' : 'Agente IA activo'}
               </p>
             </div>
 
-            <div className="p-5 border-b border-zinc-100">
-              <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Acerca de</h4>
-              <p className="text-xs text-zinc-700 leading-relaxed">
-                Paciente del {conversation.channel}. Teléfono: {conversation.customer_phone}
-              </p>
+            {/* Actions */}
+            <div className="px-5 pb-5 space-y-2">
+              <button
+                onClick={() => { takeOver(); setShowInfoSheet(false); }}
+                className={cn(
+                  'w-full inline-flex items-center justify-center gap-2 h-11 rounded-2xl text-[13px] font-semibold transition-all active:scale-[0.98]',
+                  status === 'human_handoff'
+                    ? 'bg-violet-50 text-violet-700 hover:bg-violet-100'
+                    : 'bg-[hsl(var(--brand-blue))] text-white hover:opacity-90 shadow-md shadow-[hsl(var(--brand-blue))]/25',
+                )}
+              >
+                {status === 'human_handoff' ? (
+                  <><Bot className="w-4 h-4" /> Devolver al bot</>
+                ) : (
+                  <><Hand className="w-4 h-4" /> Tomar control</>
+                )}
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button className="inline-flex items-center justify-center gap-2 h-11 rounded-2xl text-[13px] font-medium bg-zinc-50 text-zinc-700 hover:bg-zinc-100 transition-all active:scale-[0.98]">
+                  <Phone className="w-4 h-4" /> Llamar
+                </button>
+                <button className="inline-flex items-center justify-center gap-2 h-11 rounded-2xl text-[13px] font-medium bg-zinc-50 text-zinc-700 hover:bg-zinc-100 transition-all active:scale-[0.98]">
+                  <Video className="w-4 h-4" /> Video
+                </button>
+              </div>
             </div>
 
-            <div className="p-5 border-b border-zinc-100">
-              <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Canal</h4>
-              <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-0.5 text-[11px] font-medium capitalize">
-                {conversation.channel}
-              </span>
+            {/* Details */}
+            <div className="mx-5 rounded-2xl bg-zinc-50/80 divide-y divide-zinc-100/80">
+              <div className="px-4 py-3.5">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Teléfono</p>
+                <p className="text-[13px] text-zinc-800 mt-0.5 tabular-nums">{conversation.customer_phone}</p>
+              </div>
+              <div className="px-4 py-3.5">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Canal</p>
+                <span className="inline-flex items-center mt-1 rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-0.5 text-[11px] font-medium capitalize">
+                  {conversation.channel}
+                </span>
+              </div>
+              <div className="px-4 py-3.5">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 font-medium">Estado</p>
+                <span className={cn(
+                  'inline-flex items-center mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium',
+                  status === 'human_handoff'
+                    ? 'bg-violet-50 text-violet-700'
+                    : 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]',
+                )}>
+                  {status === 'human_handoff' ? 'Humano' : 'IA activo'}
+                </span>
+              </div>
             </div>
 
-            <div className="p-5">
+            {/* Notes */}
+            <div className="px-5 pt-5 pb-6">
               <ConversationNotes conversationId={conversation.id} initialNotes={initialNotes} />
             </div>
           </div>
