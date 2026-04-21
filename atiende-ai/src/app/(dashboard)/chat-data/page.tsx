@@ -4,9 +4,12 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Sparkles, Database, FileText, Send, Plus, Search, Clock,
   BarChart3, Users, TrendingUp, Calendar, Mail, Megaphone,
-  MessageSquare, Image as ImageIcon, Hash,
+  MessageSquare, Image as ImageIcon, Hash, LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet';
 
 type Mode = 'datos' | 'contenido';
 
@@ -53,6 +56,7 @@ export default function ChatDataPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
+  const [showTemplates, setShowTemplates] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -119,7 +123,80 @@ export default function ChatDataPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-9rem)] flex gap-4">
+    <div className="h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)] flex flex-col md:flex-row gap-3 md:gap-4">
+      {/* ─────────────── MOBILE TOP BAR ─────────────── */}
+      <div className="md:hidden flex items-center gap-2">
+        <div className="flex-1 flex gap-1 p-1 rounded-full bg-zinc-100">
+          <button
+            onClick={() => setMode('datos')}
+            className={cn(
+              'flex-1 h-9 rounded-full text-[13px] font-medium flex items-center justify-center gap-1.5 transition',
+              mode === 'datos' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500',
+            )}
+          >
+            <Database className="w-3.5 h-3.5" /> Datos
+          </button>
+          <button
+            onClick={() => setMode('contenido')}
+            className={cn(
+              'flex-1 h-9 rounded-full text-[13px] font-medium flex items-center justify-center gap-1.5 transition',
+              mode === 'contenido' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500',
+            )}
+          >
+            <Sparkles className="w-3.5 h-3.5" /> Contenido
+          </button>
+        </div>
+        <button
+          onClick={() => setShowTemplates(true)}
+          aria-label="Plantillas"
+          className="h-9 w-9 rounded-full bg-white border border-zinc-200 flex items-center justify-center text-zinc-600 hover:text-zinc-900 transition shrink-0"
+        >
+          <LayoutGrid className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* ─────────────── MOBILE TEMPLATES SHEET ─────────────── */}
+      <Sheet open={showTemplates} onOpenChange={setShowTemplates}>
+        <SheetContent side="bottom" className="h-[75svh] p-0 flex flex-col">
+          <SheetHeader className="px-5 pt-5 pb-3 border-b border-zinc-100">
+            <SheetTitle>Plantillas</SheetTitle>
+          </SheetHeader>
+          <div className="px-5 py-3 border-b border-zinc-100">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+              <input
+                type="search"
+                value={templateSearch}
+                onChange={(e) => setTemplateSearch(e.target.value)}
+                placeholder="Buscar plantilla"
+                className="w-full pl-9 pr-3 h-9 text-[13px] rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+            </div>
+          </div>
+          <ul className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+            {filteredTemplates.map((t) => {
+              const Icon = t.icon;
+              return (
+                <li key={t.title}>
+                  <button
+                    onClick={() => { ask(t.prompt); setShowTemplates(false); }}
+                    className="w-full flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-left hover:bg-zinc-50 transition group"
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-zinc-100 group-hover:bg-[hsl(var(--brand-blue-soft))] text-zinc-600 group-hover:text-[hsl(var(--brand-blue))] flex items-center justify-center shrink-0 transition">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-zinc-900 truncate">{t.title}</p>
+                      <p className="text-[11.5px] text-zinc-500 line-clamp-2 mt-0.5">{t.prompt}</p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </SheetContent>
+      </Sheet>
+
       {/* ─────────────── LEFT RAIL ─────────────── */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col glass-card p-4 gap-4 animate-element">
         {/* Mode selector */}
