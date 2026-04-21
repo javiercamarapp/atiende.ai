@@ -1,33 +1,60 @@
 'use client';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Chat con tus datos — UI
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { useState, useRef, useEffect } from 'react';
+import {
+  Sparkles, Database, FileText, Send, Plus, Search, Clock,
+  BarChart3, Users, TrendingUp, Calendar, Mail, Megaphone,
+  MessageSquare, Image as ImageIcon, Hash,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+type Mode = 'datos' | 'contenido';
 
 interface Turn {
   id: string;
+  mode: Mode;
   question: string;
   answer?: string;
   sql?: string | null;
   rows?: Array<Record<string, unknown>>;
   row_count?: number;
   error?: string;
+  loading?: boolean;
 }
 
-const EXAMPLES = [
-  '¿Cuántos pacientes nuevos tuve este mes?',
-  '¿Cuál es mi día más rentable?',
-  '¿Quiénes son mis 10 pacientes más valiosos?',
-  '¿Cuántos no-shows tuve esta semana?',
+interface Template {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  prompt: string;
+  category: string;
+}
+
+const DATOS_TEMPLATES: Template[] = [
+  { icon: Users, title: 'Pacientes nuevos', prompt: '¿Cuántos pacientes nuevos tuve este mes?', category: 'Clientes' },
+  { icon: TrendingUp, title: 'Día más rentable', prompt: '¿Cuál es mi día más rentable?', category: 'Ingresos' },
+  { icon: BarChart3, title: 'Top 10 pacientes', prompt: '¿Quiénes son mis 10 pacientes más valiosos?', category: 'Clientes' },
+  { icon: Calendar, title: 'No-shows semana', prompt: '¿Cuántos no-shows tuve esta semana?', category: 'Operaciones' },
+  { icon: Clock, title: 'Hora pico', prompt: '¿A qué hora del día tengo más citas?', category: 'Operaciones' },
+  { icon: Database, title: 'Ingresos mes', prompt: '¿Cuánto facturé este mes vs el mes pasado?', category: 'Ingresos' },
+];
+
+const CONTENIDO_TEMPLATES: Template[] = [
+  { icon: MessageSquare, title: 'Post Instagram', prompt: 'Escribe un post de Instagram para promocionar limpieza dental con 20% de descuento este mes.', category: 'Redes' },
+  { icon: Mail, title: 'Correo recordatorio', prompt: 'Redacta un correo breve para recordar a pacientes su cita del día siguiente.', category: 'Email' },
+  { icon: Megaphone, title: 'Campaña WhatsApp', prompt: 'Crea un mensaje de WhatsApp para reactivar pacientes que no han venido en 6 meses.', category: 'WhatsApp' },
+  { icon: Hash, title: 'Hashtags clínica', prompt: 'Dame 15 hashtags relevantes para una clínica dental en Monterrey.', category: 'Redes' },
+  { icon: FileText, title: 'Blog post', prompt: 'Escribe un artículo corto sobre la importancia de la limpieza dental cada 6 meses.', category: 'Blog' },
+  { icon: ImageIcon, title: 'Copy promoción', prompt: 'Genera 3 variantes de copy para una promoción de blanqueamiento dental.', category: 'Marketing' },
 ];
 
 export default function ChatDataPage() {
+  const [mode, setMode] = useState<Mode>('datos');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,24 +63,25 @@ export default function ChatDataPage() {
   async function ask(question: string) {
     if (!question.trim() || loading) return;
     const turnId = crypto.randomUUID();
-    setTurns((prev) => [...prev, { id: turnId, question }]);
+    setTurns((prev) => [...prev, { id: turnId, question, mode, loading: true }]);
     setInput('');
     setLoading(true);
 
     try {
-      const r = await fetch('/api/chat-data', {
+      const endpoint = mode === 'datos' ? '/api/chat-data' : '/api/generate-content';
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, prompt: question }),
       });
-      const data = await r.json();
-
+      const data = await r.json().catch(() => ({}));
       setTurns((prev) =>
         prev.map((t) =>
           t.id === turnId
             ? {
                 ...t,
-                answer: data.answer || 'Sin respuesta',
+                loading: false,
+                answer: data.answer || data.content || (r.ok ? 'Sin respuesta' : undefined),
                 sql: data.sql ?? null,
                 rows: data.rows || [],
                 row_count: data.row_count,
@@ -66,7 +94,7 @@ export default function ChatDataPage() {
       setTurns((prev) =>
         prev.map((t) =>
           t.id === turnId
-            ? { ...t, answer: 'Error de red', error: err instanceof Error ? err.message : String(err) }
+            ? { ...t, loading: false, answer: 'Error de red', error: err instanceof Error ? err.message : String(err) }
             : t,
         ),
       );
@@ -75,76 +103,208 @@ export default function ChatDataPage() {
     }
   }
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <header>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Inteligencia</p>
-        <h1 className="mt-1 text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900">
-          Pregunta a tus datos
-        </h1>
-        <p className="mt-1.5 text-sm text-zinc-500">
-          Pregúntale a tu consultorio lo que quieras en español natural.
-        </p>
-      </header>
+  const templates = mode === 'datos' ? DATOS_TEMPLATES : CONTENIDO_TEMPLATES;
+  const filteredTemplates = templateSearch
+    ? templates.filter((t) =>
+        t.title.toLowerCase().includes(templateSearch.toLowerCase()) ||
+        t.category.toLowerCase().includes(templateSearch.toLowerCase()),
+      )
+    : templates;
 
-      {/* Sugerencias */}
-      {turns.length === 0 && (
-        <div className="glass-card p-6">
-          <p className="text-xs uppercase tracking-wider text-zinc-500 mb-3">Ejemplos</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {EXAMPLES.map((ex) => (
-              <button
-                key={ex}
-                type="button"
-                onClick={() => ask(ex)}
-                className="text-left text-sm px-3 py-2.5 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 hover:text-zinc-900 transition"
-              >
-                {ex}
-              </button>
-            ))}
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      ask(input);
+    }
+  }
+
+  return (
+    <div className="h-[calc(100vh-11rem)] flex gap-4">
+      {/* ─────────────── LEFT RAIL ─────────────── */}
+      <aside className="hidden md:flex w-64 shrink-0 flex-col glass-card p-4 gap-4 animate-element">
+        {/* Mode selector */}
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-2">Modo</p>
+          <div className="space-y-1.5">
+            <button
+              onClick={() => setMode('datos')}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition text-left',
+                mode === 'datos'
+                  ? 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]'
+                  : 'text-zinc-600 hover:bg-zinc-50',
+              )}
+            >
+              <Database className="w-4 h-4 shrink-0" />
+              Preguntar a tus datos
+            </button>
+            <button
+              onClick={() => setMode('contenido')}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition text-left',
+                mode === 'contenido'
+                  ? 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))]'
+                  : 'text-zinc-600 hover:bg-zinc-50',
+              )}
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              Generador de contenido
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Historial */}
-      {turns.length > 0 && (
-        <div className="space-y-4">
-          {turns.map((t) => (
-            <TurnBlock key={t.id} turn={t} />
-          ))}
-          {loading && (
-            <div className="glass-card p-4 text-sm text-zinc-500">
-              <span className="inline-block animate-pulse">Pensando…</span>
+        {/* Template search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+          <input
+            type="search"
+            value={templateSearch}
+            onChange={(e) => setTemplateSearch(e.target.value)}
+            placeholder="Buscar plantilla"
+            className="w-full pl-9 pr-3 h-8 text-[12.5px] rounded-full bg-zinc-50 border border-zinc-200 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+          />
+        </div>
+
+        {/* Templates */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-2">Plantillas</p>
+          <ul className="flex-1 overflow-y-auto space-y-1 pr-1">
+            {filteredTemplates.map((t) => {
+              const Icon = t.icon;
+              return (
+                <li key={t.title}>
+                  <button
+                    onClick={() => ask(t.prompt)}
+                    className="w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left hover:bg-zinc-50 transition group"
+                  >
+                    <div className="w-7 h-7 rounded-md bg-zinc-100 group-hover:bg-[hsl(var(--brand-blue-soft))] text-zinc-600 group-hover:text-[hsl(var(--brand-blue))] flex items-center justify-center shrink-0 transition">
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[12.5px] font-medium text-zinc-900 truncate">{t.title}</p>
+                      <p className="text-[10.5px] text-zinc-500 truncate">{t.category}</p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* New chat */}
+        <button
+          onClick={() => setTurns([])}
+          className="flex items-center justify-center gap-1.5 h-9 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[12.5px] font-medium hover:opacity-90 transition"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Nueva conversación
+        </button>
+      </aside>
+
+      {/* ─────────────── MAIN CHAT ─────────────── */}
+      <section className="flex-1 min-w-0 glass-card flex flex-col animate-element animate-delay-100">
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto min-h-0 px-6 md:px-10 py-6">
+          {turns.length === 0 ? (
+            <EmptyState mode={mode} templates={templates.slice(0, 6)} onPick={ask} />
+          ) : (
+            <div className="max-w-3xl mx-auto space-y-4">
+              {turns.map((t) => (
+                <TurnBlock key={t.id} turn={t} />
+              ))}
+              <div ref={bottomRef} />
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
-      )}
 
-      {/* Input */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          ask(input);
-        }}
-        className="glass-card p-3 flex items-center gap-3"
-      >
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Pregunta sobre tus citas, pacientes, pagos…"
-          disabled={loading}
-          className="flex-1 bg-transparent outline-none px-2 text-sm text-zinc-900 placeholder:text-zinc-400"
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="px-4 py-2 rounded-lg bg-[hsl(var(--brand-blue))] text-white text-sm font-medium disabled:opacity-30 hover:opacity-90 transition"
-        >
-          Enviar
-        </button>
-      </form>
+        {/* Input */}
+        <div className="px-6 md:px-10 pb-5 pt-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              ask(input);
+            }}
+            className="max-w-3xl mx-auto"
+          >
+            <div className="relative rounded-2xl border border-zinc-200 bg-white shadow-sm focus-within:border-[hsl(var(--brand-blue))] focus-within:ring-2 focus-within:ring-[hsl(var(--brand-blue-soft))] transition">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder={
+                  mode === 'datos'
+                    ? 'Pregunta sobre tus citas, pacientes, ingresos…'
+                    : 'Describe el contenido que quieres generar…'
+                }
+                disabled={loading}
+                className="w-full resize-none bg-transparent outline-none px-4 pt-3 pb-10 text-[14px] text-zinc-900 placeholder:text-zinc-400 max-h-40"
+              />
+              <div className="absolute left-3 bottom-2 flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-zinc-50 border border-zinc-200 text-[10.5px] text-zinc-500 font-medium">
+                  {mode === 'datos' ? <Database className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                  {mode === 'datos' ? 'Datos' : 'Contenido'}
+                </span>
+                <span className="text-[10.5px] text-zinc-400">Enter para enviar · Shift+Enter para salto</span>
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                aria-label="Enviar"
+                className="absolute right-2 bottom-2 w-8 h-8 rounded-full bg-[hsl(var(--brand-blue))] text-white flex items-center justify-center hover:opacity-90 transition disabled:opacity-30"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EmptyState({ mode, templates, onPick }: { mode: Mode; templates: Template[]; onPick: (p: string) => void }) {
+  return (
+    <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
+      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-lg shadow-[hsl(var(--brand-blue))]/20">
+        {mode === 'datos' ? (
+          <Database className="w-6 h-6 text-white" />
+        ) : (
+          <Sparkles className="w-6 h-6 text-white" />
+        )}
+      </div>
+      <h2 className="mt-5 text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
+        {mode === 'datos' ? '¿Qué quieres saber de tu negocio?' : '¿Qué quieres crear hoy?'}
+      </h2>
+      <p className="mt-2 text-sm text-zinc-500 max-w-md">
+        {mode === 'datos'
+          ? 'Pregúntale a tu consultorio en español natural. Te respondo con datos reales de tu clínica.'
+          : 'Genera posts, correos, campañas y más. Estilo personalizado con la voz de tu marca.'}
+      </p>
+
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
+        {templates.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.title}
+              onClick={() => onPick(t.prompt)}
+              className="group flex items-start gap-3 px-4 py-3 rounded-xl bg-white border border-zinc-200 text-left hover:border-[hsl(var(--brand-blue))] hover:bg-[hsl(var(--brand-blue-soft))]/40 transition"
+            >
+              <div className="w-8 h-8 rounded-lg bg-zinc-100 group-hover:bg-white text-zinc-600 group-hover:text-[hsl(var(--brand-blue))] flex items-center justify-center shrink-0 transition">
+                <Icon className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-zinc-900">{t.title}</p>
+                <p className="text-[11.5px] text-zinc-500 line-clamp-2 mt-0.5">{t.prompt}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -154,53 +314,88 @@ export default function ChatDataPage() {
 function TurnBlock({ turn }: { turn: Turn }) {
   const [showRows, setShowRows] = useState(false);
   const [showSql, setShowSql] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    if (!turn.answer) return;
+    try {
+      await navigator.clipboard.writeText(turn.answer);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <article className="stagger-item space-y-3">
       {/* Pregunta */}
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-zinc-100 border border-zinc-200 px-4 py-2.5 text-sm text-zinc-900">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-[hsl(var(--brand-blue-soft))] border border-[hsl(var(--brand-blue))]/10 px-4 py-2.5 text-[13.5px] text-zinc-900 leading-relaxed">
           {turn.question}
         </div>
       </div>
 
       {/* Respuesta */}
+      {turn.loading && (
+        <div className="flex items-start gap-2.5">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shrink-0">
+            {turn.mode === 'datos' ? <Database className="w-3.5 h-3.5 text-white" /> : <Sparkles className="w-3.5 h-3.5 text-white" />}
+          </div>
+          <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl rounded-tl-sm bg-zinc-50 border border-zinc-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:150ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:300ms]" />
+          </div>
+        </div>
+      )}
+
       {(turn.answer || turn.error) && (
-        <div className="glass-card p-4">
-          {turn.error && (
-            <p className="text-xs text-red-600 mb-2">Error: {turn.error}</p>
-          )}
-          <p className="text-sm text-zinc-900 leading-relaxed">{turn.answer}</p>
+        <div className="flex items-start gap-2.5">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shrink-0 mt-0.5">
+            {turn.mode === 'datos' ? <Database className="w-3.5 h-3.5 text-white" /> : <Sparkles className="w-3.5 h-3.5 text-white" />}
+          </div>
+          <div className="flex-1 min-w-0 rounded-2xl rounded-tl-sm bg-white border border-zinc-200 px-4 py-3">
+            {turn.error && (
+              <p className="text-xs text-rose-600 mb-2 font-medium">Error: {turn.error}</p>
+            )}
+            <p className="text-[13.5px] text-zinc-900 leading-relaxed whitespace-pre-wrap">{turn.answer}</p>
 
-          {turn.rows && turn.rows.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowRows((s) => !s)}
-                className="mt-3 text-xs text-zinc-500 hover:text-zinc-800 transition"
-              >
-                {showRows ? 'Ocultar' : 'Ver'} tabla ({turn.row_count} fila{turn.row_count === 1 ? '' : 's'})
-              </button>
-              {showRows && <DataTable rows={turn.rows} />}
-            </>
-          )}
+            {turn.rows && turn.rows.length > 0 && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRows((s) => !s)}
+                  className="text-[11.5px] text-zinc-500 hover:text-zinc-900 transition"
+                >
+                  {showRows ? 'Ocultar' : 'Ver'} tabla ({turn.row_count} fila{turn.row_count === 1 ? '' : 's'})
+                </button>
+                {showRows && <DataTable rows={turn.rows} />}
+              </div>
+            )}
 
-          {turn.sql && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowSql((s) => !s)}
-                className="mt-2 ml-3 text-xs text-zinc-400 hover:text-zinc-700 transition"
-              >
-                {showSql ? 'Ocultar SQL' : 'Ver SQL'}
-              </button>
-              {showSql && (
-                <pre className="mt-2 p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-100 overflow-auto max-h-60 font-mono">
-                  {turn.sql}
-                </pre>
+            <div className="mt-3 flex items-center gap-3">
+              {turn.answer && (
+                <button onClick={copy} className="text-[11.5px] text-zinc-500 hover:text-zinc-900 transition">
+                  {copied ? '✓ Copiado' : 'Copiar'}
+                </button>
               )}
-            </>
-          )}
+              {turn.sql && (
+                <button
+                  onClick={() => setShowSql((s) => !s)}
+                  className="text-[11.5px] text-zinc-400 hover:text-zinc-700 transition"
+                >
+                  {showSql ? 'Ocultar SQL' : 'Ver SQL'}
+                </button>
+              )}
+            </div>
+
+            {turn.sql && showSql && (
+              <pre className="mt-2 p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-100 overflow-auto max-h-60 font-mono">
+                {turn.sql}
+              </pre>
+            )}
+          </div>
         </div>
       )}
     </article>
@@ -211,7 +406,7 @@ function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (rows.length === 0) return null;
   const headers = Object.keys(rows[0]);
   return (
-    <div className="mt-3 rounded-lg border border-zinc-100 overflow-auto max-h-80">
+    <div className="mt-3 rounded-lg border border-zinc-200 overflow-auto max-h-80">
       <table className="w-full text-xs">
         <thead className="bg-zinc-50 sticky top-0">
           <tr>
