@@ -94,7 +94,7 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
   };
 
   return (
-    <div className="flex h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)] min-h-0">
+    <div className="flex h-[calc(100svh-10rem)] md:h-[calc(100vh-8rem)] min-h-0">
       {/* ─── CHAT AREA ─── */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 glass-card overflow-hidden">
         {/* Chat header */}

@@ -123,7 +123,7 @@ export default function ChatDataPage() {
   }
 
   return (
-    <div className="h-[calc(100svh-13rem)] md:h-[calc(100vh-9rem)] flex flex-col md:flex-row gap-3 md:gap-4">
+    <div className="h-[calc(100svh-10rem)] md:h-[calc(100vh-8rem)] flex flex-col md:flex-row gap-3 md:gap-4">
       {/* ─────────────── MOBILE TOP BAR ─────────────── */}
       <div className="md:hidden flex items-center gap-2">
         <div className="flex-1 flex gap-1 p-1 rounded-full bg-zinc-100">
