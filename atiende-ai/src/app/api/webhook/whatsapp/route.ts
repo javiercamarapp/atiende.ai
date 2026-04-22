@@ -26,11 +26,17 @@ const WEBHOOK_IP_RATE_LIMIT = 300;
 const WEBHOOK_IP_RATE_WINDOW = 60;
 
 function extractClientIp(req: NextRequest): string {
-  // Vercel inyecta x-forwarded-for con el IP del cliente real primero.
-  const fwd = req.headers.get('x-forwarded-for');
-  if (fwd) return fwd.split(',')[0].trim();
+  // Vercel sets x-real-ip from the TCP connection — cannot be spoofed.
+  // x-forwarded-for CAN be spoofed by the client prepending fake IPs.
   const real = req.headers.get('x-real-ip');
   if (real) return real.trim();
+  // Fallback: last entry in x-forwarded-for is the one added by the edge
+  // proxy (rightmost = most trusted), not the first (client-controlled).
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) {
+    const parts = fwd.split(',');
+    return parts[parts.length - 1].trim();
+  }
   return 'unknown';
 }
 

@@ -353,6 +353,18 @@ async function runOrchestratorInner(
         ).join('\n')
       : ctx.systemPrompt;
 
+    // Filter out mutation tools that already succeeded — keep read-only tools
+    const mutationToolNames = new Set(successfulMutations.map((tc) => tc.toolName));
+    const remainingTools = successfulMutations.length > 0
+      ? ctx.tools.filter((t) => {
+          const name = 'function' in t ? t.function.name : '';
+          return !mutationToolNames.has(name);
+        })
+      : ctx.tools;
+    // Only pass tools if there are any remaining; undefined if all were mutations
+    const fallbackTools = remainingTools.length > 0 ? remainingTools : undefined;
+    const fallbackToolChoice = remainingTools.length > 0 ? 'auto' : 'none';
+
     // Si el timeout global se dispara durante el fallback, abortar también.
     const fallbackController = new AbortController();
     const onGlobalAbortFb = () => fallbackController.abort();
@@ -369,9 +381,9 @@ async function runOrchestratorInner(
           // openrouter.ts:491 también normaliza `[]` → undefined pero mejor
           // aquí por claridad y porque tools:undefined + tool_choice:'none'
           // deja al SDK completamente sin noción de tools.
-          tools: successfulMutations.length > 0 ? undefined : ctx.tools,
+          tools: fallbackTools,
           toolExecutor,
-          tool_choice: successfulMutations.length > 0 ? 'none' : 'auto',
+          tool_choice: fallbackToolChoice,
           maxTokens: ctx.tools.length > 0 ? 2000 : 800,
           temperature: 0.5,
           maxToolRounds: 5,

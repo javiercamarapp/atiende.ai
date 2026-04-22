@@ -66,12 +66,15 @@ export async function releaseConversationLock(
   if (!redis) return;
   const k = key(tenantId, phone);
   try {
-    // Lua-style check-and-delete via Upstash REST: simulamos con GET+DEL.
-    const current = await redis.get<string>(k);
-    if (current === token) {
-      await redis.del(k);
-    }
+    // Atomic check-and-delete via Lua script. The non-atomic GET+DEL
+    // had a race: between GET and DEL another process could acquire
+    // the lock, and our DEL would release THEIR lock.
+    await redis.eval(
+      `if redis.call("get",KEYS[1]) == ARGV[1] then return redis.call("del",KEYS[1]) else return 0 end`,
+      [k],
+      [token],
+    );
   } catch {
-    /* fail-open — el TTL eventualmente expira el lock */
+    /* fail-open — TTL will release the lock */
   }
 }

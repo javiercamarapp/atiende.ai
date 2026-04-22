@@ -297,7 +297,7 @@ describe('middleware', () => {
 
       const csp = mockHeaders.get('Content-Security-Policy');
       expect(csp).toContain("'unsafe-inline'");
-      expect(csp).toContain("'unsafe-eval'");
+      expect(csp).not.toContain("'unsafe-eval'");
     });
   });
 

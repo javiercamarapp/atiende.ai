@@ -20,6 +20,48 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import type OpenAI from 'openai';
+import { Redis } from '@upstash/redis';
+
+const MUTATION_DEDUP_TTL_SECONDS = 60;
+
+let _dedupRedis: Redis | null = null;
+function getDedupRedis(): Redis | null {
+  if (_dedupRedis) return _dedupRedis;
+  const url = process.env.UPSTASH_REDIS_URL;
+  const token = process.env.UPSTASH_REDIS_TOKEN;
+  if (!url || !token) return null;
+  _dedupRedis = new Redis({ url, token });
+  return _dedupRedis;
+}
+
+async function checkRedisMutationDedup(
+  conversationId: string,
+  cacheKey: string,
+): Promise<boolean> {
+  const redis = getDedupRedis();
+  if (!redis) return false;
+  try {
+    const exists = await redis.exists(`mut:${conversationId}:${cacheKey}`);
+    return exists === 1;
+  } catch {
+    return false; // fail-open
+  }
+}
+
+async function setRedisMutationDedup(
+  conversationId: string,
+  cacheKey: string,
+): Promise<void> {
+  const redis = getDedupRedis();
+  if (!redis) return;
+  try {
+    await redis.set(`mut:${conversationId}:${cacheKey}`, '1', {
+      ex: MUTATION_DEDUP_TTL_SECONDS,
+    });
+  } catch {
+    // fail-open
+  }
+}
 
 /**
  * Contexto inyectado a cada tool al ejecutarla. Todo lo que el handler
@@ -272,22 +314,43 @@ export async function executeTool(
     };
   }
 
-  // AUDIT R18: defense-in-depth — si esta misma (tool, args) ya se ejecutó
-  // exitosamente como MUTATION en este turno del orchestrator, devuelve el
-  // resultado cacheado sin re-invocar el handler. Previene doble-ejecución
-  // aún si el fallback LLM ignora el bloqueo a nivel prompt/tool_choice.
-  // Solo aplica a mutations (read-only es idempotente, no hay daño en
-  // re-ejecutar — y evitamos stale reads en el cache).
-  if (ctx.successfulCallCache && def.isMutation) {
+  // AUDIT R18 + VC-FIX: two layers of mutation dedup:
+  //
+  // Layer 1 (in-memory): the sharedSuccessCache covers primary→fallback
+  // within the SAME invocation. Fast, zero-latency.
+  //
+  // Layer 2 (Redis): cross-instance dedup. If Meta retries a webhook and
+  // it lands on a different cold lambda, the in-memory cache is empty.
+  // A Redis NX key (60s TTL) catches this case. The conversation lock
+  // + wa_message_id idempotency check already cover most retries, but
+  // this defends the edge case where the primary executed a mutation,
+  // the inbound message was persisted, but the process died before
+  // saving the outbound reply — a retry would pass the idempotency
+  // check (inbound exists) but the processor would skip processing.
+  // However, if QStash retries with a fresh conversationId or the
+  // inbound wasn't persisted yet, this Redis guard is the last line.
+  if (def.isMutation) {
     const cacheKey = buildToolCallCacheKey(name, args);
-    const cached = ctx.successfulCallCache.get(cacheKey);
-    if (cached) {
+    // Layer 1: in-memory
+    if (ctx.successfulCallCache) {
+      const cached = ctx.successfulCallCache.get(cacheKey);
+      if (cached) {
+        console.info(
+          `[tool-executor] blocked duplicate mutation ${name} via memory cache`,
+        );
+        return { ...cached, durationMs: 0 };
+      }
+    }
+    // Layer 2: Redis cross-instance
+    const redisHit = await checkRedisMutationDedup(ctx.conversationId, cacheKey);
+    if (redisHit) {
       console.info(
-        `[tool-executor] blocked duplicate mutation ${name} via cache hit — returning cached result`,
+        `[tool-executor] blocked duplicate mutation ${name} via Redis dedup`,
       );
       return {
-        ...cached,
-        durationMs: 0, // cached; no new work done
+        success: true,
+        result: { success: true, summary: 'Already executed (dedup)' },
+        durationMs: 0,
       };
     }
   }
@@ -301,13 +364,12 @@ export async function executeTool(
       result,
       durationMs: Date.now() - start,
     };
-    // Persistir en cache solo si es mutation exitosa (no aplica a read-only).
-    if (ctx.successfulCallCache && def.isMutation) {
+    if (def.isMutation) {
       const r = result as { success?: boolean } | null;
-      // No cachear si la tool devolvió explícitamente success:false (ej.
-      // SLOT_TAKEN antes del INSERT). Ese es un "try again" válido.
       if (!r || r.success !== false) {
-        ctx.successfulCallCache.set(buildToolCallCacheKey(name, args), execResult);
+        const ck = buildToolCallCacheKey(name, args);
+        ctx.successfulCallCache?.set(ck, execResult);
+        void setRedisMutationDedup(ctx.conversationId, ck);
       }
     }
     return execResult;

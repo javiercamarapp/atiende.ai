@@ -109,13 +109,26 @@ interface WhatsAppWebhookBody {
 
 export async function processIncomingMessage(body: WhatsAppWebhookBody) {
   ensureEncryptionAtRequestTime();
+  const tasks: Promise<void>[] = [];
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value;
       if (!value.messages) continue;
       for (const msg of value.messages) {
-        await handleSingleMessage(msg, value.metadata);
+        tasks.push(handleSingleMessage(msg, value.metadata));
       }
+    }
+  }
+  // Process messages concurrently. The conversation lock serializes
+  // messages from the same (tenant, phone) pair; distinct senders
+  // proceed in parallel instead of blocking each other sequentially.
+  const results = await Promise.allSettled(tasks);
+  for (const r of results) {
+    if (r.status === 'rejected') {
+      if (r.reason instanceof ConversationLockedError) throw r.reason;
+      logger.error('[processor] message handling failed', undefined, {
+        err: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
     }
   }
 }

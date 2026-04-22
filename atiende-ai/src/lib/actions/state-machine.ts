@@ -35,33 +35,20 @@ export async function getConversationState(conversationId: string): Promise<Conv
 }
 
 /**
- * Writes conversation state into the `metadata` JSONB column.
- * Merges with existing metadata so other keys are preserved.
+ * Atomically writes conversation state into the `metadata` JSONB column
+ * via a Supabase RPC that uses `jsonb_set`, avoiding read-modify-write
+ * race conditions when multiple messages arrive concurrently.
  */
 export async function setConversationState(
   conversationId: string,
   state: ConversationState,
   context?: Record<string, unknown>
 ) {
-  // Read existing metadata to merge
-  const { data } = await supabaseAdmin
-    .from('conversations')
-    .select('metadata')
-    .eq('id', conversationId)
-    .single();
-
-  const metadata = (data?.metadata as Record<string, unknown>) || {};
-
-  if (state) {
-    metadata.conversation_state = { state, context: context ?? {} };
-  } else {
-    delete metadata.conversation_state;
-  }
-
-  await supabaseAdmin
-    .from('conversations')
-    .update({ metadata })
-    .eq('id', conversationId);
+  await supabaseAdmin.rpc('set_conversation_state', {
+    p_conversation_id: conversationId,
+    p_state: state,
+    p_context: context ?? {},
+  });
 }
 
 export async function clearConversationState(conversationId: string) {

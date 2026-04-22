@@ -415,11 +415,9 @@ describe('processor integration — contract-level scenarios', () => {
       const body = makeWebhookBody({ id: 'msg-timeout-test' });
 
       // The Promise.race in response-builder.ts rejects with a timeout error.
-      // This propagates up through handleSingleMessageInner → handleSingleMessage
-      // as an unhandled rejection. We verify the timeout fires correctly.
-      await expect(processIncomingMessage(body as any)).rejects.toThrow(
-        /LLM response timeout/,
-      );
+      // With Promise.allSettled in processIncomingMessage, the error is caught
+      // and logged rather than propagated — the function resolves cleanly.
+      await processIncomingMessage(body as any);
 
       // generateResponse was invoked (pipeline reached the LLM step)
       expect(mockGenerateResponse).toHaveBeenCalled();
