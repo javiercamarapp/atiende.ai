@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { createClient } from '@/lib/supabase/client';
 
-const SEEN_KEY = 'notifications_last_seen';
+const READ_IDS_KEY = 'notifications_read_ids';
+const MAX_TRACKED = 500;
 
 type Notification = {
   id: string;
@@ -14,25 +15,65 @@ type Notification = {
   created_at: string;
 };
 
-// ---- localStorage-backed store for lastSeen ----
+// ---- localStorage-backed store of read notification IDs ----
+// We cache the parsed Set so useSyncExternalStore sees a stable reference
+// between snapshots (required — React bails out when Object.is(prev, next)).
+let cachedRaw: string | null = null;
+let cachedSet: Set<string> = new Set();
 const seenListeners = new Set<() => void>();
-function emitSeenChange() {
-  seenListeners.forEach((l) => l());
+const SERVER_SET = new Set<string>();
+
+function readFromStorage(): Set<string> {
+  const raw = localStorage.getItem(READ_IDS_KEY);
+  if (raw === cachedRaw) return cachedSet;
+  cachedRaw = raw;
+  try {
+    cachedSet = new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    cachedSet = new Set();
+  }
+  return cachedSet;
 }
+
 function subscribeSeen(cb: () => void) {
   seenListeners.add(cb);
-  return () => { seenListeners.delete(cb); };
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === READ_IDS_KEY) cb();
+  };
+  window.addEventListener('storage', onStorage);
+  return () => {
+    seenListeners.delete(cb);
+    window.removeEventListener('storage', onStorage);
+  };
 }
-function getSeenSnapshot(): number {
-  const raw = localStorage.getItem(SEEN_KEY);
-  return raw ? Number(raw) : 0;
+
+function getSeenSnapshot(): Set<string> {
+  return readFromStorage();
 }
-function getSeenServerSnapshot(): number {
-  return Date.now();
+
+function getSeenServerSnapshot(): Set<string> {
+  return SERVER_SET;
 }
-function writeSeen(ts: number) {
-  localStorage.setItem(SEEN_KEY, String(ts));
-  emitSeenChange();
+
+function markIdsRead(ids: string[]) {
+  if (ids.length === 0) return;
+  const current = readFromStorage();
+  let changed = false;
+  for (const id of ids) {
+    if (!current.has(id)) {
+      current.add(id);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  // Cap growth
+  let arr = Array.from(current);
+  if (arr.length > MAX_TRACKED) arr = arr.slice(-MAX_TRACKED);
+  const serialized = JSON.stringify(arr);
+  localStorage.setItem(READ_IDS_KEY, serialized);
+  cachedRaw = serialized;
+  cachedSet = new Set(arr);
+  seenListeners.forEach((l) => l());
 }
 
 // ---- helpers ----
@@ -59,17 +100,7 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
   const [open, setOpen] = useState(false);
   const supabaseRef = useRef(createClient());
 
-  const lastSeen = useSyncExternalStore(subscribeSeen, getSeenSnapshot, getSeenServerSnapshot);
-
-  useEffect(() => {
-    supabaseRef.current
-      .from('audit_log')
-      .select('id, action, details, created_at')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(10)
-      .then(({ data }) => setNotifications(data || []));
-  }, [tenantId]);
+  const readIds = useSyncExternalStore(subscribeSeen, getSeenSnapshot, getSeenServerSnapshot);
 
   const fetchNotifications = useCallback(() => {
     supabaseRef.current
@@ -81,22 +112,27 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
       .then(({ data }) => setNotifications(data || []));
   }, [tenantId]);
 
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
   const markAllRead = useCallback(() => {
-    writeSeen(Date.now());
-  }, []);
+    markIdsRead(notifications.map((n) => n.id));
+  }, [notifications]);
 
-  const handleOpenChange = useCallback((isOpen: boolean) => {
-    setOpen(isOpen);
-    if (isOpen) {
-      fetchNotifications();
-    } else {
-      markAllRead();
-    }
-  }, [fetchNotifications, markAllRead]);
+  const handleOpenChange = useCallback(
+    (isOpen: boolean) => {
+      setOpen(isOpen);
+      if (isOpen) {
+        fetchNotifications();
+      } else {
+        markIdsRead(notifications.map((n) => n.id));
+      }
+    },
+    [fetchNotifications, notifications],
+  );
 
-  const unread = notifications.filter(
-    (n) => new Date(n.created_at).getTime() > lastSeen,
-  ).length;
+  const unread = notifications.filter((n) => !readIds.has(n.id)).length;
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -134,7 +170,7 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
         ) : (
           <div className="max-h-80 overflow-y-auto bg-white">
             {notifications.map((n) => {
-              const isNew = new Date(n.created_at).getTime() > lastSeen;
+              const isNew = !readIds.has(n.id);
               return (
                 <div
                   key={n.id}
