@@ -14,15 +14,15 @@ describe('getPlanLimit()', () => {
     expect(getPlanLimit('premium')).toBe(999999);
   });
 
-  it('free_trial → 100', () => {
-    expect(getPlanLimit('free_trial')).toBe(100);
+  it('free_trial → 300 (central config)', () => {
+    expect(getPlanLimit('free_trial')).toBe(300);
   });
 
-  it('plan desconocido → 100 (default)', () => {
-    expect(getPlanLimit('unknown')).toBe(100);
+  it('plan desconocido → free_trial fallback (300)', () => {
+    expect(getPlanLimit('unknown')).toBe(300);
   });
 
-  it('string vacío → 100', () => {
-    expect(getPlanLimit('')).toBe(100);
+  it('string vacío → free_trial fallback (300)', () => {
+    expect(getPlanLimit('')).toBe(300);
   });
 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStripe } from '@/lib/billing/stripe';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
+import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true, duplicate: true });
     }
     // Error real de DB — log y continuar (fail-open para no bloquear Stripe).
-    console.error('[stripe-webhook] idempotency insert failed:', dedupError.message);
+    logger.error('[stripe-webhook] idempotency insert failed', undefined, {  err: dedupError.message, eventId: event.id  });
   }
 
   logWebhook({
@@ -78,9 +79,7 @@ export async function POST(req: NextRequest) {
         .eq('id', tid)
         .single();
       if (existing?.stripe_customer_id && existing.stripe_customer_id !== stripeCustomer) {
-        console.warn(
-          `[stripe-webhook] customer mismatch for tenant ${tid}: existing=${existing.stripe_customer_id}, event=${stripeCustomer}`,
-        );
+        logger.warn('[stripe-webhook] customer mismatch — rejecting metadata replay', {  tenantId: tid, existing: existing.stripe_customer_id, event: stripeCustomer  });
         return NextResponse.json({ received: true });
       }
       // Auto-populate voice fields para plan premium.
@@ -103,13 +102,11 @@ export async function POST(req: NextRequest) {
               stripe_subscription_item_voice_id: meteredItem?.id ?? null,
             };
             if (!meteredItem) {
-              console.warn(
-                `[stripe-webhook] tenant ${tid} subscribed to premium but no metered item found. Overage billing requires manual SQL update.`,
-              );
+              logger.warn('[stripe-webhook] premium subscription lacks metered item — overage billing requires manual SQL update', {  tenantId: tid  });
             }
           }
         } catch (err) {
-          console.error('[stripe-webhook] failed to fetch subscription items:', err instanceof Error ? err.message : err);
+          logger.error('[stripe-webhook] failed to fetch subscription items', undefined, {  err: err instanceof Error ? err.message : err, tenantId: tid  });
         }
       }
 
@@ -146,6 +143,34 @@ export async function POST(req: NextRequest) {
         .from('tenants')
         .update({ status: 'past_due' })
         .eq('stripe_customer_id', customerId);
+    }
+  }
+
+  // AUDIT R21 — Payment recovery. Si un tenant estaba en past_due y paga
+  // tarde (invoice retry exitoso), Stripe dispara invoice.payment_succeeded
+  // pero NO un customer.subscription.updated consistente. Sin este handler
+  // el tenant queda permanentemente past_due aunque ya esté al corriente =
+  // revenue leak + tenant bloqueado en producción aun pagando.
+  if (event.type === 'invoice.payment_succeeded') {
+    const inv = event.data.object as unknown as {
+      customer?: string;
+      billing_reason?: string;
+    };
+    const customerId = inv.customer;
+    if (customerId) {
+      // Solo re-activamos si la razón indica recuperación de pago recurrente.
+      // Otros billing_reason (subscription_create, manual) ya los maneja
+      // customer.subscription.created/updated para setear plan correcto.
+      const isRecovery =
+        inv.billing_reason === 'subscription_cycle' ||
+        inv.billing_reason === 'subscription_update';
+      if (isRecovery) {
+        await supabaseAdmin
+          .from('tenants')
+          .update({ status: 'active' })
+          .eq('stripe_customer_id', customerId)
+          .eq('status', 'past_due'); // no-op si ya está active
+      }
     }
   }
 

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { PLAN_PRICES_MXN, PLAN_MSG_LIMITS_MONTHLY } from '@/lib/config';
 
 const HOURLY_RATES: Record<string,number> = {
   dental:75,medical:75,nutritionist:70,psychologist:80,restaurant:55,taqueria:50,
@@ -12,7 +13,7 @@ const SERVICE_VALUES: Record<string,number> = {
   spa:900,gym:400,veterinary:500,pharmacy:200,school:3000,insurance:5000,
   mechanic:1500,accountant:2000,florist:500,optics:1200,other:500,
 };
-const PLAN_PRICES: Record<string,number> = { free_trial:0, basic:499, pro:999, premium:1499 };
+const PLAN_PRICES = PLAN_PRICES_MXN;
 
 export interface ROIResult {
   messagesSaved:number; minutesSaved:number; hoursSaved:number;
@@ -32,7 +33,7 @@ export function calculateROI(
   const afterRev = afterHrs * svcVal;
   const noShows = analytics.reduce((s,d) => s+Math.max(0,(d.appointments_booked||0)*0.15-(d.appointments_no_show||0)),0);
   const noShowSav = noShows * svcVal;
-  const cost = PLAN_PRICES[tenant.plan]||499;
+  const cost = PLAN_PRICES[tenant.plan] ?? PLAN_PRICES.basic;
   const total = staffSav + afterRev + noShowSav;
   const roi = cost>0?((total-cost)/cost)*100:0;
   return { messagesSaved:msgSaved, minutesSaved:Math.round(minSaved),
@@ -56,12 +57,10 @@ export async function getMonthlyUsage(tenantId: string) {
   return count || 0;
 }
 
+// Plan message limits for ROI/usage dashboards. Falls back to the central
+// constant in config.ts; premium is treated as effectively unlimited for
+// dashboard visualisation purposes (real enforcement is in gates.ts).
 export function getPlanLimit(plan: string): number {
-  const limits: Record<string, number> = {
-    free_trial: 100,
-    basic: 500,
-    pro: 2000,
-    premium: 999999, // unlimited
-  };
-  return limits[plan] || 100;
+  if (plan === 'premium') return 999999;
+  return PLAN_MSG_LIMITS_MONTHLY[plan] ?? PLAN_MSG_LIMITS_MONTHLY.free_trial;
 }

@@ -11,6 +11,7 @@ import {
   extractMessageIds,
 } from '@/lib/whatsapp/webhook-schema';
 import crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 // AUDIT P1 item 3: rechazar payloads cuyos mensajes tengan >5 min de edad.
 // Meta normalmente entrega en <5s; >5 min indica replay (captura previa
@@ -48,14 +49,28 @@ function extractClientIp(req: NextRequest): string {
 const USE_TOOL_CALLING = process.env.USE_TOOL_CALLING === 'true';
 void USE_TOOL_CALLING; // referenced for documentation; processor reads env directly
 
-// GET: Verificacion del webhook (Meta lo llama UNA VEZ al configurar)
+// GET: Verificacion del webhook (Meta lo llama UNA VEZ al configurar).
+// Usamos timingSafeEqual para que un atacante no pueda fingerprintear el
+// verify token comparando tiempos de respuesta caracter por caracter.
+// Si longitudes difieren, rechazamos sin comparar (igual que HMAC en POST).
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const mode = params.get('hub.mode');
-  const token = params.get('hub.verify_token');
+  const token = params.get('hub.verify_token') ?? '';
   const challenge = params.get('hub.challenge');
+  const expected = process.env.WA_VERIFY_TOKEN ?? '';
 
-  if (mode === 'subscribe' && token === process.env.WA_VERIFY_TOKEN) {
+  if (mode !== 'subscribe' || !expected) {
+    return new NextResponse('Forbidden', { status: 403 });
+  }
+
+  const tokenBuf = Buffer.from(token);
+  const expectedBuf = Buffer.from(expected);
+  const equal =
+    tokenBuf.length === expectedBuf.length &&
+    crypto.timingSafeEqual(tokenBuf, expectedBuf);
+
+  if (equal) {
     return new NextResponse(challenge, { status: 200 });
   }
   return new NextResponse('Forbidden', { status: 403 });
@@ -70,7 +85,7 @@ export async function POST(req: NextRequest) {
     // misconfigured deployment can't be used as an unauthenticated entry
     // point to the message processor.
     if (!process.env.WA_APP_SECRET) {
-      console.error('[whatsapp-webhook] WA_APP_SECRET not configured — rejecting all webhooks');
+      logger.error('[whatsapp-webhook] WA_APP_SECRET not configured — rejecting all webhooks', undefined, {  });
       logWebhook({
         provider: 'whatsapp',
         eventType: 'config_error',
@@ -100,7 +115,7 @@ export async function POST(req: NextRequest) {
     if (!postRead.ok) return postRead.response;
 
     if (!signature) {
-      console.error('Missing x-hub-signature-256 header');
+      logger.error('[whatsapp-webhook] missing x-hub-signature-256 header', undefined, {  });
       logWebhook({ provider: 'whatsapp', eventType: 'auth_failed', statusCode: 401, error: 'Missing signature header', durationMs: Date.now() - startTime });
       return new NextResponse('Unauthorized', { status: 401 });
     }
@@ -122,7 +137,7 @@ export async function POST(req: NextRequest) {
       }
     }
     if (!valid) {
-      console.error('Invalid webhook signature');
+      logger.error('[whatsapp-webhook] invalid HMAC signature', undefined, {  });
       logWebhook({ provider: 'whatsapp', eventType: 'auth_failed', statusCode: 401, error: 'Invalid signature', durationMs: Date.now() - startTime });
       return new NextResponse('Unauthorized', { status: 401 });
     }
@@ -157,7 +172,7 @@ export async function POST(req: NextRequest) {
     try {
       body = JSON.parse(rawBuffer.toString('utf8'));
     } catch (err) {
-      console.warn('[whatsapp-webhook] malformed JSON payload:', err instanceof Error ? err.message : err);
+      logger.warn('[whatsapp-webhook] malformed JSON payload', {  err: err instanceof Error ? err.message : err  });
       logWebhook({
         provider: 'whatsapp',
         eventType: 'invalid_json',
@@ -174,10 +189,7 @@ export async function POST(req: NextRequest) {
     // el pipeline usa y que si son garbage causan crashes downstream.
     const parseResult = WhatsAppWebhookSchema.safeParse(body);
     if (!parseResult.success) {
-      console.warn(
-        '[whatsapp-webhook] payload failed schema validation:',
-        parseResult.error.issues.slice(0, 3),
-      );
+      logger.warn('[whatsapp-webhook] payload failed schema validation', {  issues: parseResult.error.issues.slice(0, 3)  });
       logWebhook({
         provider: 'whatsapp',
         eventType: 'invalid_payload',
@@ -216,7 +228,7 @@ export async function POST(req: NextRequest) {
           })
           .eq('wa_message_id', status.id)
           .then(() => {}, (err: unknown) => {
-            console.error('Failed to update message status:', err);
+            logger.error('[whatsapp-webhook] failed to update message status', undefined, {  err: err instanceof Error ? err.message : err, waMessageId: status.id  });
           });
       }
     }
@@ -227,9 +239,7 @@ export async function POST(req: NextRequest) {
     if (hasMessages) {
       const replay = checkWebhookReplay(validated, WEBHOOK_REPLAY_MAX_AGE_SECONDS);
       if (!replay.ok) {
-        console.warn(
-          `[whatsapp-webhook] replay rejected — message age=${replay.ageSeconds}s > ${WEBHOOK_REPLAY_MAX_AGE_SECONDS}s`,
-        );
+        logger.warn('[whatsapp-webhook] replay rejected', {  ageSeconds: replay.ageSeconds, maxAge: WEBHOOK_REPLAY_MAX_AGE_SECONDS  });
         logWebhook({
           provider: 'whatsapp',
           eventType: 'replay_rejected',
@@ -294,10 +304,10 @@ export async function POST(req: NextRequest) {
       const pub = await publishMessage(workerUrl, validated);
       if (!pub.ok) {
         // Publicación falló — fallback a waitUntil para no perder el mensaje.
-        console.warn('[webhook] QStash publish failed, fallback to waitUntil:', pub.reason);
+        logger.warn('[whatsapp-webhook] QStash publish failed, fallback to waitUntil', {  reason: pub.reason  });
         waitUntil(
           processIncomingMessage(validated as never).catch((err) => {
-            console.error('Error procesando mensaje WA (fallback):', err);
+            logger.error('[whatsapp-webhook] process error (fallback)', undefined, {  err: err instanceof Error ? err.message : err  });
             logWebhook({ provider: 'whatsapp', eventType: 'process_error', error: err instanceof Error ? err.message : 'Unknown error' });
           }),
         );
@@ -306,7 +316,7 @@ export async function POST(req: NextRequest) {
       // Sin QStash configurado — modo legacy con waitUntil.
       waitUntil(
         processIncomingMessage(validated as never).catch((err) => {
-          console.error('Error procesando mensaje WA:', err);
+          logger.error('[whatsapp-webhook] process error', undefined, {  err: err instanceof Error ? err.message : err  });
           logWebhook({
             provider: 'whatsapp',
             eventType: 'process_error',
@@ -318,7 +328,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ status: 'processing' });
   } catch (error) {
-    console.error('WhatsApp webhook error:', error);
+    logger.error('[whatsapp-webhook] uncaught error', undefined, {  err: error instanceof Error ? error.message : error  });
     logWebhook({ provider: 'whatsapp', eventType: 'error', statusCode: 500, error: error instanceof Error ? error.message : 'Unknown error', durationMs: Date.now() - startTime });
     return NextResponse.json({ status: 'error' }, { status: 500 });
   }

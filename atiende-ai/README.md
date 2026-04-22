@@ -24,7 +24,7 @@
 
 ## The Problem
 
-67% of appointments in Mexican SMEs are requested outside business hours. Small clinics, salons, and service businesses lose ~30% of potential customers because nobody answers WhatsApp at 11pm. Hiring a 24/7 receptionist costs $6,000+ MXN/month. Most can't afford it.
+A large share of appointment requests in Mexican SMEs arrive outside business hours (internal estimate based on customer interviews, pending published baseline). Clinics, salons, and service businesses lose potential customers because nobody answers WhatsApp at 11pm, and hiring a 24/7 receptionist costs $6,000+ MXN/month — prohibitive for most SMEs.
 
 ## The Solution
 
@@ -75,13 +75,13 @@ Customer WhatsApp Message
 | **UI** | shadcn/ui + Tailwind CSS 4 |
 | **Database** | Supabase (PostgreSQL 15 + pgvector HNSW + RLS on 23 tables) |
 | **LLM Orchestration** | OpenRouter — Grok 4.1 Fast (primary), GPT-4.1-mini (fallback), Claude Sonnet 4.6 (crisis/sensitive), Gemini Flash-Lite (standard), DeepSeek V3.2 (batch) |
-| **Voice** | Retell AI + ElevenLabs + Deepgram Nova-3 + Telnyx |
+| **Voice** | Retell AI (STT/TTS orchestrator — internally uses ElevenLabs and Deepgram) + Telnyx (SIP/number) + Deepgram Nova-3 (direct, for WhatsApp audio transcription) |
 | **Messaging** | WhatsApp Cloud API v21.0 + HMAC-SHA256 |
 | **Queue** | Upstash QStash (async webhooks, DLQ, retries) |
 | **Cache** | Upstash Redis (rate-limit, monthly quotas, model price cache) |
-| **Payments** | Stripe (metered billing) + Conekta (OXXO/SPEI for Mexico) |
+| **Payments** | Stripe (MXN, metered billing for voice overage, supports card + OXXO + SPEI via Stripe Mexico) |
 | **Observability** | Sentry + structured JSON logs + per-tenant metrics |
-| **Deploy** | Vercel Pro + 25 cron jobs |
+| **Deploy** | Vercel Pro + 25 cron jobs (Hobby plan caps at 2 — Pro required) |
 
 ## Key Numbers
 
@@ -103,7 +103,7 @@ Production SaaS handling medical appointment data = bar is high.
 - HMAC-SHA256 signature verification on all 5 webhook endpoints + 2MB payload size cap
 - Row-Level Security on 23 tenant-scoped tables with explicit `WITH CHECK`
 - Tenant-scoped admin wrapper (`getTenantScopedAdmin`) as defense-in-depth over RLS
-- AES-256-GCM encryption for PII at rest (phone numbers, messages)
+- AES-256-GCM encryption at rest for message bodies (`messages.content`) and media transcriptions. Contact phone/name encryption is tracked in the roadmap — current protection is RLS + tenant-scoped admin wrapper
 - Atomic monthly quota pre-reservation (Redis INCR before LLM call, not after)
 - Tool-call mutation cache (defense-in-depth against ghost mutations in LLM fallback)
 - 5-layer anti-hallucination guardrails: price validation (sum-aware), medical blocklist, crisis detection (SAPTEL/911 hotlines), length cap, optional LLM-judge
@@ -142,7 +142,7 @@ atiende-ai/
 │   │   ├── (auth)/              # Login, register, forgot password
 │   │   ├── (dashboard)/         # Business owner dashboard
 │   │   └── api/                 # 35+ API routes
-│   │       ├── webhook/         # WhatsApp, Stripe, Conekta, Retell, Delivery
+│   │       ├── webhook/         # WhatsApp, Stripe, Retell, Delivery
 │   │       ├── cron/            # 25 scheduled jobs
 │   │       └── onboarding/      # 6-step AI-guided setup
 │   ├── lib/
@@ -152,7 +152,7 @@ atiende-ai/
 │   │   ├── guardrails/          # Anti-hallucination, crisis detection, price validation
 │   │   ├── rag/                 # Hybrid search (pgvector + tsvector + RRF)
 │   │   ├── eval/                # Golden dataset + synthetic eval runner
-│   │   ├── billing/             # Stripe metered + Conekta OXXO/SPEI
+│   │   ├── billing/             # Stripe subscriptions + metered voice overage
 │   │   ├── intelligence/        # Sentiment, journey, predictive, feedback loop
 │   │   ├── marketplace/         # 25 autonomous agents (cron/event-triggered)
 │   │   └── observability/       # Sentry, metrics, error tracker
@@ -162,6 +162,18 @@ atiende-ai/
 ├── .github/workflows/ci.yml     # CI: lint → type-check → test → build
 └── vercel.json                  # 25 cron job schedules
 ```
+
+## Security & Compliance Roadmap
+
+Known gaps being tracked (honest inventory, not marketing):
+
+1. **Full PII encryption** — currently only `messages.content` and media transcriptions are encrypted at rest. `contacts.phone`, `contacts.name`, `appointments.customer_phone`, `conversations.customer_phone` are plaintext. RLS + tenant-scoped admin wrapper is the current boundary; field-level encryption with backfill is the planned hardening.
+2. **Encryption key rotation** — envelope is `v1:` prefixed but there's no `v2` path or re-encrypt tool yet. If a key is compromised today, the recovery path is a full reset. Key versioning (`MESSAGES_ENCRYPTION_KEY_V2` + background re-encrypt cron) is planned.
+3. **MFA + login lockout + login rate-limit** — Supabase Auth defaults only. For a health-data platform this is below bar; SMS/TOTP MFA and lockout counters on `auth_attempts` are planned.
+4. **ARCO-S titular-facing flow** — the `/api/privacy/delete-my-data` endpoint currently only accepts the tenant owner. LFPDPPP requires the patient (titular) to be able to request erasure directly. A signed-email-token flow + `data_deletion_log` audit table is planned.
+5. **INAI registration + legal review of disclaimer** — the disclaimer in `LEGAL_DISCLAIMER.md` is a template pending lawyer review; INAI registration of the data-treatment responsibility is not yet completed.
+6. **Load testing** — p95 targets referenced in code comments are not backed by a published k6/artillery run. A `scripts/load/` harness is planned.
+7. **CI maturity** — current pipeline is lint/type-check/test/build. Planned: `gitleaks` secret scanning, 80% coverage gate, preview-URL smoke tests, dependabot.
 
 ## CI/CD
 

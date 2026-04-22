@@ -22,7 +22,7 @@ try {
   // En producción queremos fail-fast; en dev/test solo loguear para no
   // romper `vitest` si los side-effect imports corren en orden distinto.
   if (process.env.NODE_ENV === 'production') throw err;
-  console.error('[processor]', err instanceof Error ? err.message : err);
+  logger.error('[processor] ensureToolsRegistered failed', undefined, { err: err instanceof Error ? err.message : err });
 }
 void initializeAllAgents;
 // AGENT_REGISTRY moved to orchestrator-branch.ts
@@ -32,6 +32,7 @@ import {
   releaseConversationLock,
 } from '@/lib/whatsapp/conversation-lock';
 import { maskPhone } from '@/lib/utils/logger';
+import { logger } from '@/lib/logger';
 import { encryptPII, assertEncryptionConfigured } from '@/lib/utils/crypto';
 
 // AUDIT-R5 MEDIO: fail-fast CHECK (lazy, se dispara en la primera request
@@ -46,10 +47,10 @@ function ensureEncryptionAtRequestTime(): void {
     assertEncryptionConfigured();
   } catch (err) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[processor] CRITICAL:', err instanceof Error ? err.message : err);
+      logger.error('[processor] CRITICAL: encryption assert failed', undefined, { err: err instanceof Error ? err.message : err });
       throw err;
     }
-    console.warn('[processor]', err instanceof Error ? err.message : err);
+    logger.warn('[processor] encryption assert warning', { err: err instanceof Error ? err.message : err });
   }
 }
 import { detectPromptInjection, sanitizeUserInput, sanitizeRagContext } from '@/lib/whatsapp/input-guardrail';
@@ -164,10 +165,7 @@ async function handleSingleMessage(
     // atomicInboundUpsert es la autoridad final (fail-closed en su propia
     // capa).
     if (idempErr) {
-      console.warn(
-        '[processor] idempotency check DB error — continuing; UNIQUE constraint will catch duplicates:',
-        idempErr.message,
-      );
+      logger.warn('[processor] idempotency check DB error — continuing; UNIQUE constraint will catch duplicates', {  err: idempErr.message  });
     }
     if (existing) {
       // Already processed — silent skip (don't log as error).
@@ -193,10 +191,7 @@ async function handleSingleMessage(
       .select('id, name')
       .eq('wa_phone_number_id', phoneNumberId);
     if (dupCheck && dupCheck.length > 1) {
-      console.error(
-        `[processor] CRITICAL: ${dupCheck.length} tenants comparten wa_phone_number_id=${phoneNumberId}. IDs:`,
-        dupCheck.map((t) => t.id),
-      );
+      logger.error('[processor] CRITICAL: multiple tenants share wa_phone_number_id', undefined, {  count: dupCheck.length, phoneNumberId, tenantIds: dupCheck.map((t) => t.id)  });
       // Intenta registrar como error crítico (fallback Sentry + Supabase)
       try {
         const { captureError } = await import('@/lib/observability/error-tracker');
@@ -206,14 +201,14 @@ async function handleSingleMessage(
           'fatal',
         );
       } catch (err) {
-        console.error('[processor] captureError failed on duplicate tenant:', err instanceof Error ? err.message : err);
+        logger.error('[processor] captureError failed on duplicate tenant:', undefined, { err: err instanceof Error ? err.message : err });
       }
     }
     return;
   }
 
   if (!tenant) {
-    console.warn('Tenant no encontrado para:', phoneNumberId);
+    logger.warn('[processor] tenant not found for phone_number_id', { phoneNumberId });
     return;
   }
 
@@ -228,7 +223,7 @@ async function handleSingleMessage(
         'Gracias por contactarnos. En este momento nuestro servicio no está disponible. Por favor intente más tarde o contáctenos directamente.',
       );
     } catch (err) {
-      console.warn('[processor] inactive-tenant notice send failed:', err instanceof Error ? err.message : err);
+      logger.warn('[processor] inactive-tenant notice send failed:', { err: err instanceof Error ? err.message : err });
     }
     return;
   }
@@ -246,7 +241,7 @@ async function handleSingleMessage(
     //   - Si está en waitUntil, el catch del route maneja el throw
     // El lock tiene TTL 30s; el segundo intento de QStash (5s después) ya
     // encontrará el lock liberado.
-    console.info('[processor] conversation locked, rejecting for retry:', maskPhone(senderPhone));
+    logger.info('[processor] conversation locked, rejecting for retry', { phone: maskPhone(senderPhone) });
     throw new ConversationLockedError(senderPhone);
   }
 
@@ -273,7 +268,9 @@ async function handleSingleMessageInner(
   // 3. Mark as read (non-critical)
   if (messageId) {
     await markAsRead(phoneNumberId, messageId).catch((err) => {
-      if (process.env.NODE_ENV !== 'production') console.error('markAsRead failed:', err);
+      if (process.env.NODE_ENV !== 'production') {
+        logger.error('[processor] markAsRead failed', undefined, { err: err instanceof Error ? err.message : err });
+      }
     });
   }
 
@@ -299,7 +296,7 @@ async function handleSingleMessageInner(
       ),
     ]);
   } catch (err) {
-    console.warn('[processor] media extraction failed — using placeholder:', err instanceof Error ? err.message : err);
+    logger.warn('[processor] media extraction failed — using placeholder:', { err: err instanceof Error ? err.message : err });
     extracted = {
       content: msg.type === 'audio' || msg.type === 'voice'
         ? '[Audio que no pude procesar. ¿Puede escribirlo?]'
@@ -317,10 +314,7 @@ async function handleSingleMessageInner(
   // con un texto cordial y NO consumimos LLM ni guardamos historial.
   const content = sanitizeUserInput(extracted.content);
   if (detectPromptInjection(content)) {
-    console.warn(
-      '[security] prompt injection blocked from:',
-      maskPhone(senderPhone),
-    );
+    logger.warn('[security] prompt injection blocked', {  phone: maskPhone(senderPhone)  });
     await sendTextMessage(
       phoneNumberId,
       senderPhone,
@@ -335,7 +329,7 @@ async function handleSingleMessageInner(
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
       await releaseMonthlyReservation(tenant.id as string);
     } catch (err) {
-      console.warn('[processor] release monthly (empty content) failed:', err instanceof Error ? err.message : err);
+      logger.warn('[processor] release monthly (empty content) failed:', { err: err instanceof Error ? err.message : err });
     }
     return;
   }
@@ -375,13 +369,13 @@ async function handleSingleMessageInner(
   // Caso error crítico (DB caída, RLS mal): abortamos para no desincronizar
   // historial. Meta reintentará (somos idempotentes).
   if (upsertResult.aborted) {
-    console.error('[processor] atomic upsert aborted:', upsertResult.errorMessage);
+    logger.error('[processor] atomic upsert aborted', undefined, { err: upsertResult.errorMessage });
     await sendTextMessage(
       phoneNumberId,
       senderPhone,
       'Tuvimos un problema técnico. Por favor intente de nuevo en un momento.',
     ).catch((err) => {
-      console.warn('[processor] send technical-error notice failed:', err instanceof Error ? err.message : err);
+      logger.warn('[processor] send technical-error notice failed:', { err: err instanceof Error ? err.message : err });
     });
     return;
   }
@@ -389,13 +383,13 @@ async function handleSingleMessageInner(
   // Webhook duplicado (UNIQUE en wa_message_id). El original ya se procesó.
   if (upsertResult.wasDuplicateWebhook) {
     if (process.env.NODE_ENV !== 'production') {
-      console.info('[processor] duplicate wa_message_id, skipping', { messageId });
+      logger.info('[processor] duplicate wa_message_id, skipping', { messageId });
     }
     try {
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
       await releaseMonthlyReservation(tenant.id as string);
     } catch (err) {
-      console.warn('[processor] release monthly (dup webhook) failed:', err instanceof Error ? err.message : err);
+      logger.warn('[processor] release monthly (dup webhook) failed:', { err: err instanceof Error ? err.message : err });
     }
     return;
   }
@@ -406,7 +400,7 @@ async function handleSingleMessageInner(
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
       await releaseMonthlyReservation(tenant.id as string);
     } catch (err) {
-      console.warn('[processor] release monthly (handoff) failed:', err instanceof Error ? err.message : err);
+      logger.warn('[processor] release monthly (handoff) failed:', { err: err instanceof Error ? err.message : err });
     }
     return;
   }
@@ -556,7 +550,7 @@ async function handleSingleMessageInner(
     });
     if (response.cost) cost(response.cost, tenant.id as string, response.model);
   } catch (err) {
-    console.warn('[processor] emit metrics failed:', err instanceof Error ? err.message : err);
+    logger.warn('[processor] emit metrics failed:', { err: err instanceof Error ? err.message : err });
   }
 
   // 16. Update conversation timestamp

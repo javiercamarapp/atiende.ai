@@ -28,12 +28,12 @@ Multi-tenant WhatsApp AI agent SaaS for Mexican SMEs. Businesses get a 24/7 chat
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `src/lib/whatsapp/processor.ts` | Main message processing orchestrator | 1364 |
+| `src/lib/whatsapp/processor.ts` | Main message processing orchestrator | 587 |
 | `src/lib/whatsapp/classifier.ts` | Intent classification (18 intents) | 40 |
 | `src/lib/whatsapp/rag-context.ts` | RAG context building (pgvector search) | 31 |
 | `src/lib/whatsapp/response-builder.ts` | LLM response generation + validation | 113 |
 | `src/lib/llm/openrouter.ts` | Multi-model routing + cost calculation | 727 |
-| `src/lib/guardrails/validate.ts` | Crisis detection, medical safety, price validation | 239 |
+| `src/lib/guardrails/validate.ts` | Crisis detection, medical safety, price validation | 255 |
 | `src/lib/actions/engine.ts` | 21 intent action handlers | 1065 |
 | `src/lib/actions/state-machine.ts` | Conversation state management | 69 |
 | `src/lib/marketplace/engine.ts` | Marketplace agent executor (parallel) | 210 |
@@ -46,7 +46,7 @@ Multi-tenant WhatsApp AI agent SaaS for Mexican SMEs. Businesses get a 24/7 chat
 | `src/lib/monitoring.ts` | Metrics tracking (LLM, webhooks, agents) | 185 |
 | `src/lib/pagination.ts` | Query pagination helper | 42 |
 | `src/lib/webhook-logger.ts` | Webhook logging with PII redaction | 149 |
-| `src/middleware.ts` | Auth + OWASP security headers + CSP + HSTS | 113 |
+| `src/middleware.ts` | Auth + OWASP security headers + CSP + HSTS | 118 |
 | `schema.sql` | Full PostgreSQL schema (RLS + RPCs + triggers) | 593 |
 
 ## Code Conventions

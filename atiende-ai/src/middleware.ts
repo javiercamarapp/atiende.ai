@@ -68,7 +68,12 @@ export async function middleware(request: NextRequest) {
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
+      // 'unsafe-eval' removido tras audit — Next.js prod no lo requiere
+      // (solo dev con turbopack/webpack HMR). 'unsafe-inline' se mantiene por
+      // ahora porque los inline scripts de Next generan hashes inestables; ir
+      // a nonce-based requiere propagar el nonce por el árbol de RSC, fuera
+      // de alcance de este fix. Documentado en README roadmap.
+      "script-src 'self' 'unsafe-inline' https://js.stripe.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https://*.supabase.co https://*.fbcdn.net " +
         "https://*.whatsapp.net https://lookaside.fbsbx.com " +

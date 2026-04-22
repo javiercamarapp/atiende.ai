@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logger } from '@/lib/logger';
 
 // Transcribir mensajes de audio de WhatsApp
 // 30-40% de los mensajes en Mexico son audio
@@ -42,7 +43,7 @@ export async function transcribeAudio(
 
     return transcript || '[Audio no reconocido]';
   } catch (error) {
-    console.error('Error transcribiendo audio:', error);
+    logger.error('[deepgram] audio transcription failed', undefined, {  err: error instanceof Error ? error.message : error, mediaId  });
     return '[Error al procesar audio]';
   }
 }

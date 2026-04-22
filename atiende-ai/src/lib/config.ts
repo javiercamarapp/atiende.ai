@@ -52,6 +52,28 @@ export const CONV_LOCK_TTL_SECONDS = 30;
 export const WA_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const WA_SEND_TIMEOUT_MS = 10_000;
 
+// ─── Plan pricing + limits (MXN/mes) ──────────────────────────────────────
+// Fuente de verdad única para los precios de plan. Los dashboards de ROI/KPI
+// deben leer de aquí, no hardcodear números distintos — auditoría encontró
+// que kpi-calculator y roi tenían $499 hardcoded mientras billing usaba $599,
+// desalineando los números mostrados a los tenants vs lo que Stripe cobraba.
+export const PLAN_PRICES_MXN: Record<string, number> = {
+  free_trial: 0,
+  basic: 599,
+  pro: 999,
+  premium: 1499,
+};
+
+// Cap mensual de mensajes outbound por plan (reset UTC al cambio de mes).
+// El trial subió de 50 → 300 tras audit: 50 mensajes se queman en 1-2
+// conversaciones reales de onboarding, impidiendo conversión real.
+export const PLAN_MSG_LIMITS_MONTHLY: Record<string, number> = {
+  free_trial: 300,
+  basic: 500,
+  pro: 2000,
+  premium: 10000,
+};
+
 // ─── Voice billing (plan premium) ─────────────────────────────────────────
 /** Minutos de voz incluidos en el plan premium ($1,499 MXN/mes).
  *  Consumo promedio observado por consultorio: ~300 min/mes.
