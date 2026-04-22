@@ -31,8 +31,19 @@ const PLAN_PRICES: Record<string, string> = {
 const VOICE_OVERAGE_PRICE_ID = process.env.STRIPE_VOICE_OVERAGE_PRICE_ID ?? '';
 
 export async function createCheckoutSession(tenantId: string, email: string, plan: string) {
+  const priceId = PLAN_PRICES[plan];
+  if (!priceId) {
+    throw new Error(`Plan "${plan}" no tiene price ID configurado.`);
+  }
+  if (!priceId.startsWith('price_')) {
+    throw new Error(
+      `STRIPE_PRICE_${plan.toUpperCase()} tiene un valor inválido: "${priceId}". ` +
+      'Debe empezar con "price_". Revisa la env var en Vercel.',
+    );
+  }
+
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-    { price: PLAN_PRICES[plan], quantity: 1 },
+    { price: priceId, quantity: 1 },
   ];
   // Premium incluye el item metered de voice overage (cantidad 0 al inicio —
   // Stripe agrega los usageRecords reportados por el cron mensual).

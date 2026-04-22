@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect, useRef, useSyncExternalStore, useCallback } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore, useCallback, useMemo } from 'react';
 import { Bell, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { createClient } from '@/lib/supabase/client';
 
-const READ_IDS_KEY = 'notifications_read_ids';
-const MAX_TRACKED = 500;
+const STORAGE_KEY = 'notifications_read_ids';
+const MAX_IDS = 500;
+const EMPTY_JSON = '[]';
 
 type Notification = {
   id: string;
@@ -15,65 +16,39 @@ type Notification = {
   created_at: string;
 };
 
-// ---- localStorage-backed store of read notification IDs ----
-// We cache the parsed Set so useSyncExternalStore sees a stable reference
-// between snapshots (required — React bails out when Object.is(prev, next)).
-let cachedRaw: string | null = null;
-let cachedSet: Set<string> = new Set();
-const seenListeners = new Set<() => void>();
-const SERVER_SET = new Set<string>();
+// ---- External store for read notification IDs ----
+// Snapshots are raw JSON strings so Object.is() comparison works for useSyncExternalStore.
+const listeners = new Set<() => void>();
 
-function readFromStorage(): Set<string> {
-  const raw = localStorage.getItem(READ_IDS_KEY);
-  if (raw === cachedRaw) return cachedSet;
-  cachedRaw = raw;
-  try {
-    cachedSet = new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    cachedSet = new Set();
-  }
-  return cachedSet;
+function emit() {
+  listeners.forEach((fn) => fn());
 }
 
-function subscribeSeen(cb: () => void) {
-  seenListeners.add(cb);
+function subscribe(cb: () => void) {
+  listeners.add(cb);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === READ_IDS_KEY) cb();
+    if (e.key === STORAGE_KEY) cb();
   };
   window.addEventListener('storage', onStorage);
   return () => {
-    seenListeners.delete(cb);
+    listeners.delete(cb);
     window.removeEventListener('storage', onStorage);
   };
 }
 
-function getSeenSnapshot(): Set<string> {
-  return readFromStorage();
+function getSnapshot(): string {
+  return localStorage.getItem(STORAGE_KEY) ?? EMPTY_JSON;
 }
 
-function getSeenServerSnapshot(): Set<string> {
-  return SERVER_SET;
+function getServerSnapshot(): string {
+  return EMPTY_JSON;
 }
 
-function markIdsRead(ids: string[]) {
-  if (ids.length === 0) return;
-  const current = readFromStorage();
-  let changed = false;
-  for (const id of ids) {
-    if (!current.has(id)) {
-      current.add(id);
-      changed = true;
-    }
-  }
-  if (!changed) return;
-  // Cap growth
-  let arr = Array.from(current);
-  if (arr.length > MAX_TRACKED) arr = arr.slice(-MAX_TRACKED);
-  const serialized = JSON.stringify(arr);
-  localStorage.setItem(READ_IDS_KEY, serialized);
-  cachedRaw = serialized;
-  cachedSet = new Set(arr);
-  seenListeners.forEach((l) => l());
+function writeIds(ids: Set<string>) {
+  let arr = Array.from(ids);
+  if (arr.length > MAX_IDS) arr = arr.slice(-MAX_IDS);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  emit();
 }
 
 // ---- helpers ----
@@ -100,7 +75,14 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
   const [open, setOpen] = useState(false);
   const supabaseRef = useRef(createClient());
 
-  const readIds = useSyncExternalStore(subscribeSeen, getSeenSnapshot, getSeenServerSnapshot);
+  const rawReadIds = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const readIds: Set<string> = useMemo(() => {
+    try {
+      return new Set(JSON.parse(rawReadIds) as string[]);
+    } catch {
+      return new Set<string>();
+    }
+  }, [rawReadIds]);
 
   const fetchNotifications = useCallback(() => {
     supabaseRef.current
@@ -116,9 +98,21 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const markAllRead = useCallback(() => {
-    markIdsRead(notifications.map((n) => n.id));
-  }, [notifications]);
+  const markRead = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      const next = new Set(readIds);
+      let changed = false;
+      for (const id of ids) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      if (changed) writeIds(next);
+    },
+    [readIds],
+  );
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -126,11 +120,15 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
       if (isOpen) {
         fetchNotifications();
       } else {
-        markIdsRead(notifications.map((n) => n.id));
+        markRead(notifications.map((n) => n.id));
       }
     },
-    [fetchNotifications, notifications],
+    [fetchNotifications, notifications, markRead],
   );
+
+  const markAllRead = useCallback(() => {
+    markRead(notifications.map((n) => n.id));
+  }, [notifications, markRead]);
 
   const unread = notifications.filter((n) => !readIds.has(n.id)).length;
 
