@@ -50,50 +50,47 @@ export function KnowledgeZoneTile({ zone, completion, onClick, delayClass }: Kno
     <button
       onClick={onClick}
       className={cn(
-        'group relative flex flex-col items-start gap-3 p-5 rounded-2xl border border-zinc-100 bg-white',
-        'text-left transition hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)]',
+        'group relative flex items-center gap-2.5 p-2.5 rounded-xl border border-zinc-100 bg-white',
+        'text-left transition hover:-translate-y-0.5 hover:shadow-[0_6px_16px_-10px_rgba(0,0,0,0.12)]',
         'hover:border-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--brand-blue))]',
         'animate-element',
         delayClass,
       )}
       aria-label={`${zone.title} — ${completion.answered} de ${completion.total} respuestas`}
     >
-      <div className="flex items-start justify-between w-full gap-3">
-        <span className={cn('inline-flex w-11 h-11 rounded-full items-center justify-center', accent.softBg, accent.text)}>
-          <Icon className="w-5 h-5" strokeWidth={1.75} />
+      <div className="relative w-9 h-9 shrink-0" aria-hidden="true">
+        <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90 absolute inset-0">
+          <circle
+            cx="18" cy="18" r="15.9155"
+            fill="none"
+            className="stroke-zinc-100"
+            strokeWidth="4"
+          />
+          <circle
+            cx="18" cy="18" r="15.9155"
+            fill="none"
+            className={cn(accent.ring, 'transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={CIRCUMFERENCE}
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <span className={cn('absolute inset-0 flex items-center justify-center', accent.text)}>
+          {isComplete ? (
+            <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+          ) : (
+            <Icon className="w-3.5 h-3.5" strokeWidth={1.75} />
+          )}
         </span>
-        <div className="relative w-12 h-12 shrink-0" aria-hidden="true">
-          <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
-            <circle
-              cx="18" cy="18" r="15.9155"
-              fill="none"
-              className="stroke-zinc-100"
-              strokeWidth="3"
-            />
-            <circle
-              cx="18" cy="18" r="15.9155"
-              fill="none"
-              className={cn(accent.ring, 'transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeDasharray={CIRCUMFERENCE}
-              strokeDashoffset={dashOffset}
-            />
-          </svg>
-          <span className={cn(
-            'absolute inset-0 flex items-center justify-center text-[11px] font-semibold tabular-nums',
-            isComplete ? accent.text : 'text-zinc-600',
-          )}>
-            {isComplete ? <Check className="w-4 h-4" strokeWidth={2.25} /> : `${completion.percent}%`}
-          </span>
-        </div>
       </div>
 
-      <div className="min-w-0 w-full">
-        <p className="text-sm font-semibold text-zinc-900 truncate">{zone.title}</p>
-        <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2 leading-relaxed">{zone.description}</p>
-        <p className="text-[11px] text-zinc-400 mt-2 tabular-nums">
-          {completion.answered} de {completion.total} respuestas
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-semibold text-zinc-900 truncate leading-tight">
+          {zone.title}
+        </p>
+        <p className="text-[10px] text-zinc-400 mt-0.5 tabular-nums">
+          {completion.answered}/{completion.total} · {completion.percent}%
         </p>
       </div>
     </button>

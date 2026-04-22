@@ -58,6 +58,25 @@ export async function createCheckoutSession(tenantId: string, email: string, pla
         'en Stripe Dashboard y ponlo en Vercel env antes de aceptar checkouts premium.',
       );
     }
+    if (!VOICE_OVERAGE_PRICE_ID.startsWith('price_')) {
+      throw new Error(
+        `STRIPE_VOICE_OVERAGE_PRICE_ID tiene un valor inválido: "${VOICE_OVERAGE_PRICE_ID}". ` +
+        'Debe empezar con "price_". Revisa la env var en Vercel.',
+      );
+    }
+    // Validar que el price esté configurado como metered — licensed prices
+    // requieren `quantity`, metered NO. Si el admin configuró mal el price en
+    // Stripe, damos error claro en vez del críptico "Quantity is required".
+    const overagePrice = await getStripe().prices.retrieve(VOICE_OVERAGE_PRICE_ID);
+    const isMetered = overagePrice.recurring?.usage_type === 'metered';
+    if (!isMetered) {
+      throw new Error(
+        `El price ${VOICE_OVERAGE_PRICE_ID} (Minutos de Voz Adicionales) no está ` +
+        'configurado como "metered". En Stripe: edita el price → Pricing model → ' +
+        'Usage-based → Aggregate usage = Sum of values during the period. ' +
+        'Un price licensed no puede usarse para overage.',
+      );
+    }
     lineItems.push({ price: VOICE_OVERAGE_PRICE_ID });
   }
 

@@ -4,6 +4,7 @@ import { KnowledgeZones } from '@/components/dashboard/knowledge-zones';
 import { KnowledgeAdvanced } from '@/components/dashboard/knowledge-advanced';
 import { ConversationReviewWidget } from '@/components/dashboard/conversation-review-widget';
 import { BotPreviewLauncher } from '@/components/dashboard/bot-preview-launcher';
+import { PersonalityCard } from '@/components/dashboard/personality-card';
 
 type Chunk = { id: string; content: string; category: string; source: string; created_at: string };
 type OnbResp = { question_key: string; answer: unknown };
@@ -38,20 +39,26 @@ export default async function KnowledgePage() {
     responsesMap[r.question_key] = r.answer;
   }
 
-  return (
-    <div className="space-y-4">
-      <header className="animate-element">
-        <p className="text-sm text-zinc-500">
-          Cada respuesta entrena al bot y se aplica en el próximo mensaje.
-        </p>
-      </header>
+  const personalityInitial = {
+    tone: asString(responsesMap.personality_tone),
+    emojis: asString(responsesMap.personality_emojis),
+    greeting: asString(responsesMap.personality_greeting),
+    closing: asString(responsesMap.personality_closing),
+    phrases: asString(responsesMap.personality_phrases),
+    avoid: asString(responsesMap.personality_avoid),
+  };
 
+  return (
+    <div className="space-y-3">
       <ConversationReviewWidget />
 
-      <KnowledgeZones
-        verticalQuestions={verticalQuestions}
-        initialResponses={responsesMap}
-      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <KnowledgeZones
+          verticalQuestions={verticalQuestions}
+          initialResponses={responsesMap}
+        />
+        <PersonalityCard initial={personalityInitial} />
+      </div>
 
       <KnowledgeAdvanced
         tenantId={tenant.id}
@@ -64,4 +71,8 @@ export default async function KnowledgePage() {
       <BotPreviewLauncher />
     </div>
   );
+}
+
+function asString(v: unknown): string {
+  return typeof v === 'string' ? v : '';
 }
