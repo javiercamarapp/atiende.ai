@@ -65,51 +65,48 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
   const heroOffset = HERO_CIRC - (overall.percent / 100) * HERO_CIRC;
 
   return (
-    <div className="space-y-3">
-      <section className="rounded-[20px] bg-gradient-to-br from-white via-white to-[hsl(var(--brand-blue-soft))] border border-zinc-100 p-4 animate-element animate-delay-100">
-        <div className="flex items-center gap-3">
-          <div className="relative w-14 h-14 shrink-0" aria-hidden="true">
-            <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
+    <div className="space-y-2">
+      <section className="rounded-2xl bg-gradient-to-br from-white via-white to-[hsl(var(--brand-blue-soft))] border border-zinc-100 px-3 py-2 animate-element animate-delay-100">
+        <div className="flex items-center gap-2.5">
+          <div className="relative w-10 h-10 shrink-0" aria-hidden="true">
+            <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
               <circle
                 cx="18" cy="18" r="15.9155"
                 fill="none"
                 className="stroke-zinc-100"
-                strokeWidth="2.5"
+                strokeWidth="3"
               />
               <circle
                 cx="18" cy="18" r="15.9155"
                 fill="none"
                 className="stroke-[hsl(var(--brand-blue))] transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-                strokeWidth="2.5"
+                strokeWidth="3"
                 strokeLinecap="round"
                 strokeDasharray={HERO_CIRC}
                 strokeDashoffset={heroOffset}
               />
             </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-[13px] font-semibold text-zinc-900 tabular-nums kpi-number">
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-zinc-900 tabular-nums">
               {overall.percent}%
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-[hsl(var(--brand-blue))]" strokeWidth={1.75} />
-              <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--brand-blue))] font-semibold">
-                Conocimiento del agente
+              <span className="text-[9px] uppercase tracking-wider text-[hsl(var(--brand-blue))] font-semibold">
+                Conocimiento
               </span>
             </div>
-            <p className="text-[15px] font-semibold text-zinc-900 leading-tight mt-0.5">
+            <p className="text-[13px] font-semibold text-zinc-900 leading-tight">
               {overall.answered === overall.total
                 ? 'Tu agente ya sabe todo'
                 : `${overall.answered} de ${overall.total} respuestas`}
-            </p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">
-              Elige una zona para seguir entrenándolo.
             </p>
           </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+      <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
         {visibleZones.map((zone, i) => {
           const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
           return (

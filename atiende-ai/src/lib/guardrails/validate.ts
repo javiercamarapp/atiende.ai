@@ -113,21 +113,30 @@ export function validateResponse(
   }
 
   // ═══ CAPA 2: Guardrails medicos ═══
+  // Forbidden list is stored WITHOUT accents; we normalize the LLM response
+  // before matching so "diagnóstico" (the natural LLM output in Spanish) gets
+  // caught the same as "diagnostico". Previously accents let the output slip
+  // through entirely.
   const healthTypes = [
     'dental', 'medical', 'nutritionist', 'psychologist',
     'dermatologist', 'gynecologist', 'pediatrician',
-    'ophthalmologist'
+    'ophthalmologist', 'veterinary', 'optics'
   ];
   if (healthTypes.includes(tenant.business_type)) {
     const forbidden = [
       'diagnostico', 'le recomiendo tomar', 'probablemente tiene',
       'mg de', 'es normal que', 'deberia usar', 'apliquese',
       'inyectese', 'no se preocupe', 'seguramente es',
-      'parece ser', 'podria ser un caso de'
+      'parece ser', 'podria ser un caso de',
+      // Extra coverage added after R21 audit. Keep lowercase + no accents;
+      // normalizeForMedicalCheck() handles the match.
+      'tomese', 'tome usted', 'aumente la dosis', 'reduzca la dosis',
+      'suspenda el medicamento', 'cambie el tratamiento',
+      'seguro es', 'seguramente tiene',
     ];
-    const lower = text.toLowerCase();
+    const normalized = normalizeForMedicalCheck(text);
     for (const word of forbidden) {
-      if (lower.includes(word)) {
+      if (normalized.includes(word)) {
         return {
           valid: false,
           text: 'Esa consulta la resolvera mejor nuestro equipo ' +
@@ -137,16 +146,23 @@ export function validateResponse(
     }
   }
 
-  // ═══ CAPA 3: Protocolo de crisis (psicologia/medico) ═══
-  const crisisTypes = ['psychologist', 'medical'];
-  if (crisisTypes.includes(tenant.business_type)) {
+  // ═══ CAPA 3: Protocolo de crisis ═══
+  // Extended from [psychologist, medical] to ALL health specialties.
+  // A suicidal patient writing to a dentist/dermatologist/etc. still deserves
+  // the crisis response — the line and the 911 referral don't depend on the
+  // specialty, and failing to respond is an ethical/legal liability.
+  if (healthTypes.includes(tenant.business_type)) {
     const crisisWords = [
-      'quiero morirme', 'no quiero vivir', 'suicidarme',
-      'me quiero matar', 'no le veo sentido', 'me corto',
-      'me lastimo', 'hacerme dano', 'estarian mejor sin mi'
+      // All stored normalized (no accents). Input is normalized before match.
+      'quiero morirme', 'no quiero vivir', 'suicidarme', 'suicidio',
+      'me quiero matar', 'matarme', 'no le veo sentido',
+      'me corto', 'me lastimo', 'hacerme dano', 'me hago dano',
+      'quiero hacerme dano', 'estarian mejor sin mi',
+      'ya no puedo mas', 'ya no aguanto', 'pensando en morir',
+      'terminar con todo', 'acabar con mi vida',
     ];
-    const inputLower = (customerMessage || '').toLowerCase();
-    const hasCrisis = crisisWords.some(w => inputLower.includes(w));
+    const normInput = normalizeForMedicalCheck(customerMessage || '');
+    const hasCrisis = crisisWords.some((w) => normInput.includes(w));
     if (hasCrisis) {
       return { valid: true, text: CRISIS_MESSAGE };
     }

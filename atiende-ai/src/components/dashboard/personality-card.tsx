@@ -96,26 +96,26 @@ export function PersonalityCard({ initial }: PersonalityCardProps) {
   );
 
   return (
-    <section className="rounded-[24px] bg-white border border-zinc-100 p-4 sm:p-5 animate-element animate-delay-200">
-      <header className="flex items-center gap-2 mb-3">
-        <span className="inline-flex w-8 h-8 rounded-full items-center justify-center bg-fuchsia-50 text-fuchsia-600">
-          <Smile className="w-4 h-4" strokeWidth={1.75} />
+    <section className="rounded-2xl bg-white border border-zinc-100 p-3 animate-element animate-delay-200">
+      <header className="flex items-center gap-2 mb-2">
+        <span className="inline-flex w-7 h-7 rounded-full items-center justify-center bg-fuchsia-50 text-fuchsia-600 shrink-0">
+          <Smile className="w-3.5 h-3.5" strokeWidth={1.75} />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-fuchsia-500" strokeWidth={1.75} />
-            <span className="text-[10px] uppercase tracking-wider text-fuchsia-600 font-semibold">
+            <span className="text-[9px] uppercase tracking-wider text-fuchsia-600 font-semibold">
               Personalidad
             </span>
           </div>
-          <h2 className="text-[15px] font-semibold text-zinc-900 leading-tight">
+          <h2 className="text-[13px] font-semibold text-zinc-900 leading-tight">
             ¿Cómo habla tu bot?
           </h2>
         </div>
       </header>
 
       {/* Tono */}
-      <div className="mb-3">
+      <div className="mb-2">
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-[11px] font-medium text-zinc-700">{LABELS.tone}</label>
           <StatusDot field="tone" savingField={savingField} savedField={savedField} />
@@ -146,8 +146,8 @@ export function PersonalityCard({ initial }: PersonalityCardProps) {
       </div>
 
       {/* Emojis */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between mb-1.5">
+      <div className="mb-2">
+        <div className="flex items-center justify-between mb-1">
           <label className="text-[11px] font-medium text-zinc-700">{LABELS.emojis}</label>
           <StatusDot field="emojis" savingField={savingField} savedField={savedField} />
         </div>
@@ -177,7 +177,7 @@ export function PersonalityCard({ initial }: PersonalityCardProps) {
       </div>
 
       {/* Saludo + Despedida */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+      <div className="grid grid-cols-2 gap-2 mb-2">
         <CompactField
           label={LABELS.greeting}
           placeholder="¡Hola! ¿En qué te ayudo?"
@@ -201,7 +201,7 @@ export function PersonalityCard({ initial }: PersonalityCardProps) {
       </div>
 
       {/* Frases / Evitar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-2">
         <CompactArea
           label={LABELS.phrases}
           placeholder="Porfa, ¡claro!, con gusto"
@@ -268,7 +268,7 @@ function CompactField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full text-[13px] rounded-lg bg-zinc-50 border border-zinc-200 px-2.5 py-1.5 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-100"
+        className="w-full text-[12px] rounded-lg bg-zinc-50 border border-zinc-200 px-2 py-1 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-100"
       />
     </div>
   );
@@ -297,8 +297,8 @@ function CompactArea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        rows={2}
-        className="w-full text-[13px] rounded-lg bg-zinc-50 border border-zinc-200 px-2.5 py-1.5 resize-none focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-100"
+        rows={1}
+        className="w-full text-[12px] rounded-lg bg-zinc-50 border border-zinc-200 px-2 py-1 resize-none focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-100"
       />
     </div>
   );

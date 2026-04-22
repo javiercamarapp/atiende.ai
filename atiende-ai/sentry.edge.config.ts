@@ -4,14 +4,12 @@
 
 import * as Sentry from '@sentry/nextjs';
 
+// See sentry.server.config.ts — hardcoded DSN fallback removed for public
+// repo; missing SENTRY_DSN disables Sentry rather than leaking the real DSN.
 Sentry.init({
-  dsn:
-    process.env.SENTRY_DSN ||
-    'https://30827be580c7d347af98c473f618d7e7@o4511223361896448.ingest.us.sentry.io/4511223364648960',
+  dsn: process.env.SENTRY_DSN || '',
 
   tracesSampleRate: process.env.VERCEL_ENV === 'production' ? 0.2 : 1.0,
-
-  enableLogs: true,
 
   sendDefaultPii: false,
 
