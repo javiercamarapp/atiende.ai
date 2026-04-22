@@ -26,6 +26,7 @@ interface TenantHeader {
   name?: string | null;
   plan: string;
   status: string;
+  notifications_read_at?: string | null;
 }
 
 interface UserHeader {
@@ -80,7 +81,7 @@ export function DashHeader({ tenant, user }: { tenant: TenantHeader; user?: User
 
         {/* Bell */}
         <div className="relative">
-          <NotificationCenter tenantId={tenant.id} />
+          <NotificationCenter tenantId={tenant.id} notificationsReadAt={tenant.notifications_read_at ?? null} />
         </div>
 
         {/* Settings gear */}

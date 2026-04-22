@@ -14,8 +14,6 @@ import {
 import { KnowledgeZoneTile } from '@/components/dashboard/knowledge-zone-tile';
 import { KnowledgeZoneSheet } from '@/components/dashboard/knowledge-zone-sheet';
 
-// Tailwind-safe stagger ladder. One class per tile index; extras wrap back
-// so the grid always animates in sequence, never all at once.
 const DELAY_CLASSES = [
   'animate-delay-100', 'animate-delay-200', 'animate-delay-300', 'animate-delay-400',
   'animate-delay-500', 'animate-delay-600', 'animate-delay-700', 'animate-delay-800',
@@ -27,10 +25,6 @@ export interface KnowledgeZonesProps {
   initialResponses: Record<string, unknown>;
 }
 
-// Hero section of the knowledge page: overall completion ring + grid of
-// zone tiles. Clicking a tile opens a side/bottom sheet that hosts the
-// quiz flow for that zone. Answers mutate local `responses` state so the
-// rings re-animate to their new percentages without a page reload.
 export function KnowledgeZones({ verticalQuestions, initialResponses }: KnowledgeZonesProps) {
   const [responses, setResponses] = useState<Record<string, unknown>>(initialResponses);
   const [openZoneId, setOpenZoneId] = useState<ZoneId | null>(null);
@@ -60,53 +54,44 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
   const openZone = openZoneId ? ZONES.find((z) => z.id === openZoneId) ?? null : null;
   const openZoneQuestions = openZone ? getQuestionsForZone(openZone.id, verticalQuestions) : [];
 
-  // SVG ring on the hero — same math as the tile ring (circumference 100).
   const HERO_CIRC = 100;
   const heroOffset = HERO_CIRC - (overall.percent / 100) * HERO_CIRC;
 
   return (
-    <div className="space-y-2">
-      <section className="rounded-2xl bg-gradient-to-br from-white via-white to-[hsl(var(--brand-blue-soft))] border border-zinc-100 px-3 py-2 animate-element animate-delay-100">
-        <div className="flex items-center gap-2.5">
-          <div className="relative w-10 h-10 shrink-0" aria-hidden="true">
-            <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
-              <circle
-                cx="18" cy="18" r="15.9155"
-                fill="none"
-                className="stroke-zinc-100"
-                strokeWidth="3"
-              />
-              <circle
-                cx="18" cy="18" r="15.9155"
-                fill="none"
-                className="stroke-[hsl(var(--brand-blue))] transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeDasharray={HERO_CIRC}
-                strokeDashoffset={heroOffset}
-              />
-            </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-zinc-900 tabular-nums">
-              {overall.percent}%
+    <section className="rounded-2xl bg-white/80 backdrop-blur-xl border border-zinc-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden animate-element animate-delay-100">
+      {/* Compact hero bar */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100/80">
+        <div className="relative w-9 h-9 shrink-0" aria-hidden="true">
+          <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+            <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-zinc-100" strokeWidth="3" />
+            <circle
+              cx="18" cy="18" r="15.9155" fill="none"
+              className="stroke-[hsl(var(--brand-blue))] transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              strokeWidth="3" strokeLinecap="round"
+              strokeDasharray={HERO_CIRC} strokeDashoffset={heroOffset}
+            />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-zinc-900 tabular-nums">
+            {overall.percent}%
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-[hsl(var(--brand-blue))]" strokeWidth={1.75} />
+            <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--brand-blue))] font-semibold">
+              Conocimiento
             </span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-[hsl(var(--brand-blue))]" strokeWidth={1.75} />
-              <span className="text-[9px] uppercase tracking-wider text-[hsl(var(--brand-blue))] font-semibold">
-                Conocimiento
-              </span>
-            </div>
-            <p className="text-[13px] font-semibold text-zinc-900 leading-tight">
-              {overall.answered === overall.total
-                ? 'Tu agente ya sabe todo'
-                : `${overall.answered} de ${overall.total} respuestas`}
-            </p>
-          </div>
+          <p className="text-[13px] font-medium text-zinc-700 leading-tight">
+            {overall.answered === overall.total
+              ? 'Tu agente ya sabe todo'
+              : `${overall.answered} de ${overall.total} respuestas`}
+          </p>
         </div>
-      </section>
+      </div>
 
-      <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
+      {/* Zone grid — tight, no outer padding */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-px bg-zinc-100/60">
         {visibleZones.map((zone, i) => {
           const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
           return (
@@ -119,7 +104,7 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
             />
           );
         })}
-      </section>
+      </div>
 
       <KnowledgeZoneSheet
         open={openZoneId !== null}
@@ -132,6 +117,6 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
         onAnswered={handleAnswered}
         onJumpZone={(zoneId) => setOpenZoneId(zoneId)}
       />
-    </div>
+    </section>
   );
 }

@@ -1,13 +1,9 @@
 'use client';
-import { useState, useEffect, useRef, useSyncExternalStore, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, CheckCheck, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { createClient } from '@/lib/supabase/client';
-
-const STORAGE_KEY = 'notifications_read_ids';
-const MAX_IDS = 1000;
-const EMPTY_JSON = '[]';
 
 // Blacklist of noisy audit_log actions that are NOT user-facing notifications.
 // Everything else is shown. This is safer than a whitelist because new action
@@ -25,50 +21,6 @@ type Notification = {
   details: Record<string, unknown>;
   created_at: string;
 };
-
-// ---- External store for read notification IDs ----
-// Snapshots are raw JSON strings so Object.is() comparison works cleanly for
-// useSyncExternalStore (Set references are unstable).
-const listeners = new Set<() => void>();
-
-function emit() {
-  listeners.forEach((fn) => fn());
-}
-
-function subscribe(cb: () => void) {
-  listeners.add(cb);
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) cb();
-  };
-  window.addEventListener('storage', onStorage);
-  return () => {
-    listeners.delete(cb);
-    window.removeEventListener('storage', onStorage);
-  };
-}
-
-function getSnapshot(): string {
-  try {
-    return localStorage.getItem(STORAGE_KEY) ?? EMPTY_JSON;
-  } catch {
-    return EMPTY_JSON;
-  }
-}
-
-function getServerSnapshot(): string {
-  return EMPTY_JSON;
-}
-
-function writeIds(ids: Set<string>) {
-  let arr = Array.from(ids);
-  if (arr.length > MAX_IDS) arr = arr.slice(-MAX_IDS);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-  } catch {
-    // Quota or private mode — fail silently; the UI still updates via emit().
-  }
-  emit();
-}
 
 function timeAgo(date: string): string {
   const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
@@ -99,20 +51,18 @@ function prettyAction(action: string): string {
     .replace(/\./g, ' · ');
 }
 
-export function NotificationCenter({ tenantId }: { tenantId: string }) {
+interface NotificationCenterProps {
+  tenantId: string;
+  notificationsReadAt: string | null;
+}
+
+export function NotificationCenter({ tenantId, notificationsReadAt }: NotificationCenterProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
+  const [readAt, setReadAt] = useState<Date | null>(
+    notificationsReadAt ? new Date(notificationsReadAt) : null,
+  );
   const supabaseRef = useRef(createClient());
-  const seenDuringSession = useRef<Set<string>>(new Set());
-
-  const rawReadIds = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const readIds: Set<string> = useMemo(() => {
-    try {
-      return new Set(JSON.parse(rawReadIds) as string[]);
-    } catch {
-      return new Set<string>();
-    }
-  }, [rawReadIds]);
 
   const fetchNotifications = useCallback(() => {
     supabaseRef.current
@@ -130,7 +80,6 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
           )
           .slice(0, 20);
         setNotifications(list);
-        for (const n of list) seenDuringSession.current.add(n.id);
       });
   }, [tenantId]);
 
@@ -138,28 +87,20 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const markRead = useCallback(
-    (ids: Iterable<string>) => {
-      const next = new Set(readIds);
-      let changed = false;
-      for (const id of ids) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      if (changed) writeIds(next);
+  const isRead = useCallback(
+    (n: Notification): boolean => {
+      if (!readAt) return false;
+      return new Date(n.created_at) <= readAt;
     },
-    [readIds],
+    [readAt],
   );
 
   const markAllRead = useCallback(() => {
-    // Use both current notifications AND anything seen this session — avoids
-    // race where fetch promise resolves just before/after this callback runs.
-    const all = new Set<string>(seenDuringSession.current);
-    for (const n of notifications) all.add(n.id);
-    markRead(all);
-  }, [notifications, markRead]);
+    setReadAt(new Date());
+    fetch('/api/notifications/mark-read', { method: 'POST' }).catch(() => {
+      // Best-effort — the local state already updated so the UI is responsive.
+    });
+  }, []);
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -173,7 +114,7 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
     [fetchNotifications, markAllRead],
   );
 
-  const unread = notifications.filter((n) => !readIds.has(n.id)).length;
+  const unread = notifications.filter((n) => !isRead(n)).length;
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -215,7 +156,7 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
         ) : (
           <div className="max-h-80 overflow-y-auto bg-white">
             {notifications.map((n) => {
-              const isNew = !readIds.has(n.id);
+              const isNew = !isRead(n);
               return (
                 <div
                   key={n.id}

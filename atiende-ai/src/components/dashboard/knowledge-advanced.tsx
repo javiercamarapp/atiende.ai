@@ -37,19 +37,22 @@ export function KnowledgeAdvanced(props: KnowledgeAdvancedProps) {
   const [tab, setTab] = useState<TabKey>('base');
 
   return (
-    <div className="glass-card overflow-hidden">
+    <div className="rounded-2xl bg-white/80 backdrop-blur-xl border border-zinc-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden animate-element animate-delay-300">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-zinc-50/60 transition"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-50/60 transition-colors"
         aria-expanded={open}
       >
-        <div>
-          <p className="text-sm font-medium text-zinc-900">Opciones avanzadas</p>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Fragmentos en crudo, subida de documentos, integraciones y prompt del sistema.
+        <span className="inline-flex w-8 h-8 rounded-full items-center justify-center bg-zinc-100 text-zinc-500 shrink-0">
+          <BookOpen className="w-3.5 h-3.5" strokeWidth={1.75} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-medium text-zinc-700">Opciones avanzadas</p>
+          <p className="text-[11px] text-zinc-400 leading-tight">
+            Fragmentos, documentos, integraciones y prompt.
           </p>
         </div>
-        <ChevronDown className={cn('w-4 h-4 text-zinc-500 transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('w-4 h-4 text-zinc-400 transition-transform duration-200', open && 'rotate-180')} />
       </button>
 
       {open && (
