@@ -165,24 +165,26 @@ atiende-ai/
 
 ## Security & Compliance Roadmap
 
-Known gaps being tracked (honest inventory, not marketing):
+Tracked gaps with implementation status:
 
-1. **Full PII encryption** — currently only `messages.content` and media transcriptions are encrypted at rest. `contacts.phone`, `contacts.name`, `appointments.customer_phone`, `conversations.customer_phone` are plaintext. RLS + tenant-scoped admin wrapper is the current boundary; field-level encryption with backfill is the planned hardening.
-2. **Encryption key rotation** — envelope is `v1:` prefixed but there's no `v2` path or re-encrypt tool yet. If a key is compromised today, the recovery path is a full reset. Key versioning (`MESSAGES_ENCRYPTION_KEY_V2` + background re-encrypt cron) is planned.
-3. **MFA + login lockout + login rate-limit** — Supabase Auth defaults only. For a health-data platform this is below bar; SMS/TOTP MFA and lockout counters on `auth_attempts` are planned.
-4. **ARCO-S titular-facing flow** — the `/api/privacy/delete-my-data` endpoint currently only accepts the tenant owner. LFPDPPP requires the patient (titular) to be able to request erasure directly. A signed-email-token flow + `data_deletion_log` audit table is planned.
-5. **INAI registration + legal review of disclaimer** — the disclaimer in `LEGAL_DISCLAIMER.md` is a template pending lawyer review; INAI registration of the data-treatment responsibility is not yet completed.
-6. **Load testing** — p95 targets referenced in code comments are not backed by a published k6/artillery run. A `scripts/load/` harness is planned.
-7. **CI maturity** — current pipeline is lint/type-check/test/build. Planned: `gitleaks` secret scanning, 80% coverage gate, preview-URL smoke tests, dependabot.
+1. ~~**Full PII encryption**~~ ✅ — `contacts.phone`, `contacts.name`, `conversations.customer_phone`, `appointments.customer_phone` now encrypted with AES-256-GCM + HMAC blind indexes for lookups. Migration: `pii_encryption_phone_columns.sql`. Backfill script: `scripts/backfill/pii-encrypt-phones.ts`. **Deployment note:** run migration first, deploy code, then run backfill.
+2. ~~**Encryption key rotation**~~ ✅ — `MESSAGES_ENCRYPTION_KEY_V2` supported. App writes with newest key, reads with dual-fallback. Re-encrypt script: `scripts/backfill/re-encrypt-v2.ts`. After full re-encryption, rename V2→V1 and remove old key.
+3. ~~**MFA + login lockout + rate-limit**~~ ✅ — TOTP MFA via Supabase Auth built-in factors (`/api/auth/mfa`). Login brute-force protection via Redis: 5 attempts/15min window, progressive delay (1s→8s), account lockout. See `src/lib/auth/login-protection.ts`.
+4. ~~**ARCO-S titular-facing flow**~~ ✅ — Patient can send "BORRAR MIS DATOS" → signed WhatsApp token (24h expiry) → `/api/privacy/confirm-deletion?token=X` executes deletion + logs to `data_deletion_log` audit table. Tenant-initiated deletion also logs audit trail. Migration: `arco_data_deletion_log.sql`.
+5. **INAI registration + legal review** — ⚠️ Legal/administrative action required. Compliance checklist in `docs/INAI-COMPLIANCE-CHECKLIST.md`. Key blockers: engage Mexican privacy lawyer, register with INAI, implement explicit consent for health data.
+6. ~~**Load testing**~~ ✅ — k6 scripts in `scripts/load/` for WhatsApp webhook (50 VU peak), auth rate-limit validation, and dashboard API endpoints. Thresholds: p95 < 500ms webhook, p95 < 1s auth, p95 < 2s dashboard.
+7. ~~**CI maturity**~~ ✅ — Pipeline now includes: gitleaks secret scanning, 80% coverage gate (vitest v8), coverage artifact upload, build smoke tests, dependabot (weekly npm + GitHub Actions).
 
 ## CI/CD
 
 GitHub Actions pipeline on every push to `main` and all PRs:
-1. Install dependencies
-2. ESLint
-3. TypeScript strict check (`tsc --noEmit`)
-4. Vitest (513 tests)
-5. Next.js production build
+1. Install dependencies (npm ci, cached)
+2. Secret scanning (gitleaks)
+3. ESLint
+4. TypeScript strict check (`tsc --noEmit`)
+5. Vitest with coverage (80% line/statement gate)
+6. Next.js production build
+7. Build smoke tests (critical route validation)
 
 ## License
 

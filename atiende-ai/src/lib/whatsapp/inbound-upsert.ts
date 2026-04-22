@@ -18,6 +18,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { encryptPII } from '@/lib/utils/crypto';
+import { encryptContactPhone, encryptContactName } from '@/lib/utils/pii-columns';
 
 export interface InboundUpsertInput {
   tenantId: string;
@@ -129,21 +130,28 @@ async function tryRpcPath(
  * producción, se puede eliminar.
  */
 async function legacyPath(input: InboundUpsertInput): Promise<InboundUpsertResult> {
-  // 1. Contact
-  let { data: contact } = await supabaseAdmin
+  // 1. Contact — lookup by blind index (phone_hash) if available, else plaintext
+  const lookupHash = encryptContactPhone(input.senderPhone).hash;
+  let contactQuery = supabaseAdmin
     .from('contacts')
     .select('id, name')
-    .eq('tenant_id', input.tenantId)
-    .eq('phone', input.senderPhone)
-    .single();
+    .eq('tenant_id', input.tenantId);
+  if (lookupHash) {
+    contactQuery = contactQuery.eq('phone_hash', lookupHash);
+  } else {
+    contactQuery = contactQuery.eq('phone', input.senderPhone);
+  }
+  let { data: contact } = await contactQuery.single();
 
   if (!contact) {
+    const phonePii = encryptContactPhone(input.senderPhone);
     const { data: newContact, error } = await supabaseAdmin
       .from('contacts')
       .insert({
         tenant_id: input.tenantId,
-        phone: input.senderPhone,
-        name: input.contactName,
+        phone: phonePii.encrypted ?? input.senderPhone,
+        phone_hash: phonePii.hash,
+        name: encryptContactName(input.contactName) ?? input.contactName,
       })
       .select('id, name')
       .single();
@@ -164,25 +172,31 @@ async function legacyPath(input: InboundUpsertInput): Promise<InboundUpsertResul
     contact = newContact;
   }
 
-  // 2. Conversation
-  let { data: conv } = await supabaseAdmin
+  // 2. Conversation — lookup by blind index when available
+  let convQuery = supabaseAdmin
     .from('conversations')
     .select('id, status, customer_name')
     .eq('tenant_id', input.tenantId)
-    .eq('customer_phone', input.senderPhone)
-    .eq('channel', 'whatsapp')
-    .single();
+    .eq('channel', 'whatsapp');
+  if (lookupHash) {
+    convQuery = convQuery.eq('customer_phone_hash', lookupHash);
+  } else {
+    convQuery = convQuery.eq('customer_phone', input.senderPhone);
+  }
+  let { data: conv } = await convQuery.single();
 
   const isNewConversation = !conv;
 
   if (!conv) {
+    const phonePii = encryptContactPhone(input.senderPhone);
     const { data: newConv, error } = await supabaseAdmin
       .from('conversations')
       .insert({
         tenant_id: input.tenantId,
         contact_id: contact?.id,
-        customer_phone: input.senderPhone,
-        customer_name: contact?.name || null,
+        customer_phone: phonePii.encrypted ?? input.senderPhone,
+        customer_phone_hash: phonePii.hash,
+        customer_name: encryptContactName(contact?.name as string) ?? (contact?.name || null),
         channel: 'whatsapp',
       })
       .select('id, status, customer_name')

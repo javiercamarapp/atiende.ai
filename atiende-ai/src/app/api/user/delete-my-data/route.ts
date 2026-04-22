@@ -92,6 +92,18 @@ export async function POST(req: NextRequest) {
       .eq('phone', phone);
     summary.contacts_deleted = contactCount ?? 0;
 
+    // ARCO-S audit trail
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    await supabaseAdmin.from('data_deletion_log').insert({
+      tenant_id: tenant.id,
+      requested_by: 'tenant_owner',
+      requester_identifier: user.email ?? user.id,
+      phone_deleted: phone.slice(0, 3) + '***' + phone.slice(-3),
+      deletion_summary: summary,
+      legal_basis: 'LFPDPPP Art. 36 — derecho de cancelación (responsable)',
+      ip_address: clientIp,
+    }).then(() => {}, () => {}); // best-effort
+
     return NextResponse.json({ status: 'ok', phone, summary });
   } catch (err) {
     return NextResponse.json(
