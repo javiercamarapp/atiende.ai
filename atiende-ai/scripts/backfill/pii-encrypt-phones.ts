@@ -158,10 +158,11 @@ async function main() {
   results.push(await backfillTable('contacts', 'phone', 'phone_hash', 'name'));
   results.push(await backfillTable('conversations', 'customer_phone', 'customer_phone_hash', 'customer_name'));
   results.push(await backfillTable('appointments', 'customer_phone', 'customer_phone_hash'));
-  // leads.phone may not exist in all schemas — skip gracefully
-  try {
+  // leads.phone may not exist in all schemas — probe first
+  const { error: leadsProbe } = await supabase.from('leads').select('phone').limit(1);
+  if (!leadsProbe) {
     results.push(await backfillTable('leads', 'phone', 'phone_hash'));
-  } catch {
+  } else {
     console.log('leads: skipped (phone column not found)');
   }
 
