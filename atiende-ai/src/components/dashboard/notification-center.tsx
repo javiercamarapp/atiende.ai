@@ -1,13 +1,25 @@
 'use client';
 import { useState, useEffect, useRef, useSyncExternalStore, useCallback, useMemo } from 'react';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { createClient } from '@/lib/supabase/client';
 
 const STORAGE_KEY = 'notifications_read_ids';
-const MAX_IDS = 500;
+const MAX_IDS = 1000;
 const EMPTY_JSON = '[]';
+
+// Whitelist of audit_log action prefixes that are user-facing notifications.
+// audit_log is a generic audit trail; without this filter, cron jobs and bot
+// replies flood the list and bury real signals (esp. after every deploy).
+const NOTIFICATION_ACTION_PREFIXES = [
+  'appointment',
+  'order',
+  'complaint',
+  'lead',
+  'crisis',
+  'emergency',
+];
 
 type Notification = {
   id: string;
@@ -17,7 +29,8 @@ type Notification = {
 };
 
 // ---- External store for read notification IDs ----
-// Snapshots are raw JSON strings so Object.is() comparison works for useSyncExternalStore.
+// Snapshots are raw JSON strings so Object.is() comparison works cleanly for
+// useSyncExternalStore (Set references are unstable).
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -37,7 +50,11 @@ function subscribe(cb: () => void) {
 }
 
 function getSnapshot(): string {
-  return localStorage.getItem(STORAGE_KEY) ?? EMPTY_JSON;
+  try {
+    return localStorage.getItem(STORAGE_KEY) ?? EMPTY_JSON;
+  } catch {
+    return EMPTY_JSON;
+  }
 }
 
 function getServerSnapshot(): string {
@@ -47,11 +64,14 @@ function getServerSnapshot(): string {
 function writeIds(ids: Set<string>) {
   let arr = Array.from(ids);
   if (arr.length > MAX_IDS) arr = arr.slice(-MAX_IDS);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  } catch {
+    // Quota or private mode — fail silently; the UI still updates via emit().
+  }
   emit();
 }
 
-// ---- helpers ----
 function timeAgo(date: string): string {
   const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
   if (mins < 1) return 'ahora';
@@ -70,10 +90,18 @@ function getIcon(action: string): string {
   return '\u{1F514}';
 }
 
+function prettyAction(action: string): string {
+  return action
+    .replace(/^agent\.action\./, '')
+    .replace(/_/g, ' ')
+    .replace(/\./g, ' · ');
+}
+
 export function NotificationCenter({ tenantId }: { tenantId: string }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const supabaseRef = useRef(createClient());
+  const seenDuringSession = useRef<Set<string>>(new Set());
 
   const rawReadIds = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const readIds: Set<string> = useMemo(() => {
@@ -85,13 +113,26 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
   }, [rawReadIds]);
 
   const fetchNotifications = useCallback(() => {
+    // Build a server-side OR filter so we only fetch real user-facing events.
+    // `action.like.appointment%,action.like.order%,…` — Postgres LIKE via PostgREST.
+    const orFilter = NOTIFICATION_ACTION_PREFIXES
+      .map((p) => `action.like.${p}%`)
+      .join(',');
     supabaseRef.current
       .from('audit_log')
       .select('id, action, details, created_at')
       .eq('tenant_id', tenantId)
+      .or(orFilter)
       .order('created_at', { ascending: false })
-      .limit(10)
-      .then(({ data }) => setNotifications(data || []));
+      .limit(20)
+      .then(({ data }) => {
+        const list = (data || []) as Notification[];
+        setNotifications(list);
+        // Track everything the user has seen in this page-load session so
+        // mark-all-read at close can include notifications that arrived
+        // mid-session (even if state hasn't flushed yet).
+        for (const n of list) seenDuringSession.current.add(n.id);
+      });
   }, [tenantId]);
 
   useEffect(() => {
@@ -99,8 +140,7 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
   }, [fetchNotifications]);
 
   const markRead = useCallback(
-    (ids: string[]) => {
-      if (ids.length === 0) return;
+    (ids: Iterable<string>) => {
       const next = new Set(readIds);
       let changed = false;
       for (const id of ids) {
@@ -114,21 +154,25 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
     [readIds],
   );
 
+  const markAllRead = useCallback(() => {
+    // Use both current notifications AND anything seen this session — avoids
+    // race where fetch promise resolves just before/after this callback runs.
+    const all = new Set<string>(seenDuringSession.current);
+    for (const n of notifications) all.add(n.id);
+    markRead(all);
+  }, [notifications, markRead]);
+
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       setOpen(isOpen);
       if (isOpen) {
         fetchNotifications();
       } else {
-        markRead(notifications.map((n) => n.id));
+        markAllRead();
       }
     },
-    [fetchNotifications, notifications, markRead],
+    [fetchNotifications, markAllRead],
   );
-
-  const markAllRead = useCallback(() => {
-    markRead(notifications.map((n) => n.id));
-  }, [notifications, markRead]);
 
   const unread = notifications.filter((n) => !readIds.has(n.id)).length;
 
@@ -162,8 +206,12 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
           )}
         </div>
         {notifications.length === 0 ? (
-          <div className="p-6 text-center text-sm text-zinc-500 bg-white">
-            Sin notificaciones
+          <div className="px-6 py-10 text-center bg-white">
+            <BellOff className="w-6 h-6 text-zinc-300 mx-auto mb-2" />
+            <p className="text-[13px] text-zinc-600 font-medium">Sin notificaciones</p>
+            <p className="text-[11px] text-zinc-400 mt-1">
+              Te avisamos cuando lleguen citas, pedidos o alertas.
+            </p>
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto bg-white">
@@ -179,8 +227,8 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
                   <div className="flex items-start gap-2.5">
                     <span className="text-lg shrink-0">{getIcon(n.action)}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] text-zinc-900 truncate">
-                        {n.action.replace('agent.action.', '').replace(/\./g, ' ')}
+                      <p className="text-[13px] text-zinc-900 truncate capitalize">
+                        {prettyAction(n.action)}
                       </p>
                       <p className="text-[11px] text-zinc-500 mt-0.5">
                         {timeAgo(n.created_at)}
