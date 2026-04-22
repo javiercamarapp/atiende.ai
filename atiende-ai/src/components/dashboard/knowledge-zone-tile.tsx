@@ -28,7 +28,7 @@ const ACCENT: Record<Zone['accent'], { ring: string; text: string; bg: string; s
 export interface KnowledgeZoneTileProps {
   zone: Zone;
   completion: ZoneCompletion;
-  onClick: () => void;
+  onClick?: () => void;
   delayClass?: string;
 }
 
@@ -40,8 +40,10 @@ export function KnowledgeZoneTile({ zone, completion, onClick, delayClass }: Kno
   const CIRCUMFERENCE = 100;
   const dashOffset = CIRCUMFERENCE - (completion.percent / 100) * CIRCUMFERENCE;
 
+  const Tag = onClick ? 'button' : 'div';
+
   return (
-    <button
+    <Tag
       onClick={onClick}
       className={cn(
         'group flex items-center gap-2 px-3 py-2.5 bg-white',
@@ -51,7 +53,7 @@ export function KnowledgeZoneTile({ zone, completion, onClick, delayClass }: Kno
         'animate-element',
         delayClass,
       )}
-      aria-label={`${zone.title} — ${completion.answered} de ${completion.total}`}
+      {...(onClick ? { type: 'button' } : {})}
     >
       <div className="relative w-8 h-8 shrink-0" aria-hidden="true">
         <svg viewBox="0 0 36 36" className="w-8 h-8 -rotate-90 absolute inset-0">
@@ -80,6 +82,6 @@ export function KnowledgeZoneTile({ zone, completion, onClick, delayClass }: Kno
           {completion.answered}/{completion.total} · {completion.percent}%
         </p>
       </div>
-    </button>
+    </Tag>
   );
 }

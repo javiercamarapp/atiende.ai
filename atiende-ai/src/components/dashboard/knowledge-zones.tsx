@@ -1,18 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 import type { Question } from '@/lib/onboarding/questions';
 import {
-  ZONES,
-  type ZoneId,
   getVisibleZones,
-  getQuestionsForZone,
   computeZoneCompletion,
   computeOverallCompletion,
 } from '@/lib/knowledge/zone-map';
 import { KnowledgeZoneTile } from '@/components/dashboard/knowledge-zone-tile';
-import { KnowledgeZoneSheet } from '@/components/dashboard/knowledge-zone-sheet';
 
 const DELAY_CLASSES = [
   'animate-delay-100', 'animate-delay-200', 'animate-delay-300', 'animate-delay-400',
@@ -26,33 +23,23 @@ export interface KnowledgeZonesProps {
 }
 
 export function KnowledgeZones({ verticalQuestions, initialResponses }: KnowledgeZonesProps) {
-  const [responses, setResponses] = useState<Record<string, unknown>>(initialResponses);
-  const [openZoneId, setOpenZoneId] = useState<ZoneId | null>(null);
-
   const visibleZones = useMemo(() => getVisibleZones(verticalQuestions), [verticalQuestions]);
 
   const answeredKeys = useMemo(() => {
     const set = new Set<string>();
-    for (const [key, value] of Object.entries(responses)) {
+    for (const [key, value] of Object.entries(initialResponses)) {
       if (value === null || value === undefined) continue;
       if (typeof value === 'string' && value.trim() === '') continue;
       if (Array.isArray(value) && value.length === 0) continue;
       set.add(key);
     }
     return set;
-  }, [responses]);
+  }, [initialResponses]);
 
   const overall = useMemo(
     () => computeOverallCompletion(verticalQuestions, answeredKeys),
     [verticalQuestions, answeredKeys],
   );
-
-  const handleAnswered = (questionKey: string, value: unknown) => {
-    setResponses((r) => ({ ...r, [questionKey]: value }));
-  };
-
-  const openZone = openZoneId ? ZONES.find((z) => z.id === openZoneId) ?? null : null;
-  const openZoneQuestions = openZone ? getQuestionsForZone(openZone.id, verticalQuestions) : [];
 
   const HERO_CIRC = 100;
   const heroOffset = HERO_CIRC - (overall.percent / 100) * HERO_CIRC;
@@ -90,33 +77,21 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
         </div>
       </div>
 
-      {/* Zone grid — tight, no outer padding */}
+      {/* Zone grid — tiles link to /knowledge/[zoneId] */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-px bg-zinc-100/60">
         {visibleZones.map((zone, i) => {
           const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
           return (
-            <KnowledgeZoneTile
-              key={zone.id}
-              zone={zone}
-              completion={completion}
-              onClick={() => setOpenZoneId(zone.id)}
-              delayClass={DELAY_CLASSES[i % DELAY_CLASSES.length]}
-            />
+            <Link key={zone.id} href={`/knowledge/${zone.id}`} className="contents">
+              <KnowledgeZoneTile
+                zone={zone}
+                completion={completion}
+                delayClass={DELAY_CLASSES[i % DELAY_CLASSES.length]}
+              />
+            </Link>
           );
         })}
       </div>
-
-      <KnowledgeZoneSheet
-        open={openZoneId !== null}
-        onOpenChange={(next) => {
-          if (!next) setOpenZoneId(null);
-        }}
-        zone={openZone}
-        questions={openZoneQuestions}
-        responses={responses}
-        onAnswered={handleAnswered}
-        onJumpZone={(zoneId) => setOpenZoneId(zoneId)}
-      />
     </section>
   );
 }
