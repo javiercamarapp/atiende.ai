@@ -36,12 +36,20 @@ ALTER TABLE public.appointments
 CREATE INDEX IF NOT EXISTS idx_appointments_customer_phone_hash
   ON public.appointments (tenant_id, customer_phone_hash);
 
--- 4. leads: add phone_hash for lookups
-ALTER TABLE public.leads
-  ADD COLUMN IF NOT EXISTS phone_hash TEXT;
-
-CREATE INDEX IF NOT EXISTS idx_leads_phone_hash
-  ON public.leads (tenant_id, phone_hash);
+-- 4. leads: add phone_hash for lookups (only if phone column exists)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'leads'
+      AND column_name = 'phone'
+  ) THEN
+    ALTER TABLE public.leads
+      ADD COLUMN IF NOT EXISTS phone_hash TEXT;
+    CREATE INDEX IF NOT EXISTS idx_leads_phone_hash
+      ON public.leads (tenant_id, phone_hash);
+  END IF;
+END $$;
 
 -- 5. orders: add customer_phone_hash for lookups (if column exists)
 DO $$

@@ -158,7 +158,12 @@ async function main() {
   results.push(await backfillTable('contacts', 'phone', 'phone_hash', 'name'));
   results.push(await backfillTable('conversations', 'customer_phone', 'customer_phone_hash', 'customer_name'));
   results.push(await backfillTable('appointments', 'customer_phone', 'customer_phone_hash'));
-  results.push(await backfillTable('leads', 'phone', 'phone_hash'));
+  // leads.phone may not exist in all schemas — skip gracefully
+  try {
+    results.push(await backfillTable('leads', 'phone', 'phone_hash'));
+  } catch {
+    console.log('leads: skipped (phone column not found)');
+  }
 
   console.log('\n=== Results ===');
   for (const r of results) {
