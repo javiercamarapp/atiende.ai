@@ -9,17 +9,15 @@ const STORAGE_KEY = 'notifications_read_ids';
 const MAX_IDS = 1000;
 const EMPTY_JSON = '[]';
 
-// Whitelist of audit_log action prefixes that are user-facing notifications.
-// audit_log is a generic audit trail; without this filter, cron jobs and bot
-// replies flood the list and bury real signals (esp. after every deploy).
-const NOTIFICATION_ACTION_PREFIXES = [
-  'appointment',
-  'order',
-  'complaint',
-  'lead',
-  'crisis',
-  'emergency',
-];
+// Blacklist of noisy audit_log actions that are NOT user-facing notifications.
+// Everything else is shown. This is safer than a whitelist because new action
+// types (e.g. medical.escalated) appear by default instead of being silently
+// hidden until someone remembers to add them to the whitelist.
+const NOISE_ACTIONS = new Set([
+  'agent.action.reply',
+  'ad_click.tracked',
+]);
+const NOISE_PREFIXES = ['cron.', 'redes_sociales.', 'respuesta_resenas.', 'faq_builder.'];
 
 type Notification = {
   id: string;
@@ -85,8 +83,12 @@ function getIcon(action: string): string {
   if (action.includes('order')) return '\u{1F9FE}';
   if (action.includes('complaint')) return '\u{1F6A8}';
   if (action.includes('lead')) return '\u{1F525}';
-  if (action.includes('crisis')) return '\u{26A0}\u{FE0F}';
+  if (action.includes('crisis') || action.includes('medical')) return '\u{26A0}\u{FE0F}';
   if (action.includes('emergency')) return '\u{1F198}';
+  if (action.includes('no_show')) return '\u{1F6AB}';
+  if (action.includes('retention')) return '\u{1F4AC}';
+  if (action.includes('followup') || action.includes('nurturing')) return '\u{1F4E9}';
+  if (action.includes('inventario')) return '\u{1F4E6}';
   return '\u{1F514}';
 }
 
@@ -113,24 +115,21 @@ export function NotificationCenter({ tenantId }: { tenantId: string }) {
   }, [rawReadIds]);
 
   const fetchNotifications = useCallback(() => {
-    // Build a server-side OR filter so we only fetch real user-facing events.
-    // `action.like.appointment%,action.like.order%,…` — Postgres LIKE via PostgREST.
-    const orFilter = NOTIFICATION_ACTION_PREFIXES
-      .map((p) => `action.like.${p}%`)
-      .join(',');
     supabaseRef.current
       .from('audit_log')
       .select('id, action, details, created_at')
       .eq('tenant_id', tenantId)
-      .or(orFilter)
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(50)
       .then(({ data }) => {
-        const list = (data || []) as Notification[];
+        const list = ((data || []) as Notification[])
+          .filter(
+            (n) =>
+              !NOISE_ACTIONS.has(n.action) &&
+              !NOISE_PREFIXES.some((p) => n.action.startsWith(p)),
+          )
+          .slice(0, 20);
         setNotifications(list);
-        // Track everything the user has seen in this page-load session so
-        // mark-all-read at close can include notifications that arrived
-        // mid-session (even if state hasn't flushed yet).
         for (const n of list) seenDuringSession.current.add(n.id);
       });
   }, [tenantId]);
