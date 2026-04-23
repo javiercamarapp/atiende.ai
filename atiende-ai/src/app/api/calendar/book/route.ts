@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
     if (staff?.google_calendar_id) {
       try {
         const event = await createCalendarEvent({
+          staffId,
           calendarId: staff.google_calendar_id,
           summary: `${service?.name || 'Cita'} - ${customerName || customerPhone}`,
           description: `Paciente: ${customerName}\nTel: ${customerPhone}\nServicio: ${service?.name}\nAgendada via: ${source}\n\nAgendada por useatiende.ai`,

@@ -587,6 +587,7 @@ registerTool('book_appointment', {
       try {
         const { createCalendarEvent } = await import('@/lib/calendar/google');
         const ev = await createCalendarEvent({
+          staffId: staffMember.id,
           calendarId: staffMember.google_calendar_id,
           summary: `${matchedService?.name || args.service_type} - ${args.patient_name}`,
           description: `WhatsApp: ${args.patient_phone}${args.notes ? `\nNotas: ${args.notes}` : ''}\nCódigo: ${confirmationCode}`,
@@ -1000,9 +1001,8 @@ registerTool('modify_appointment', {
     if (apt.google_event_id) {
       calendar_unsync_attempted = true;
       try {
-        const { cancelCalendarEvent, createCalendarEvent } = await import('@/lib/calendar/google');
-        await cancelCalendarEvent('primary', apt.google_event_id as string);
-        // Buscar staff + service para armar el nuevo evento.
+        // Prefer updateCalendarEvent (patch) — keeps event id, attendees, links.
+        const { updateCalendarEvent } = await import('@/lib/calendar/google');
         const [{ data: staffRow }, { data: serviceRow }] = await Promise.all([
           supabaseAdmin
             .from('staff')
@@ -1017,28 +1017,27 @@ registerTool('modify_appointment', {
                 .maybeSingle()
             : Promise.resolve({ data: null }),
         ]);
-        const calendarId = (staffRow?.google_calendar_id as string) || 'primary';
+        const calendarId = staffRow?.google_calendar_id as string | undefined;
         const serviceName = (serviceRow?.name as string) || 'Consulta';
-        const ev = await createCalendarEvent({
-          calendarId,
-          summary: `${serviceName} - ${apt.customer_name || 'Paciente'}`,
-          description:
-            `WhatsApp: ${apt.customer_phone}${mergedNotes ? `\nNotas: ${mergedNotes}` : ''}` +
-            (apt.confirmation_code ? `\nCódigo: ${apt.confirmation_code}` : ''),
-          startTime: newDatetime,
-          endTime: newEndDt,
-          attendeeEmail: undefined,
-        });
-        if (ev?.eventId) {
-          new_google_event_id = ev.eventId;
-          calendar_resync_ok = true;
-          await supabaseAdmin
-            .from('appointments')
-            .update({ google_event_id: ev.eventId })
-            .eq('id', apt.id);
+        if (calendarId) {
+          const ev = await updateCalendarEvent({
+            staffId: apt.staff_id as string,
+            calendarId,
+            eventId: apt.google_event_id as string,
+            summary: `${serviceName} - ${apt.customer_name || 'Paciente'}`,
+            description:
+              `WhatsApp: ${apt.customer_phone}${mergedNotes ? `\nNotas: ${mergedNotes}` : ''}` +
+              (apt.confirmation_code ? `\nCódigo: ${apt.confirmation_code}` : ''),
+            startTime: newDatetime,
+            endTime: newEndDt,
+          });
+          if (ev?.eventId) {
+            new_google_event_id = ev.eventId;
+            calendar_resync_ok = true;
+          }
         }
       } catch (err) {
-        console.warn('[tool:modify_appointment] Calendar re-sync failed:', err);
+        console.warn('[tool:modify_appointment] Calendar update failed:', err);
       }
     }
 
@@ -1157,7 +1156,7 @@ registerTool('cancel_appointment', {
     //    de otro paciente inyectándole un appointment_id arbitrario.
     const { data: apt, error: readErr } = await supabaseAdmin
       .from('appointments')
-      .select('id, datetime, status, google_event_id, customer_phone')
+      .select('id, datetime, status, google_event_id, customer_phone, staff_id, staff:staff_id(google_calendar_id)')
       .eq('id', resolvedId!)
       .eq('tenant_id', ctx.tenantId)
       .eq('customer_phone', ownerPhone)
@@ -1221,7 +1220,11 @@ registerTool('cancel_appointment', {
       calendar_unsync_attempted = true;
       try {
         const { cancelCalendarEvent } = await import('@/lib/calendar/google');
-        await cancelCalendarEvent('primary', apt.google_event_id as string);
+        const staffRel = Array.isArray(apt.staff) ? apt.staff[0] : apt.staff;
+        const calendarId = (staffRel as { google_calendar_id: string | null } | null)?.google_calendar_id;
+        if (calendarId) {
+          await cancelCalendarEvent(calendarId, apt.google_event_id as string, apt.staff_id as string);
+        }
       } catch (err) {
         console.warn('[tool:cancel_appointment] Calendar unsync failed:', err);
       }
