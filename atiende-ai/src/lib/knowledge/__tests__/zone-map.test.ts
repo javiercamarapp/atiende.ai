@@ -6,6 +6,8 @@ import {
   ZONE_QUESTION_KEYS,
   SHARED_SCHEDULE_QUESTIONS,
   SHARED_SERVICES_QUESTIONS,
+  SHARED_TEAM_QUESTIONS,
+  SHARED_LOCATION_QUESTIONS,
   SHARED_BRAND_QUESTIONS,
   zoneForQuestionKey,
   computeZoneCompletion,
@@ -80,7 +82,10 @@ describe('zone-map', () => {
     });
 
     it('reports 100% when every relevant key is answered', () => {
-      const allKeys = new Set(dentalQs.map((q) => q.key));
+      const allKeys = new Set([
+        ...dentalQs.map((q) => q.key),
+        ...SHARED_TEAM_QUESTIONS.map((q) => q.key),
+      ]);
       const comp = computeZoneCompletion('team', dentalQs, allKeys);
       expect(comp.percent).toBe(100);
       expect(comp.answered).toBe(comp.total);
@@ -129,6 +134,8 @@ describe('zone-map', () => {
       for (const q of dentalQs) overallKeys.add(q.key);
       for (const q of SHARED_SCHEDULE_QUESTIONS) overallKeys.add(q.key);
       for (const q of SHARED_SERVICES_QUESTIONS) overallKeys.add(q.key);
+      for (const q of SHARED_TEAM_QUESTIONS) overallKeys.add(q.key);
+      for (const q of SHARED_LOCATION_QUESTIONS) overallKeys.add(q.key);
       for (const q of SHARED_BRAND_QUESTIONS) overallKeys.add(q.key);
       const overall = computeOverallCompletion(dentalQs, overallKeys);
       expect(overall.percent).toBe(100);
@@ -147,7 +154,8 @@ describe('zone-map', () => {
       const empty: Question[] = [];
       const visible = getVisibleZones(empty).map((z) => z.id);
       expect(visible).toContain('services');
-      expect(visible).not.toContain('team');
+      expect(visible).toContain('team');
+      expect(visible).not.toContain('logistics');
     });
 
     it('shows zones with at least one matching vertical key', () => {

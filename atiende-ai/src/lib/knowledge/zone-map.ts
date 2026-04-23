@@ -136,6 +136,92 @@ export const SHARED_SERVICES_QUESTIONS: Question[] = [
     help: 'Desde que el cliente contacta hasta que recibe el servicio' },
 ];
 
+export const SHARED_TEAM_QUESTIONS: Question[] = [
+  { key: 'team_members', type: 'textarea', required: true,
+    label: '¿Quiénes forman tu equipo? (nombre, título y especialidad)',
+    placeholder: 'Dr. Juan López — Odontólogo general\nDra. María García — Ortodoncista',
+    help: 'Nombre completo, título (Dr., Lic., etc.) y área de expertise' },
+  { key: 'team_experience', type: 'textarea', required: false,
+    label: '¿Cuántos años de experiencia tiene cada profesional?',
+    placeholder: 'Dr. López: 15 años, Dra. García: 8 años' },
+  { key: 'team_education', type: 'textarea', required: false,
+    label: '¿Qué formación académica o certificaciones tienen?',
+    placeholder: 'Dr. López: UNAM, posgrado en implantología. Dra. García: UAM, certificada por el Consejo Mexicano de Ortodoncia' },
+  { key: 'team_languages', type: 'text', required: false,
+    label: '¿Qué idiomas habla tu equipo?',
+    placeholder: 'Español, inglés (Dr. López), francés (Dra. García)' },
+  { key: 'team_schedule', type: 'textarea', required: false,
+    label: '¿Qué días y horarios atiende cada profesional?',
+    placeholder: 'Dr. López: L-M-V 9-18, Dra. García: M-J 10-16, S 9-14' },
+  { key: 'team_choose_professional', type: 'text', required: false,
+    label: '¿El cliente puede elegir con qué profesional ser atendido?',
+    placeholder: 'Sí, al agendar puede seleccionar su doctor preferido' },
+  { key: 'team_wait_time', type: 'text', required: false,
+    label: '¿Cuánto es el tiempo de espera promedio para un profesional específico?',
+    placeholder: '1 a 3 días para cita con especialista' },
+  { key: 'team_same_professional', type: 'text', required: false,
+    label: '¿Puede pedir que lo atienda siempre el mismo profesional?',
+    placeholder: 'Sí, se puede fijar un doctor titular en el expediente' },
+  { key: 'team_unavailable', type: 'text', required: false,
+    label: '¿Qué pasa si su doctor/estilista no está disponible?',
+    placeholder: 'Se ofrece cita con otro profesional o se reagenda' },
+  { key: 'team_on_call', type: 'text', required: false,
+    label: '¿Tienen médicos de guardia o atención de emergencia?',
+    placeholder: 'Sí, emergencias dentales L-V hasta las 21:00' },
+  { key: 'team_certified', type: 'text', required: false,
+    label: '¿El personal está certificado o colegiado?',
+    placeholder: 'Todos certificados por el Consejo Mexicano de su especialidad' },
+  { key: 'team_patients_count', type: 'text', required: false,
+    label: '¿Cuántos pacientes/clientes han atendido?',
+    placeholder: 'Más de 5,000 pacientes en 10 años' },
+  { key: 'team_awards', type: 'textarea', required: false,
+    label: '¿Tiene el equipo logros o reconocimientos?',
+    placeholder: 'Premio al mejor consultorio dental de Mérida 2024' },
+  { key: 'team_continuing_education', type: 'text', required: false,
+    label: '¿Siguen formándose? ¿Asisten a congresos o cursos?',
+    placeholder: 'Sí, asisten al congreso ADM anualmente y cursos de actualización cada 6 meses' },
+];
+
+export const SHARED_LOCATION_QUESTIONS: Question[] = [
+  { key: 'loc_address', type: 'textarea', required: true,
+    label: '¿Cuál es tu dirección completa?',
+    placeholder: 'Calle 50 #200, Col. Centro, Mérida, Yucatán, CP 97000' },
+  { key: 'loc_references', type: 'text', required: false,
+    label: '¿Hay referencias visuales para encontrarte?',
+    placeholder: 'Frente al parque de Santa Ana, edificio azul de 2 pisos' },
+  { key: 'loc_maps_link', type: 'text', required: false,
+    label: '¿Cuál es tu link de Google Maps?',
+    placeholder: 'https://maps.google.com/...',
+    help: 'El bot lo compartirá cuando pregunten cómo llegar' },
+  { key: 'loc_directions', type: 'textarea', required: false,
+    label: '¿Cómo llegar desde puntos clave de la ciudad?',
+    placeholder: 'Desde el centro: por la calle 60 hacia el norte, 5 minutos. Desde el aeropuerto: 20 min por periférico' },
+  { key: 'loc_parking_details', type: 'textarea', required: false,
+    label: '¿Tienen estacionamiento? ¿Es gratuito o de pago?',
+    placeholder: 'Sí, 10 cajones gratis. Estacionamiento público a 50m cuesta $20/hr' },
+  { key: 'loc_valet', type: 'text', required: false,
+    label: '¿Tienen valet parking?',
+    placeholder: 'No / Sí, cortesía para pacientes' },
+  { key: 'loc_bike_moto', type: 'text', required: false,
+    label: '¿Hay estacionamiento para motos o bicicletas?',
+    placeholder: 'Sí, bicicletero en la entrada' },
+  { key: 'loc_public_transit', type: 'textarea', required: false,
+    label: '¿Qué transporte público pasa cerca?',
+    placeholder: 'Ruta 45 y 60, parada a 2 cuadras. Uber disponible en la zona' },
+  { key: 'loc_accessibility', type: 'text', required: false,
+    label: '¿Tienen acceso para personas con discapacidad?',
+    placeholder: 'Sí, rampa de acceso y elevador al 2do piso' },
+  { key: 'loc_branches', type: 'textarea', required: false,
+    label: '¿Tienen otras sucursales? ¿Dónde?',
+    placeholder: 'Sucursal norte: Av. Prolongación Montejo 300. Sucursal sur: Plaza Altabrisa local 15' },
+  { key: 'loc_branch_services', type: 'textarea', required: false,
+    label: '¿Cada sucursal ofrece los mismos servicios?',
+    placeholder: 'Sucursal norte: todos los servicios. Sucursal sur: solo consulta general' },
+  { key: 'loc_zone_context', type: 'text', required: false,
+    label: '¿En qué zona, plaza o centro comercial están?',
+    placeholder: 'Plaza Altabrisa, planta baja, local 15' },
+];
+
 export const SHARED_BRAND_QUESTIONS: Question[] = [
   { key: 'tone', type: 'text', required: true,
     label: '¿Qué tono debe usar tu bot?',
@@ -160,9 +246,9 @@ export const ZONE_QUESTION_KEYS: Record<ZoneId, string[]> = {
 
   services: ['svc_description', 'svc_packages', 'svc_tiers', 'svc_payment_methods', 'svc_discounts', 'svc_deposit', 'svc_currency', 'svc_duration', 'svc_coverage', 'svc_requirements', 'svc_process', 'services_prices', 'menu', 'services', 'services_offered', 'treatments', 'procedures', 'products', 'classes', 'packages', 'exams', 'vaccines', 'lens_types', 'frame_brands', 'insurance_types', 'credit_types', 'property_types', 'therapy_types', 'diagnostic_equipment', 'price_range', 'consultation', 'consultation_duration', 'consultation_vs_procedure'],
 
-  team: ['doctors', 'stylists', 'barbers', 'trainers'],
+  team: ['team_members', 'team_experience', 'team_education', 'team_languages', 'team_schedule', 'team_choose_professional', 'team_wait_time', 'team_same_professional', 'team_unavailable', 'team_on_call', 'team_certified', 'team_patients_count', 'team_awards', 'team_continuing_education', 'doctors', 'stylists', 'barbers', 'trainers'],
 
-  location: ['parking', 'zones', 'airport_transfer', 'rooms', 'facilities', 'wifi'],
+  location: ['loc_address', 'loc_references', 'loc_maps_link', 'loc_directions', 'loc_parking_details', 'loc_valet', 'loc_bike_moto', 'loc_public_transit', 'loc_accessibility', 'loc_branches', 'loc_branch_services', 'loc_zone_context', 'parking', 'zones', 'airport_transfer', 'rooms', 'facilities', 'wifi'],
 
   payments: ['payment_methods', 'financing', 'tuition', 'cfdi_support', 'gift_cards', 'loyalty', 'memberships', 'free_trial'],
 
@@ -204,6 +290,18 @@ function questionKeysForZone(zoneId: ZoneId, verticalQuestions: Question[]): str
       .map((q) => q.key)
       .filter((k) => ZONE_QUESTION_KEYS.services.includes(k));
     return [...SHARED_SERVICES_QUESTIONS.map((q) => q.key), ...verticalSvcKeys];
+  }
+  if (zoneId === 'team') {
+    const verticalTeamKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.team.includes(k));
+    return [...SHARED_TEAM_QUESTIONS.map((q) => q.key), ...verticalTeamKeys];
+  }
+  if (zoneId === 'location') {
+    const verticalLocKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.location.includes(k));
+    return [...SHARED_LOCATION_QUESTIONS.map((q) => q.key), ...verticalLocKeys];
   }
   if (zoneId === 'brand') {
     // Brand zone always shows the shared brand questions plus any
@@ -265,6 +363,18 @@ export function getQuestionsForZone(
       ZONE_QUESTION_KEYS.services.includes(q.key)
     );
     return [...SHARED_SERVICES_QUESTIONS, ...verticalSvc];
+  }
+  if (zoneId === 'team') {
+    const verticalTeam = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.team.includes(q.key)
+    );
+    return [...SHARED_TEAM_QUESTIONS, ...verticalTeam];
+  }
+  if (zoneId === 'location') {
+    const verticalLoc = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.location.includes(q.key)
+    );
+    return [...SHARED_LOCATION_QUESTIONS, ...verticalLoc];
   }
   if (zoneId === 'brand') {
     const verticalBrand = verticalQuestions.filter((q) =>
