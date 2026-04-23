@@ -2,7 +2,17 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
-export function DashCharts({ tenant, data }:{ tenant:{ business_type: string }; data:Record<string,unknown>[] }) {
+interface ChartRow {
+  date: string;
+  messages_inbound?: number;
+  appointments_booked?: number;
+  orders_total?: number;
+  orders_revenue?: number;
+  leads_new?: number;
+  [key: string]: unknown;
+}
+
+export function DashCharts({ tenant, data }:{ tenant:{ business_type: string }; data:ChartRow[] }) {
   const cd = data.map(d=>({
     date:new Date(d.date).toLocaleDateString('es-MX',{day:'numeric',month:'short'}),
     mensajes:d.messages_inbound||0, citas:d.appointments_booked||0,

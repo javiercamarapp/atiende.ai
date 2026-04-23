@@ -3,8 +3,25 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { MessageSquare, Calendar, Clock } from 'lucide-react';
 import Link from 'next/link';
 
+interface ConversationRow {
+  id: string;
+  customer_name: string | null;
+  customer_phone: string;
+  messages?: { content?: string }[];
+  [key: string]: unknown;
+}
+
+interface AppointmentRow {
+  id: string;
+  customer_name: string | null;
+  customer_phone: string;
+  datetime: string;
+  services?: { name: string } | null;
+  [key: string]: unknown;
+}
+
 export function RecentActivity({ conversations, appointments }:{
-  conversations:Record<string,unknown>[]; appointments:Record<string,unknown>[];
+  conversations:ConversationRow[]; appointments:AppointmentRow[];
 }) {
   return (
     <div className="space-y-4">

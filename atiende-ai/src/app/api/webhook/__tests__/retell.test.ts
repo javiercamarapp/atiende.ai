@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Request-to-NextRequest casts required throughout test */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockInsert = vi.fn(() => Promise.resolve({ data: null, error: null }));
@@ -62,7 +63,6 @@ function makeRetellReq(body: object, apiKey?: string, useBearerAuth = false) {
       headers['x-retell-api-key'] = apiKey;
     }
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
   return new Request('http://localhost/api/webhook/retell', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -168,7 +168,6 @@ describe('/api/webhook/retell', () => {
   });
 
   it('returns 400 on bad JSON body', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
     const req = new Request('http://localhost/api/webhook/retell', {
       method: 'POST',
       body: 'not json',

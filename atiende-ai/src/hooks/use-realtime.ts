@@ -1,6 +1,6 @@
 'use client';
 import { createClient } from '@/lib/supabase/client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 
 interface Message {
   id: string;
@@ -25,16 +25,12 @@ interface Conversation {
 }
 
 export function useRealtimeMessages(conversationId: string | null) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Store messages keyed by conversationId so loading is derived
+  const [messagesData, setMessagesData] = useState<{ id: string | null; messages: Message[] | null }>({ id: null, messages: null });
   const supabase = createClient();
-  const prevConversationIdRef = useRef(conversationId);
 
-  // Reset loading synchronously during render when conversationId changes
-  if (prevConversationIdRef.current !== conversationId) {
-    prevConversationIdRef.current = conversationId;
-    setLoading(true);
-  }
+  const loading = messagesData.id !== conversationId || messagesData.messages === null;
+  const messages = useMemo(() => (loading ? [] : messagesData.messages ?? []), [loading, messagesData.messages]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -45,8 +41,7 @@ export function useRealtimeMessages(conversationId: string | null) {
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .then(({ data }) => {
-        setMessages(data || []);
-        setLoading(false);
+        setMessagesData({ id: conversationId, messages: data || [] });
       });
 
     const channel = supabase
@@ -57,7 +52,10 @@ export function useRealtimeMessages(conversationId: string | null) {
         table: 'messages',
         filter: `conversation_id=eq.${conversationId}`,
       }, (payload) => {
-        setMessages(prev => [...prev, payload.new as Message]);
+        setMessagesData(prev => ({
+          ...prev,
+          messages: [...(prev.messages ?? []), payload.new as Message],
+        }));
       })
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -65,9 +63,12 @@ export function useRealtimeMessages(conversationId: string | null) {
         table: 'messages',
         filter: `conversation_id=eq.${conversationId}`,
       }, (payload) => {
-        setMessages(prev => prev.map(m =>
-          m.id === (payload.new as Message).id ? payload.new as Message : m
-        ));
+        setMessagesData(prev => ({
+          ...prev,
+          messages: (prev.messages ?? []).map(m =>
+            m.id === (payload.new as Message).id ? payload.new as Message : m
+          ),
+        }));
       })
       .subscribe();
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Request-to-NextRequest casts required throughout test */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => Promise.resolve({ data: null, error: null })) }));
@@ -44,7 +45,6 @@ import { POST } from '../../webhook/stripe/route';
 import { logWebhook } from '@/lib/webhook-logger';
 
 function makeStripeReq(body: string, sig = 'whsec_test_sig') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
   return new Request('http://localhost/api/webhook/stripe', {
     method: 'POST',
     body,
