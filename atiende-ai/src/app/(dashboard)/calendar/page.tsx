@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { CalendarDays } from 'lucide-react';
 import { CalendarView } from '@/components/dashboard/calendar-view';
+import { CalendarOnboarding } from '@/components/dashboard/calendar-onboarding';
 import { createServerSupabase } from '@/lib/supabase/server';
 
 interface CalendarEvent {
@@ -24,12 +25,13 @@ interface ServiceOption {
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; year?: string }>;
+  searchParams: Promise<{ month?: string; year?: string; calendar?: string }>;
 }) {
   const params = await searchParams;
   const now = new Date();
   const month = params.month ? parseInt(params.month, 10) - 1 : now.getMonth();
   const year = params.year ? parseInt(params.year, 10) : now.getFullYear();
+  const justConnected = params.calendar === 'connected';
 
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month + 2, 1);
@@ -122,5 +124,10 @@ export default async function CalendarPage({
 
   const services: ServiceOption[] = (servicesRaw || []) as ServiceOption[];
 
-  return <CalendarView events={events} services={services} initialYear={year} initialMonth={month} />;
+  return (
+    <div className="flex flex-col gap-3 md:gap-4">
+      <CalendarOnboarding autoOpen={justConnected} />
+      <CalendarView events={events} services={services} initialYear={year} initialMonth={month} />
+    </div>
+  );
 }

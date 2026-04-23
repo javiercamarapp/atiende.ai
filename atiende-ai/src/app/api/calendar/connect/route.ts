@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
     }
 
     const response = NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/settings?calendar=connected`
+      `${process.env.NEXT_PUBLIC_APP_URL}/calendar?calendar=connected`
     );
 
     // Delete the OAuth cookies after successful verification
