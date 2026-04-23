@@ -97,6 +97,45 @@ export const SHARED_SCHEDULE_QUESTIONS: Question[] = [
     placeholder: 'Presencial 9-18, teleconsulta 8-20' },
 ];
 
+export const SHARED_SERVICES_QUESTIONS: Question[] = [
+  { key: 'svc_description', type: 'textarea', required: true,
+    label: '¿Qué servicios ofreces y qué incluye cada uno?',
+    placeholder: 'Limpieza dental ($800, 45 min, incluye revisión y pulido)...',
+    help: 'Describe cada servicio: qué incluye, duración y qué problema resuelve' },
+  { key: 'svc_packages', type: 'textarea', required: false,
+    label: '¿Tienes paquetes o combos de servicios?',
+    placeholder: 'Paquete dental completo: limpieza + radiografía + blanqueamiento $2,500' },
+  { key: 'svc_tiers', type: 'textarea', required: false,
+    label: '¿Tienes diferentes planes o niveles de servicio?',
+    placeholder: 'Básico: limpieza, Estándar: limpieza + fluorización, Premium: todo incluido' },
+  { key: 'svc_payment_methods', type: 'text', required: false,
+    label: '¿Qué formas de pago aceptas?',
+    placeholder: 'Efectivo, tarjeta, transferencia, OXXO' },
+  { key: 'svc_discounts', type: 'textarea', required: false,
+    label: '¿Ofreces descuentos?',
+    placeholder: '10% a clientes frecuentes, 2x1 en limpieza los martes',
+    help: 'Descuentos por volumen, clientes frecuentes, temporadas, códigos' },
+  { key: 'svc_deposit', type: 'text', required: false,
+    label: '¿Se requiere anticipo o depósito para reservar?',
+    placeholder: '50% de anticipo para tratamientos mayores a $3,000' },
+  { key: 'svc_currency', type: 'text', required: false,
+    label: '¿En qué moneda manejas tus precios?',
+    placeholder: 'Pesos mexicanos (MXN)' },
+  { key: 'svc_duration', type: 'textarea', required: false,
+    label: '¿Cuánto dura cada servicio?',
+    placeholder: 'Consulta: 30 min, Limpieza: 45 min, Ortodoncia: 1 hora' },
+  { key: 'svc_coverage', type: 'text', required: false,
+    label: '¿Atiendes a domicilio? ¿En qué zonas?',
+    placeholder: 'Solo en consultorio, o "A domicilio en zona metropolitana"' },
+  { key: 'svc_requirements', type: 'textarea', required: false,
+    label: '¿Qué necesita el cliente antes de su cita?',
+    placeholder: 'Traer radiografías previas, ayuno de 8 horas, identificación' },
+  { key: 'svc_process', type: 'textarea', required: false,
+    label: '¿Cómo funciona el proceso de atención paso a paso?',
+    placeholder: '1. Agenda por WhatsApp 2. Confirma un día antes 3. Llega 15 min antes 4. Consulta 5. Seguimiento',
+    help: 'Desde que el cliente contacta hasta que recibe el servicio' },
+];
+
 export const SHARED_BRAND_QUESTIONS: Question[] = [
   { key: 'tone', type: 'text', required: true,
     label: '¿Qué tono debe usar tu bot?',
@@ -119,7 +158,7 @@ export const SHARED_BRAND_QUESTIONS: Question[] = [
 export const ZONE_QUESTION_KEYS: Record<ZoneId, string[]> = {
   schedule: ['hours_weekday', 'hours_saturday', 'hours_sunday', 'holidays', 'hours_whatsapp', 'hours_urgency', 'hours_holidays_open', 'doctors_same_schedule', 'consultation_duration', 'booking_advance', 'same_day_cutoff', 'reminder_advance', 'booking_after_hours', 'cancel_deadline', 'arrival_time', 'virtual_hours', 'virtual_vs_presential', 'schedule', 'scheduling', 'scheduling_preferences', 'checkin_out', 'same_day'],
 
-  services: ['services_prices', 'menu', 'services', 'services_offered', 'treatments', 'procedures', 'products', 'classes', 'packages', 'exams', 'vaccines', 'lens_types', 'frame_brands', 'insurance_types', 'credit_types', 'property_types', 'therapy_types', 'diagnostic_equipment', 'price_range', 'consultation', 'consultation_duration', 'consultation_vs_procedure'],
+  services: ['svc_description', 'svc_packages', 'svc_tiers', 'svc_payment_methods', 'svc_discounts', 'svc_deposit', 'svc_currency', 'svc_duration', 'svc_coverage', 'svc_requirements', 'svc_process', 'services_prices', 'menu', 'services', 'services_offered', 'treatments', 'procedures', 'products', 'classes', 'packages', 'exams', 'vaccines', 'lens_types', 'frame_brands', 'insurance_types', 'credit_types', 'property_types', 'therapy_types', 'diagnostic_equipment', 'price_range', 'consultation', 'consultation_duration', 'consultation_vs_procedure'],
 
   team: ['doctors', 'stylists', 'barbers', 'trainers'],
 
@@ -160,6 +199,12 @@ export interface ZoneCompletion {
 
 function questionKeysForZone(zoneId: ZoneId, verticalQuestions: Question[]): string[] {
   if (zoneId === 'schedule') return SHARED_SCHEDULE_QUESTIONS.map((q) => q.key);
+  if (zoneId === 'services') {
+    const verticalSvcKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.services.includes(k));
+    return [...SHARED_SERVICES_QUESTIONS.map((q) => q.key), ...verticalSvcKeys];
+  }
   if (zoneId === 'brand') {
     // Brand zone always shows the shared brand questions plus any
     // vertical-specific keys mapped to 'brand'.
@@ -215,6 +260,12 @@ export function getQuestionsForZone(
   verticalQuestions: Question[]
 ): Question[] {
   if (zoneId === 'schedule') return SHARED_SCHEDULE_QUESTIONS;
+  if (zoneId === 'services') {
+    const verticalSvc = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.services.includes(q.key)
+    );
+    return [...SHARED_SERVICES_QUESTIONS, ...verticalSvc];
+  }
   if (zoneId === 'brand') {
     const verticalBrand = verticalQuestions.filter((q) =>
       ZONE_QUESTION_KEYS.brand.includes(q.key)
