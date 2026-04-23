@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, MessageSquare, Calendar, CalendarDays, Bot,
   BookOpen, BarChart3, Settings, UserCircle2,
-  Sparkles, Megaphone, LogOut, Crown, TrendingUp,
+  Sparkles, Megaphone, LogOut, TrendingUp,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -201,9 +201,13 @@ export function SidebarContent({
         collapsible && 'hidden group-hover/sidebar:block',
       )}>
         <div className="rounded-2xl bg-[hsl(var(--brand-blue-soft))] p-4 text-center">
-          <div className="w-10 h-10 mx-auto rounded-full bg-white flex items-center justify-center shadow-sm">
-            <Crown className="w-5 h-5 text-[hsl(var(--brand-blue))]" />
-          </div>
+          <Image
+            src="/trial-badge.png"
+            alt=""
+            width={56}
+            height={56}
+            className="mx-auto rounded-full"
+          />
           <p className="mt-2.5 text-[13px] font-semibold text-zinc-900">
             {isFreeTrial ? 'Free trial' : 'Upgrade to Pro'}
           </p>
