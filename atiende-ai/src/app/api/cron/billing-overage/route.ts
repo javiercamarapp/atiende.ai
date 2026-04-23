@@ -128,9 +128,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     // Cap mensual contra abuse / mal-config. Si un tenant acumula más de
-    // VOICE_OVERAGE_MONTHLY_CAP min (default 1000 = $5,000 MXN), capamos
-    // el cobro y alertamos al equipo. Evita facturas catastróficas si bot
-    // recibe spam o staff calling loop.
+    // VOICE_OVERAGE_MONTHLY_CAP min (default 1000 = $5,000 MXN), capamos el
+    // cobro y alertamos al equipo. Evita facturas catastróficas si bot recibe
+    // spam o staff calling loop.
     let billableMinutes = Number(row.overage_minutes);
     if (billableMinutes > VOICE_OVERAGE_MONTHLY_CAP) {
       console.error(

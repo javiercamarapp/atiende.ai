@@ -21,7 +21,7 @@ export async function searchKnowledge(
   });
   const queryEmbedding = embResponse.data[0].embedding;
 
-  // 2. Hybrid search (pgvector + tsvector con RRF) — AUDIT R13 rubro AI/ML.
+  // 2. Hybrid search (pgvector + tsvector con RRF).
   // Mejor recall para queries cortas en español ("cita muela" matchea
   // "extracción dental" vía vector Y "muela" vía tsvector).
   // Fallback automático a search_knowledge legacy si el RPC no existe

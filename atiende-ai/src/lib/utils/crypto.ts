@@ -45,10 +45,10 @@ function getKey(): Buffer | null {
   return _key;
 }
 
-// BUG 2 FIX: la primera vez que se invoque encrypt/decrypt, si estamos en
-// producción Y no hay key válida, LANZAMOS en vez de fail-open a texto plano.
-// Sin esto, un olvido de ENV en devops mandaba historiales clínicos en claro
-// a Supabase sin alerta alguna (violación LFPDPPP/HIPAA).
+// La primera vez que se invoque encrypt/decrypt, si estamos en producción Y
+// no hay key válida, LANZAMOS en vez de fail-open a texto plano. Sin esto,
+// un olvido de ENV en devops mandaba historiales clínicos en claro a
+// Supabase sin alerta alguna (violación LFPDPPP/HIPAA).
 let _assertedOnce = false;
 function assertKeyOrFailClosed(): Buffer | null {
   const key = getKey();
@@ -70,10 +70,10 @@ function assertKeyOrFailClosed(): Buffer | null {
  * no por-llamada. Así evitamos matar abruptamente el waitUntil de Vercel si
  * algo raro pasa a mitad del pipeline.
  *
- * AUDIT-R5 MEDIO: antes encryptPII propagaba throw si faltaba la key en prod,
- * lo que mataba la función de Vercel a mitad del procesamiento de un mensaje.
- * Ahora la defensa contra key-missing es solo al boot (fail-fast deploy),
- * y el runtime siempre es resiliente.
+ * Antes encryptPII propagaba throw si faltaba la key en prod, lo que mataba
+ * la función de Vercel a mitad del procesamiento de un mensaje. Ahora la
+ * defensa contra key-missing es solo al boot (fail-fast deploy), y el
+ * runtime siempre es resiliente.
  */
 export function encryptPII(plaintext: string | null | undefined): string | null {
   if (plaintext == null) return null;

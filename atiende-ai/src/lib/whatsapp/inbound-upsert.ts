@@ -1,10 +1,10 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // INBOUND UPSERT — helper atómico que respalda el pipeline con un RPC
 //
-// AUDIT R14 BUG-001: el processor hacía 3 INSERTs secuenciales sin
-// transacción. Si fallaba a la mitad → rows huérfanas. Ya mitigábamos con
-// find-before-insert + UNIQUE(wa_message_id), pero la red definitiva es
-// usar una función plpgsql que corre todo en una transacción implícita.
+// El processor hacía 3 INSERTs secuenciales sin transacción. Si fallaba
+// a la mitad → rows huérfanas. Ya mitigábamos con find-before-insert +
+// UNIQUE(wa_message_id), pero la red definitiva es usar una función plpgsql
+// que corre todo en una transacción implícita.
 //
 // Este helper envuelve el RPC `upsert_inbound_message` con un fallback
 // automático al camino legado (3 queries secuenciales) si:

@@ -95,10 +95,10 @@ export async function downloadWhatsAppMedia(
   signal?: AbortSignal,
 ): Promise<{ buffer: Buffer; mimeType: string } | null> {
   try {
-    // AUDIT-R10 MED: AbortSignal propagado a axios para que, si el caller
-    // tiene un timeout global (ej. processor.ts EXTRACT_CONTENT_TIMEOUT_MS=25s)
-    // y aborta, la request HTTP real se CANCELA — ya no queda dangling en
-    // memoria de Vercel ni nos facturan el cómputo.
+    // AbortSignal propagado a axios para que, si el caller tiene un timeout
+    // global (ej. processor.ts EXTRACT_CONTENT_TIMEOUT_MS=25s) y aborta, la
+    // request HTTP real se CANCELA — ya no queda dangling en memoria de
+    // Vercel ni nos facturan el cómputo.
     // 1) Resolver URL temporal del binario
     const meta = await axios.get<MediaUrlResponse>(
       `${WA_API}/${mediaId}`,
@@ -247,8 +247,8 @@ export async function extractPdfText(
   // 1) Intento nativo con pdf-parse (dynamic import — solo lo cargamos si
   //    está instalado; si no, vamos directo al fallback Gemini).
   //
-  // AUDIT-R6 ALTO: pdf-parse es SÍNCRONO y CPU-bound — un PDF denso de
-  // ~200 páginas puede bloquear el event loop. Mitigaciones:
+  // pdf-parse es SÍNCRONO y CPU-bound — un PDF denso de ~200 páginas puede
+  // bloquear el event loop. Mitigaciones:
   //   (a) si el buffer es >5MB, saltamos pdf-parse directo a Gemini Vision
   //       (que procesa en su backend, no aquí);
   //   (b) envolvemos la llamada en Promise.race con timeout de 5s;

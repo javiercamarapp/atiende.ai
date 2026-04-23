@@ -97,7 +97,7 @@ function validateSql(sql: string, tenantId: string): { ok: true } | { ok: false;
     }
   }
 
-  // BUG 4 FIX: validación estricta del filtro tenant_id.
+  // Validación estricta del filtro tenant_id.
   // Antes solo verificábamos `sql.includes(tenantId)` — trivialmente
   // bypass-eable con prompt injection: `SELECT * FROM contacts WHERE 1=1
   // -- <tenant-uuid>` hacía que el UUID estuviera en el string pero en un

@@ -74,7 +74,7 @@ export interface ToolContext {
   customerPhone: string;
   tenant: Record<string, unknown>;
   /**
-   * AUDIT R18: defense-in-depth contra ghost mutations (BUG R14).
+   * Defense-in-depth contra ghost mutations.
    *
    * Cache de tool calls exitosos ya ejecutados en el MISMO turno del
    * orquestador. El orchestrator lo popula con `registerSuccessfulCall()`
@@ -95,9 +95,9 @@ export interface ToolContext {
 }
 
 /**
- * AUDIT R18: construye la clave del cache para un (toolName, args).
- * AUDIT R19 #16: key ordenada recursivamente para que {a:1,b:2} y {b:2,a:1}
- * produzcan la misma cache key. Antes: cache miss → double mutation.
+ * Construye la clave del cache para un (toolName, args).
+ * Key ordenada recursivamente para que {a:1,b:2} y {b:2,a:1} produzcan la
+ * misma cache key. Antes: cache miss → double mutation.
  */
 function sortKeysDeep(v: unknown): unknown {
   if (v === null || typeof v !== 'object') return v;
@@ -131,9 +131,9 @@ export interface ToolDefinition {
    */
   handler: (args: unknown, ctx: ToolContext) => Promise<unknown>;
   /**
-   * AUDIT R14 BUG-010: flag explícito de mutación (escritura externa).
-   * Antes se inferían mutaciones por prefijo del nombre (`book_*`, `cancel_*`).
-   * Ese heurístico era frágil — cualquier rename (ej. `book_appointment` →
+   * Flag explícito de mutación (escritura externa). Antes se inferían
+   * mutaciones por prefijo del nombre (`book_*`, `cancel_*`). Ese
+   * heurístico era frágil — cualquier rename (ej. `book_appointment` →
    * `schedule_appointment`) rompía el "ghost mutation guard" del fallback.
    *
    * true:  la tool causa efectos externos irreversibles / caros (DB INSERT,
@@ -163,7 +163,7 @@ export interface ToolExecutionResult {
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry global del proceso — SINGLETON via globalThis
 //
-// FIX 3 (audit R4): en Vercel / Next.js el módulo a veces se re-evalúa
+// En Vercel / Next.js el módulo a veces se re-evalúa
 // (HMR en dev, o en casos raros de cold-start con code-splitting). Si cada
 // re-evaluación crea un Map nuevo, las tools registradas en la instancia
 // vieja desaparecen. Colgar el Map de `globalThis` hace que sobreviva a
@@ -207,9 +207,9 @@ export function listRegisteredTools(): string[] {
 }
 
 /**
- * AUDIT R14 BUG-010 + R20: devuelve si una tool está marcada como mutación.
- * Usado por el orchestrator para decidir si una tool ejecutada por el primario
- * debe evitarse en el fallback (anti ghost-mutation).
+ * Devuelve si una tool está marcada como mutación. Usado por el orchestrator
+ * para decidir si una tool ejecutada por el primario debe evitarse en el
+ * fallback (anti ghost-mutation).
  *
  * Default-safe: si la tool NO está registrada (p.ej. drift de deploy, registry
  * vacío en worker nuevo), asumimos que ES mutación. Repetir una lectura es
@@ -314,7 +314,7 @@ export async function executeTool(
     };
   }
 
-  // AUDIT R18 + VC-FIX: two layers of mutation dedup:
+  // Two layers of mutation dedup:
   //
   // Layer 1 (in-memory): the sharedSuccessCache covers primary→fallback
   // within the SAME invocation. Fast, zero-latency.

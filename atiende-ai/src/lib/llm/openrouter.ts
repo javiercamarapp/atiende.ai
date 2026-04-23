@@ -93,11 +93,11 @@ export const MODELS = {
 } as const;
 
 // Precios por millon de tokens [input, output]
-// AUDIT R17 BUG-011: hardcode es SAFETY NET. El cron mensual
-// `refresh-model-prices` actualiza un cache in-memory desde la API pública de
-// OpenRouter (`/api/v1/models`) y lo persiste en Redis. Cold starts hidratan
-// desde Redis (fire-and-forget). Si Redis falla o el cron no corrió aún,
-// caemos a estos precios last-known-good al shipear.
+// Hardcode es SAFETY NET. El cron mensual `refresh-model-prices` actualiza
+// un cache in-memory desde la API pública de OpenRouter (`/api/v1/models`) y
+// lo persiste en Redis. Cold starts hidratan desde Redis (fire-and-forget).
+// Si Redis falla o el cron no corrió aún, caemos a estos precios
+// last-known-good al shipear.
 const MODEL_PRICES: Record<string, [number, number]> = {
   'openai/gpt-4o-mini': [0.15, 0.60],
   'google/gemini-2.5-flash-lite': [0.10, 0.40],
@@ -113,8 +113,8 @@ const MODEL_PRICES: Record<string, [number, number]> = {
 };
 
 /**
- * AUDIT R17 BUG-011: cache in-memory de precios actualizados. El cron mensual
- * `/api/cron/refresh-model-prices` lo popula vía `updateModelPriceCache()`.
+ * Cache in-memory de precios actualizados. El cron mensual
+ * `/api/cron/refresh-model-prices` lo popula via `updateModelPriceCache()`.
  * Queda vacío en cold-start hasta que Redis hidrate (ver `hydrateModelPrices`).
  * `calculateCost` lee este Map primero, luego MODEL_PRICES como fallback.
  */
@@ -215,15 +215,12 @@ export function selectModel(
 export function calculateCost(
   model: string, tokensIn: number, tokensOut: number
 ): number {
-  // AUDIT R17 BUG-011: preferir rates del cache dinámico (poblados por el
-  // cron mensual desde la API de OpenRouter). Fallback a MODEL_PRICES
-  // hardcodeado si cache está vacío (cold-start, Redis caído, o primer mes).
+  // Preferir rates del cache dinámico (poblados por el cron mensual desde la
+  // API de OpenRouter). Fallback a MODEL_PRICES hardcodeado si cache está
+  // vacío (cold-start, Redis caído, o primer mes).
   //
-  // AUDIT R15 BUG REAL: antes hacía `|| [1.0, 5.0]` para modelos desconocidos
-  // — reportaba costos fake inflados ($1/$5 por M tokens). Si se agregaba un
-  // modelo a `MODELS.*` olvidando el precio en MODEL_PRICES, sus mensajes
-  // contaminaban el dashboard de costo con números ficticios.
-  // Fix: modelos desconocidos → 0, con warn en dev para no silenciar el gap.
+  // Modelos desconocidos → 0, con warn en dev para no silenciar el gap.
+  // Antes hacía `|| [1.0, 5.0]` que reportaba costos fake inflados.
   const rates = modelPriceCache.get(model) ?? MODEL_PRICES[model];
   if (!rates) {
     if (process.env.NODE_ENV !== 'production') {
@@ -461,7 +458,6 @@ export class LoopGuardError extends Error {
 }
 
 /**
- * AUDIT-R8 CRÍT (Bug 1 fallback ghost mutations):
  * Wrapper que adjunta `toolCallsExecuted` parciales a CUALQUIER error que
  * se lance desde el ciclo de generateWithTools. Sin esto, si el primario
  * ejecutó una mutación (book_appointment, mark_no_show, etc.) y luego se
@@ -549,15 +545,15 @@ export async function generateWithTools(opts: {
   const isReadOnly = (name: string) => READ_PREFIXES.some((p) => name.startsWith(p));
   const crossRoundCache = new Map<string, { success: boolean; result: unknown; error?: string; durationMs: number }>();
 
-  // AUDIT-R8 CRÍT: try/catch externo para envolver CUALQUIER throw del loop
-  // (timeout HTTP, abort signal, error de OpenAI) con los toolCalls que ya
-  // se ejecutaron antes del crash. El orchestrator usa esto para evitar que
-  // el fallback re-ejecute mutaciones que el primario ya cometió.
+  // try/catch externo para envolver CUALQUIER throw del loop (timeout HTTP,
+  // abort signal, error de OpenAI) con los toolCalls que ya se ejecutaron
+  // antes del crash. El orchestrator usa esto para evitar que el fallback
+  // re-ejecute mutaciones que el primario ya cometió.
   try {
   for (let round = 0; round < maxRounds; round++) {
-    // AUDIT-R7 ALTO: segundo arg `{ signal }` propaga AbortController al
-    // fetch interno del SDK de OpenAI. Si el orchestrator.withTimeoutAbort
-    // aborta, esta request HTTP se cancela y dejamos de facturar tokens.
+    // Segundo arg `{ signal }` propaga AbortController al fetch interno del
+    // SDK de OpenAI. Si el orchestrator.withTimeoutAbort aborta, esta request
+    // HTTP se cancela y dejamos de facturar tokens.
     const response = await client.chat.completions.create(
       {
         model: opts.model,
@@ -711,9 +707,9 @@ export async function generateWithTools(opts: {
   // texto final. Eso indica un loop — abortamos con error explícito.
   throw new LoopGuardError(maxRounds);
   } catch (err) {
-    // AUDIT-R8 CRÍT: re-lanzamos como PartialExecutionError con el contexto
-    // de toolCalls ya ejecutados. El orchestrator puede inspeccionar
-    // partialToolCalls y NO re-ejecutar mutaciones en el fallback.
+    // Re-lanzamos como PartialExecutionError con el contexto de toolCalls
+    // ya ejecutados. El orchestrator puede inspeccionar partialToolCalls y
+    // NO re-ejecutar mutaciones en el fallback.
     if (err instanceof PartialExecutionError) throw err; // ya wrappeado
     throw new PartialExecutionError(
       err instanceof Error ? err.message : String(err),

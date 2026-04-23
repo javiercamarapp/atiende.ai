@@ -95,7 +95,7 @@ function normalizeUrl(raw: string): URL {
   }
 
   const host = parsed.hostname.toLowerCase();
-  // AUDIT R21: blocklist ampliada. Cubre:
+  // Blocklist ampliada. Cubre:
   //  - IPv4: loopback, RFC1918, link-local (AWS metadata 169.254.169.254),
   //    CGNAT (100.64.0.0/10 — operadores de cable reutilizan estos IPs),
   //  - IPv6: loopback (::1), link-local (fe80::/10), ULA (fc00::/7),
@@ -125,7 +125,7 @@ function normalizeUrl(raw: string): URL {
   return parsed;
 }
 
-// AUDIT R21: prevención de DNS rebinding. Resuelve el hostname antes del
+// Prevención de DNS rebinding. Resuelve el hostname antes del
 // fetch y valida que las IPs resultantes no apunten a rangos privados. Un
 // atacante puede registrar `attacker.com` con DNS que inicialmente resuelve
 // a una IP pública (pasa la validación) pero cambia a 127.0.0.1 en la
@@ -320,7 +320,7 @@ function parseMetaTags(html: string): MetaTags {
 }
 
 async function scrapeWithOgMeta(target: URL): Promise<ScrapeResult> {
-  // AUDIT R21: DNS-rebinding guard antes del fetch directo. Jina es proxy
+  // DNS-rebinding guard antes del fetch directo. Jina es proxy
   // (scrapeWithJina hace fetch a r.jina.ai, no al target) — por eso solo
   // aquí.
   await assertHostResolvesToPublicIp(target.hostname.toLowerCase());

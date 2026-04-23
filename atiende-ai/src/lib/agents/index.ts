@@ -219,7 +219,7 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
 }
 
 /**
- * ensureToolsRegistered — FIX 3 (audit R4): alias explícito de
+ * ensureToolsRegistered — alias explícito de
  * `initializeAllAgents()` que además LANZA si faltan tools mínimas. Usado
  * al boot de processor.ts para fail-fast si el code-split de Vercel dejó
  * algún módulo de agente sin cargar.

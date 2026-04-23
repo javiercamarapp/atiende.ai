@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// LLM-AS-JUDGE (AUDIT R13 — rubro 2 → 10/10)
+// LLM-AS-JUDGE
 //
 // Capa 5 de guardrails. Opcional, activada por env var ENABLE_LLM_JUDGE=true.
 //

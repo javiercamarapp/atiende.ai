@@ -65,7 +65,7 @@ export async function handleFAQ(
   for (const { patterns, handler, intent } of FAQ_PATTERNS) {
     for (const p of patterns) {
       if (norm.includes(normalize(p))) {
-        // AUDIT P2 item 8: cache hit → skip DB roundtrip.
+        // Cache hit → skip DB roundtrip.
         const cached = await getCached(tenantId, intent);
         if (cached) return cached;
         const answer = await handler(tenantId);

@@ -1,7 +1,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // GATES — controles de entrada antes de procesar un mensaje de WhatsApp
 //
-// Extraído de processor.ts (AUDIT sub-agent 4 "God Object"). Estas checks
+// Extraído de processor.ts. Estas checks
 // corren ANTES de la ingestión/LLM; rechazan tráfico no deseado, tenants
 // inactivos, o usuarios fuera de cuota. Si cualquiera falla, se responde
 // algo útil al usuario y se devuelve `false` para abortar el pipeline.
@@ -73,9 +73,9 @@ export async function runGates(
     }
   }
 
-  // 4. Monthly cap — reserva ATÓMICA en Redis (AUDIT R14 BUG-002).
-  // INCR + DECR si excede; garantiza que concurrent webhooks NO pueden pasar
-  // el mismo count desfasado al LLM.
+  // 4. Monthly cap — reserva ATÓMICA en Redis. INCR + DECR si excede;
+  // garantiza que concurrent webhooks NO pueden pasar el mismo count
+  // desfasado al LLM.
   const monthlyLimit = PLAN_MSG_LIMITS[tenant.plan] ?? PLAN_MSG_LIMITS.free_trial;
   const { reserveMonthlyMessage } = await import('@/lib/rate-limit-monthly');
   const reservation = await reserveMonthlyMessage(tenant.id, monthlyLimit);

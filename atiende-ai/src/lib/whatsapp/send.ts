@@ -275,10 +275,10 @@ export async function markAsRead(
 }
 
 // Enviar indicador de escritura (best-effort)
-// AUDIT-R6 MEDIO: antes silenciaba TODOS los errores — si WA_SYSTEM_TOKEN
-// estaba corrupto, nunca nos enterábamos hasta que sendTextMessage fallara.
-// Ahora sí loggeamos auth failures (401 / code 133000) aunque mantenemos
-// el fire-and-forget para no romper el pipeline.
+// Antes silenciaba TODOS los errores — si WA_SYSTEM_TOKEN estaba corrupto,
+// nunca nos enterábamos hasta que sendTextMessage fallara. Ahora sí
+// loggeamos auth failures (401 / code 133000) aunque mantenemos el
+// fire-and-forget para no romper el pipeline.
 export async function sendTypingIndicator(phoneNumberId: string, to: string): Promise<SendResult> {
   to = toMetaRecipient(to);
   try {

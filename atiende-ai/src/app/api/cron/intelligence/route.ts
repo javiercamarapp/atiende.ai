@@ -312,9 +312,9 @@ async function classifyTodayCancellations(tenantId: string): Promise<number> {
 
   if (!apts || apts.length === 0) return 0;
 
-  // FIX 2 (audit R3): reemplaza N queries por paciente por UNA query que
-  // trae todas las conversations de los phones relevantes, ordenadas por
-  // last_message_at desc. Luego armamos map phone → conversation_id (latest).
+  // Reemplaza N queries por paciente por UNA query que trae todas las
+  // conversations de los phones relevantes, ordenadas por last_message_at
+  // desc. Luego armamos map phone -> conversation_id (latest).
   const phones = Array.from(new Set(
     (apts as Array<{ customer_phone: string }>).map((a) => a.customer_phone).filter(Boolean),
   ));

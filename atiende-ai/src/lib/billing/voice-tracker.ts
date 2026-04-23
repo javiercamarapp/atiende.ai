@@ -149,7 +149,7 @@ export async function trackVoiceCall(
 /**
  * Lectura read-only del uso del mes — para dashboard del tenant.
  *
- * AUDIT-R8 ALTO: si el tenant aún no tiene fila en voice_usage del mes
+ * Si el tenant aún no tiene fila en voice_usage del mes
  * (típico al inicio de cada mes), antes retornaba `included=0` lo cual hacía
  * el dashboard mostrar "0/0 minutos" y `percentUsed=0`. Ahora caemos a
  * `tenants.voice_minutes_included` para mostrar el cupo real desde el día 1.

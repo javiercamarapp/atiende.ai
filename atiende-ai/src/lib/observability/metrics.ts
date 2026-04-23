@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// METRICS — métricas estructuradas per-tenant (AUDIT R13 — rubro 5 → 10/10)
+// METRICS — métricas estructuradas per-tenant
 //
 // Emite logs JSON estructurados que Vercel/Datadog/Grafana parsean auto.
 // Diseñado para que el dashboard del dueño pueda mostrar en tiempo real:
@@ -100,7 +100,7 @@ export function cost(amountUsd: number, tenantId: string, model: string): void {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PER-TENANT COST ALERTING — AUDIT R20
+// PER-TENANT COST ALERTING
 // Acumula costo LLM diario por tenant en Redis. Cuando un tenant cruza umbrales
 // (soft/hard), emite un log ALERT. El dashboard y el cron diario pueden leer
 // la key para enforcement/visualización.

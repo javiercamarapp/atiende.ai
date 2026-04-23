@@ -358,10 +358,10 @@ const BookArgs = z
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date debe ser YYYY-MM-DD'),
     time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time debe ser HH:MM 24h'),
     service_type: z.string().min(1).max(120),
-    // AUDIT-R6 BAJO: nombres mexicanos largos (ej. 5+ apellidos compuestos)
-    // pueden llegar a ~120 chars. Aceptamos hasta 300 como red de seguridad,
-    // pero TRUNCAMOS a 120 + limpiamos saltos de línea / spam de espacios
-    // antes de persistir. Así un LLM que pase "Nombre\n\n\n(...)" no rompe el
+    // Nombres mexicanos largos (ej. 5+ apellidos compuestos) pueden llegar
+    // a ~120 chars. Aceptamos hasta 300 como red de seguridad, pero
+    // TRUNCAMOS a 120 + limpiamos saltos de línea / spam de espacios antes
+    // de persistir. Así un LLM que pase "Nombre\n\n\n(...)" no rompe el
     // catálogo de pacientes.
     patient_name: z
       .string()
@@ -493,7 +493,7 @@ registerTool('book_appointment', {
       args.service_type,
     );
 
-    // BUG 6 FIX: rechaza solo precios NULL/undefined/negativos — precio
+    // Rechaza solo precios NULL/undefined/negativos — precio
     // EXACTO de 0 es legítimo (valoración inicial gratis, lectura de
     // estudios, consulta de cortesía). El catálogo clínico mexicano
     // comúnmente marca servicios gratuitos con price=0 intencional.
@@ -606,9 +606,9 @@ registerTool('book_appointment', {
       }
     }
 
-    // 8. notifyOwner — FIX 5 (audit R4): si falla, persistimos
-    // `owner_notified=false` en la fila de la cita para que el cron
-    // `/api/cron/notify-retry` pueda reprocesar con backoff exponencial.
+    // 8. notifyOwner — si falla, persistimos `owner_notified=false` en la
+    // fila de la cita para que el cron `/api/cron/notify-retry` pueda
+    // reprocesar con backoff exponencial.
     const { dateFmt, timeFmt } = formatDateTimeMx(datetime, timezone);
     let ownerNotified = false;
     let ownerNotifyError: string | undefined;
@@ -869,8 +869,8 @@ registerTool('modify_appointment', {
     }
 
     // 1. SELECT scoped por (id, tenant_id, customer_phone del SENDER REAL)
-    // BUG 3 FIX: incluimos customer_name y service_id para poder recrear
-    // el Google Calendar event después del UPDATE.
+    // Incluimos customer_name y service_id para poder recrear el Google
+    // Calendar event después del UPDATE.
     const { data: apt, error: readErr } = await supabaseAdmin
       .from('appointments')
       .select(
@@ -990,10 +990,10 @@ registerTool('modify_appointment', {
       };
     }
 
-    // 6. Actualizar Google Calendar — BUG 3 FIX: CANCEL del viejo Y CREATE
-    // del nuevo evento. El bug anterior solo cancelaba asumiendo que un
-    // "sync posterior" recrearía el evento; en realidad no existía ese sync
-    // y el doctor veía la cita desaparecer de su Google Calendar.
+    // 6. Actualizar Google Calendar — CANCEL del viejo Y CREATE del nuevo
+    // evento. El bug anterior solo cancelaba asumiendo que un "sync
+    // posterior" recrearía el evento; en realidad no existía ese sync y el
+    // doctor veía la cita desaparecer de su Google Calendar.
     let calendar_unsync_attempted = false;
     let calendar_resync_ok = false;
     let new_google_event_id: string | null = null;
@@ -1081,10 +1081,10 @@ registerTool('modify_appointment', {
 });
 
 // ─── Tool 5: cancel_appointment ──────────────────────────────────────────────
-// FIX 5 (audit Round 2): si el LLM mete un código corto en `appointment_id`
-// (UUID), Zod fallaba con un mensaje genérico y el LLM podía reintentar
-// con el mismo error en bucle. Ahora lo redirige explícitamente a usar
-// `confirmation_code` en el mensaje de error.
+// Si el LLM mete un código corto en `appointment_id` (UUID), Zod fallaba
+// con un mensaje genérico y el LLM podía reintentar con el mismo error en
+// bucle. Ahora lo redirige explícitamente a usar `confirmation_code` en el
+// mensaje de error.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CancelArgs = z
   .object({

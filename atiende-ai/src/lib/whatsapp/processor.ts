@@ -11,11 +11,11 @@ import {
   initializeAllAgents,
 } from '@/lib/agents';
 
-// FIX 3 (audit R4): ensureToolsRegistered() es FAIL-FAST al boot — si el
-// code-splitting de Vercel dejó algún módulo de agente sin cargar, el
-// proceso crashea aquí en vez de atender al primer paciente con tools
-// faltantes (que devolvería "Tool not registered" al LLM y respuestas
-// alucinadas). initializeAllAgents se mantiene para logging histórico.
+// ensureToolsRegistered() es FAIL-FAST al boot — si el code-splitting de
+// Vercel dejó algún módulo de agente sin cargar, el proceso crashea aquí
+// en vez de atender al primer paciente con tools faltantes (que devolvería
+// "Tool not registered" al LLM y respuestas alucinadas).
+// initializeAllAgents se mantiene para logging histórico.
 try {
   ensureToolsRegistered();
 } catch (err) {
@@ -35,10 +35,10 @@ import { maskPhone } from '@/lib/utils/logger';
 import { logger } from '@/lib/logger';
 import { encryptPII, assertEncryptionConfigured } from '@/lib/utils/crypto';
 
-// AUDIT-R5 MEDIO: fail-fast CHECK (lazy, se dispara en la primera request
-// real, NO en el build de Next). Una vez arrancado el pipeline, si la
-// assertion pasa una vez, no se vuelve a ejecutar. encryptPII() sigue
-// siendo resiliente por-llamada (nunca throws) para no matar waitUntil.
+// Fail-fast CHECK (lazy, se dispara en la primera request real, NO en el
+// build de Next). Una vez arrancado el pipeline, si la assertion pasa una
+// vez, no se vuelve a ejecutar. encryptPII() sigue siendo resiliente
+// por-llamada (nunca throws) para no matar waitUntil.
 let _encCheckDone = false;
 function ensureEncryptionAtRequestTime(): void {
   if (_encCheckDone) return;
@@ -59,9 +59,8 @@ import { runPostResponseEffects, type TenantRecord } from './side-effects';
 import { handleWithOrchestrator } from './orchestrator-branch';
 
 /**
- * AUDIT-R10 MED: error indicativo "procesar después, no silenciar".
- * Caller (QStash worker) retorna 500 para triggerar retry. waitUntil
- * lo atrapa y loggea.
+ * Error indicativo "procesar después, no silenciar". Caller (QStash worker)
+ * retorna 500 para triggerar retry. waitUntil lo atrapa y loggea.
  */
 export class ConversationLockedError extends Error {
   constructor(public readonly phone: string) {
@@ -134,7 +133,7 @@ export async function processIncomingMessage(body: WhatsAppWebhookBody) {
 }
 
 // -- Gate checks (rate limits, plan, business hours) --
-// Extraído a src/lib/whatsapp/gates.ts (AUDIT R14 refactor).
+// Extraído a src/lib/whatsapp/gates.ts.
 // El processor ya no tiene lógica de puerta; solo delega.
 import { runGates } from '@/lib/whatsapp/gates';
 
@@ -171,12 +170,11 @@ async function handleSingleMessage(
       .select('id')
       .eq('wa_message_id', messageId)
       .maybeSingle();
-    // AUDIT R17 BUG-030: si la DB responde error (transient connection, RLS
-    // misconfig), antes lo silenciábamos y procedíamos — potencial
-    // desperdicio de compute si era un duplicado no detectable. Ahora
-    // loguamos pero seguimos: la UNIQUE constraint en wa_message_id +
-    // atomicInboundUpsert es la autoridad final (fail-closed en su propia
-    // capa).
+    // Si la DB responde error (transient connection, RLS misconfig), antes
+    // lo silenciábamos y procedíamos — potencial desperdicio de compute si
+    // era un duplicado no detectable. Ahora loguamos pero seguimos: la
+    // UNIQUE constraint en wa_message_id + atomicInboundUpsert es la
+    // autoridad final (fail-closed en su propia capa).
     if (idempErr) {
       logger.warn('[processor] idempotency check DB error — continuing; UNIQUE constraint will catch duplicates', {  err: idempErr.message  });
     }
@@ -187,10 +185,10 @@ async function handleSingleMessage(
   }
 
   // 1. Identify tenant — buscamos primero SIN filtro de status para poder
-  // dar respuesta amigable si está inactivo (FIX 6 audit Round 2).
-  // AUDIT R12 BUG-001: .single() falla con PGRST116 si hay duplicados. La
-  // migración tenants_wa_unique.sql agrega UNIQUE constraint para prevenir
-  // que esto ocurra. Si aun así pasa, loggear explícitamente para alerting.
+  // dar respuesta amigable si está inactivo.
+  // .single() falla con PGRST116 si hay duplicados. La migración
+  // tenants_wa_unique.sql agrega UNIQUE constraint para prevenir que esto
+  // ocurra. Si aun así pasa, loggear explícitamente para alerting.
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
     .select('*')
@@ -248,8 +246,8 @@ async function handleSingleMessage(
   // dejamos que él procese (Meta reintentará si nada se persiste).
   const lock = await acquireConversationLock(tenant.id as string, senderPhone);
   if (!lock.acquired) {
-    // AUDIT-R10 MED: antes hacíamos `return` silencioso → el mensaje se perdía.
-    // Ahora lanzamos error para que:
+    // Antes hacíamos `return` silencioso → el mensaje se perdía. Ahora
+    // lanzamos error para que:
     //   - QStash worker retorne 500 y reintente con backoff
     //   - Si está en waitUntil, el catch del route maneja el throw
     // El lock tiene TTL 30s; el segundo intento de QStash (5s después) ya
@@ -288,12 +286,12 @@ async function handleSingleMessageInner(
   }
 
   // 4. Extract content
-  // AUDIT-R5 ALTO: timeout global sobre extractContentAsync para evitar
-  // que Whisper/Gemini colgados bloqueen el waitUntil hasta que Vercel
-  // mate la función con 504. Si la extracción tarda >25s, fallback a
-  // un placeholder y seguimos adelante (mensaje ya está idempotente-checked
-  // y el inbound se persistirá; el LLM tratará el placeholder).
-  // AUDIT-R10 MED: AbortController propagado para que las HTTP requests a
+  // Timeout global sobre extractContentAsync para evitar que
+  // Whisper/Gemini colgados bloqueen el waitUntil hasta que Vercel mate la
+  // función con 504. Si la extracción tarda >25s, fallback a un placeholder
+  // y seguimos adelante (mensaje ya está idempotente-checked y el inbound
+  // se persistirá; el LLM tratará el placeholder).
+  // AbortController propagado para que las HTTP requests a
   // Deepgram/Whisper/Gemini se CANCELEN al timeout — sin esto quedaban
   // dangling en memoria consumiendo compute serverless.
   const extractAbort = new AbortController();
@@ -322,9 +320,9 @@ async function handleSingleMessageInner(
     };
   }
   const { messageType, mediaTranscription, mediaDescription } = extracted;
-  // FIX 2 (audit Round 2): sanitize + block prompt-injection ANTES del LLM.
-  // Si el mensaje claramente intenta romper el system prompt, respondemos
-  // con un texto cordial y NO consumimos LLM ni guardamos historial.
+  // Sanitize + block prompt-injection ANTES del LLM. Si el mensaje
+  // claramente intenta romper el system prompt, respondemos con un texto
+  // cordial y NO consumimos LLM ni guardamos historial.
   const content = sanitizeUserInput(extracted.content);
   if (detectPromptInjection(content)) {
     logger.warn('[security] prompt injection blocked', {  phone: maskPhone(senderPhone)  });
@@ -336,7 +334,7 @@ async function handleSingleMessageInner(
     return;
   }
   if (!content || content.length < 1) {
-    // AUDIT R14 BUG-002 rollback: reservamos un slot en checkGates pero no
+    // Rollback: reservamos un slot en checkGates pero no
     // vamos a consumir (no hay contenido procesable, no se envía respuesta).
     try {
       const { releaseMonthlyReservation } = await import('@/lib/rate-limit-monthly');
@@ -348,8 +346,8 @@ async function handleSingleMessageInner(
   }
 
   // 5-7. Atomic upsert (contact + conversation + inbound message).
-  // AUDIT R14 BUG-001: antes teníamos 3 INSERTs secuenciales sin transacción
-  // — si fallaba a la mitad (DB flap, RLS, connection loss), rows huérfanas.
+  // Antes teníamos 3 INSERTs secuenciales sin transacción — si fallaba a
+  // la mitad (DB flap, RLS, connection loss), rows huérfanas.
   // atomicInboundUpsert usa un RPC plpgsql (ACID rollback automático) y
   // cae a path legacy idempotente si la migración aún no está aplicada.
   const { atomicInboundUpsert } = await import('@/lib/whatsapp/inbound-upsert');
@@ -475,9 +473,9 @@ async function handleSingleMessageInner(
   }
 
   // 11. Typing indicator (fire-and-forget)
-  // AUDIT R14 BUG-030: waitUntil evita que Vercel mate la HTTP request al
-  // regresar el handler — sin esto, si la respuesta principal termina antes
-  // de que Meta reciba el typing POST, el runtime puede cortarlo.
+  // waitUntil evita que Vercel mate la HTTP request al regresar el handler
+  // — sin esto, si la respuesta principal termina antes de que Meta reciba
+  // el typing POST, el runtime puede cortarlo.
   waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
   // 12. Generate and validate response
@@ -538,13 +536,13 @@ async function handleSingleMessageInner(
     confidence: response.confidence,
   });
 
-  // AUDIT R14 BUG-002: el contador mensual se PRE-RESERVA en checkGates
+  // El contador mensual se PRE-RESERVA en checkGates
   // (reserveMonthlyMessage). Ya no incrementamos aquí — si llegamos hasta
   // este punto el slot ya fue contado. El rollback en caso de error se hace
   // en el catch del caller (handleSingleMessageInner) vía
   // releaseMonthlyReservation.
 
-  // AUDIT R13: métricas per-tenant para dashboard.
+  // Métricas per-tenant para dashboard.
   try {
     const { emit, cost } = await import('@/lib/observability/metrics');
     emit({

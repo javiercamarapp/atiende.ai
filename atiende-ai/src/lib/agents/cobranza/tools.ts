@@ -135,7 +135,7 @@ registerTool('send_payment_reminder', {
     }
 
     try {
-      // FIX 3 (audit Round 2): valida ventana 24h antes de enviar free-form.
+      // Valida ventana 24h antes de enviar free-form.
       // Si el paciente no nos escribió en las últimas 24h, Meta bloquea el
       // mensaje y puede marcar la cuenta como spam → usar template.
       const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, body, { tenantId: ctx.tenantId });

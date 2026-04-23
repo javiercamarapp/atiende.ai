@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// MONTHLY MESSAGE COUNTER — Redis en el hot path (AUDIT R12 BUG-003)
+// MONTHLY MESSAGE COUNTER — Redis en el hot path
 //
 // Antes: processor.ts hacía `SELECT count(*) FROM messages` por CADA webhook
 // para validar el límite mensual del plan. Esto castigaba latencia +
@@ -55,7 +55,7 @@ export async function incrementMonthlyMessages(tenantId: string): Promise<number
 }
 
 /**
- * AUDIT R14 BUG-002: reserva atómica en la puerta de entrada (ANTES del LLM).
+ * Reserva atómica en la puerta de entrada (ANTES del LLM).
  *
  * Problema: antes llamábamos `incrementMonthlyMessages` al final del pipeline
  * (tras el LLM + send). Bajo carga concurrente, cientos de webhooks podían

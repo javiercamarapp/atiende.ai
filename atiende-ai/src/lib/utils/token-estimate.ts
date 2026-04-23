@@ -1,7 +1,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // TOKEN ESTIMATE — aproximación conservadora de conteo de tokens sin deps
 //
-// AUDIT R18 BUG-007: antes truncábamos el history por `content.length` (chars)
+// Antes truncábamos el history por `content.length` (chars)
 // asumiendo ratio 1:1 con tokens. Eso es frágil para:
 //   - Emojis: 1-3 tokens cada uno según el tokenizador.
 //   - Acentos/ñ en español: a veces 2 tokens por carácter compuesto.

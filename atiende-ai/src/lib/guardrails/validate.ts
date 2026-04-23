@@ -1,9 +1,9 @@
 // Valida que la respuesta del LLM no invente informacion
 // Se ejecuta DESPUES de cada generacion, ANTES de enviar al cliente
 
-// FIX 4 (audit R4): helpers de normalización para comparar precios del
-// LLM contra el contexto RAG eliminando variaciones de formato
-// ($800 vs $800.00 vs 800 vs $ 800 vs 800.0).
+// Helpers de normalización para comparar precios del LLM contra el contexto
+// RAG eliminando variaciones de formato ($800 vs $800.00 vs 800 vs $ 800
+// vs 800.0).
 function canonicalizePrice(raw: string): string | null {
   const digits = raw.replace(/[^\d.]/g, '');
   if (!digits) return null;
@@ -25,7 +25,7 @@ function normalizePrices(ctx: string): string {
 }
 
 /**
- * AUDIT R12 BUG-005: refuerzo anti-alucinación de precios.
+ * Refuerzo anti-alucinación de precios.
  *
  * Extrae TODOS los precios del RAG + calcula sumas válidas de hasta 3 ítems.
  * El LLM puede legítimamente sumar precios (ej. "Limpieza $500 + Extracción $300 = $800")
@@ -75,16 +75,16 @@ export function validateResponse(
   let text = response;
 
   // ═══ CAPA 1: Verificar precios mencionados ═══
-  // FIX 4 (audit R4): normaliza AMBOS lados antes de comparar para evitar
-  // falsos positivos por formato. "$800.00" debe match "$800"; "$1,200"
-  // debe match "1200"; símbolos de moneda, comas, ceros decimales
-  // innecesarios y espacios se eliminan. Capa 1 sigue siendo conservadora:
-  // si el número entero no existe en el RAG (ni en texto ni normalizado),
-  // la respuesta se reemplaza.
+  // Normaliza AMBOS lados antes de comparar para evitar falsos positivos
+  // por formato. "$800.00" debe match "$800"; "$1,200" debe match "1200";
+  // símbolos de moneda, comas, ceros decimales innecesarios y espacios se
+  // eliminan. Capa 1 sigue siendo conservadora: si el número entero no
+  // existe en el RAG (ni en texto ni normalizado), la respuesta se
+  // reemplaza.
   const normalizedContext = normalizePrices(ragContext);
-  // AUDIT R12 BUG-005: además de lookup literal, calculamos sumas válidas
-  // (2-3 ítems) del catálogo para que "Limpieza $500 + Extracción $300 = $800"
-  // no se marque como alucinación si esos 2 precios están en el RAG.
+  // Además de lookup literal, calculamos sumas válidas (2-3 ítems) del
+  // catálogo para que "Limpieza $500 + Extracción $300 = $800" no se marque
+  // como alucinación si esos 2 precios están en el RAG.
   const validPriceSet = extractAllValidPrices(ragContext);
   const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
   for (const match of priceMatches) {
@@ -184,9 +184,9 @@ export function validateResponse(
 // paciente (no en el output del LLM).
 // ═══════════════════════════════════════════════════════════════════════════
 
-// AUDIT R20: normalizamos acentos y lowercase antes del match. La lista previa
-// fallaba en "Creo Que Tengo" (capitalización) y en usuarios que omiten
-// acentos ("sintomas", "sintomas de"). También ampliamos cobertura a expresiones
+// Normalizamos acentos y lowercase antes del match. La lista previa fallaba
+// en "Creo Que Tengo" (capitalización) y en usuarios que omiten acentos
+// ("sintomas", "sintomas de"). También ampliamos cobertura a expresiones
 // comunes en México que la lista anterior no capturaba.
 function normalizeForMedicalCheck(text: string): string {
   return text
@@ -216,10 +216,10 @@ const MEDICAL_DISCLAIMER =
   '\n\nPara cualquier consulta médica, le recomendamos agendar una cita ' +
   'con el doctor para una evaluación profesional.';
 
-// AUDIT R20: la idempotencia previa dependía de que el agente usara EXACTAMENTE
-// la frase "evaluación profesional". Si la respuesta del LLM mencionaba
-// "valoración profesional" o "cita con el médico", duplicábamos disclaimer.
-// Ahora detectamos múltiples variantes normalizadas.
+// La idempotencia previa dependía de que el agente usara EXACTAMENTE la frase
+// "evaluación profesional". Si la respuesta del LLM mencionaba "valoración
+// profesional" o "cita con el médico", duplicábamos disclaimer. Ahora
+// detectamos múltiples variantes normalizadas.
 const EXISTING_DISCLAIMER_MARKERS = [
   'evaluacion profesional',
   'valoracion profesional',

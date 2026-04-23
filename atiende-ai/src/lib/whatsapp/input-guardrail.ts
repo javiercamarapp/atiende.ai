@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// INPUT GUARDRAIL — Block-mode (FIX 2 audit Round 2)
+// INPUT GUARDRAIL — Block-mode
 //
 // Variante BLOCK para usar en processor.ts ANTES del LLM. Si detecta
 // intento de prompt injection, retorna `true` y el caller responde con un

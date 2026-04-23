@@ -15,7 +15,7 @@ import type { AgentName } from '@/lib/agents/types';
 /**
  * Verifica el header `Authorization: Bearer ${CRON_SECRET}` usando comparación
  * constant-time (timingSafeEqual). Vercel cron añade el header automáticamente.
- * AUDIT R19 P0.3: antes usaba `!==`, vulnerable a timing attacks.
+ * Antes usaba `!==` (vulnerable a timing attacks).
  */
 export function requireCronAuth(req: NextRequest): NextResponse | null {
   const auth = req.headers.get('authorization');
@@ -50,9 +50,9 @@ export async function listEligibleTenants(opts: {
   return (tenants as Array<Record<string, unknown>>).filter((t) => {
     const features = (t.features as Record<string, unknown>) || {};
     if (requireToolCalling && features.tool_calling !== true) return false;
-    // AUDIT R19 P0.6: requireFeature debe ser opt-in explícito (=== true),
-    // no opt-out (!== false). Antes: un tenant sin la flag definida pasaba
-    // el filtro y recibía crons que no había activado.
+    // requireFeature debe ser opt-in explícito (=== true), no opt-out
+    // (!== false). Antes: un tenant sin la flag definida pasaba el filtro
+    // y recibía crons que no había activado.
     if (opts.requireFeature && features[opts.requireFeature] !== true) return false;
     return true;
   });
@@ -207,8 +207,8 @@ export async function runAgentWorkerForAllTenants(opts: {
   const start = Date.now();
   const tenants = await listEligibleTenants({ requireFeature: opts.requireFeature });
 
-  // AUDIT R19 P0.7: antes era serial (`for ... await`). Con 100 tenants × 5-10s
-  // de LLM el cron se cortaba por maxDuration=300s dejando el 60% sin procesar.
+  // Antes era serial (`for ... await`). Con 100 tenants x 5-10s de LLM el
+  // cron se cortaba por maxDuration=300s dejando el 60% sin procesar.
   // Concurrencia 5 balancea latencia vs rate-limit de OpenRouter/WhatsApp.
   const limit = pLimit(5);
   const results: WorkerRunResult[] = await Promise.all(

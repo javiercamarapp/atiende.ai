@@ -19,7 +19,7 @@
 //     debería poder manejarlo. Test 'context-aware' abajo documenta el edge.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// AUDIT R14 hardening: antes la regex incluía `baja` como palabra suelta,
+// Antes la regex incluía `baja` como palabra suelta,
 // causando falsos positivos en "traje de baja calidad", "baja presión
 // arterial", "temporada baja", etc. También fallaba "no quiero más
 // notificaciones" porque la alternancia `(quiero|m[áa]s)` no permitía

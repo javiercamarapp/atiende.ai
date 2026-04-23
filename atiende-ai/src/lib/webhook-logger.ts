@@ -58,7 +58,7 @@ export async function logWebhook(params: {
 }
 
 /**
- * AUDIT R17 BUG-002: guardia de tamaño ANTES de bufferear el payload.
+ * Guardia de tamaño ANTES de bufferear el payload.
  *
  * Antes: cada route webhook hacía `await req.arrayBuffer()` sin límite. Un
  * atacante con payload de varios MB podía tumbar el worker por OOM antes de

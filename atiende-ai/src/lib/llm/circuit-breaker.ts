@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// OpenRouter circuit breaker (AUDIT P2 item 7)
+// OpenRouter circuit breaker
 //
 // Cuando OpenRouter está caído (incidente upstream) o degrada (timeout
 // sostenido), sin circuit breaker TODOS los requests siguen llegando:
@@ -95,8 +95,8 @@ export async function reportFailure(reason: string): Promise<void> {
   if (!redis) return;
 
   try {
-    // AUDIT R19 #13: INCR + EXPIRE atómicos via Lua. El patrón previo dejaba
-    // keys inmortales si el segundo request llegaba entre INCR y EXPIRE y el
+    // INCR + EXPIRE atómicos via Lua. El patrón previo dejaba keys
+    // inmortales si el segundo request llegaba entre INCR y EXPIRE y el
     // primer EXPIRE fallaba.
     const count = (await redis.eval(
       "local v = redis.call('INCR', KEYS[1]); if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return v",

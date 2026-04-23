@@ -165,7 +165,7 @@ registerTool('send_retention_message', {
     if (!phoneNumberId) return { sent: false, error: 'no wa_phone_number_id' };
 
     try {
-      // FIX 3 (audit Round 2): valida ventana 24h
+      // Valida ventana 24h
       const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, args.message, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
