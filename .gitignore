@@ -1,3 +1,6 @@
+# ─── Dependencies ──────────────────────────────────────────
+node_modules/
+
 # ─── Claude Code / local dev tooling ────────────────────────
 .claude/worktrees/
 .claude/commands/
