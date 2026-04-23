@@ -301,6 +301,60 @@ export const SHARED_POLICIES_QUESTIONS: Question[] = [
     placeholder: 'Sí, garantía de 6 meses en tratamientos restaurativos' },
 ];
 
+export const SHARED_SPECIAL_QUESTIONS: Question[] = [
+  { key: 'spc_insurers', type: 'textarea', required: false,
+    label: '¿Qué aseguradoras aceptan?',
+    placeholder: 'AXA, GNP, Mapfre, MetLife, Seguros Monterrey' },
+  { key: 'spc_coverage', type: 'textarea', required: false,
+    label: '¿Qué coberturas aplican y cuáles no?',
+    placeholder: 'Consulta general y urgencias sí. Cirugía estética no cubierta' },
+  { key: 'spc_insurance_docs', type: 'text', required: false,
+    label: '¿Qué documentos debe traer el paciente con seguro?',
+    placeholder: 'Póliza vigente, credencial, identificación oficial' },
+  { key: 'spc_major_medical', type: 'text', required: false,
+    label: '¿Trabajan con seguros de gastos médicos mayores?',
+    placeholder: 'Sí, con carta de autorización previa de la aseguradora' },
+  { key: 'spc_insurance_billing', type: 'text', required: false,
+    label: '¿Facturan directo a la aseguradora o el paciente paga y pide reembolso?',
+    placeholder: 'Facturación directa con AXA y GNP. Las demás: reembolso' },
+  { key: 'spc_after_hours_emergency', type: 'text', required: false,
+    label: '¿Atienden urgencias fuera del horario normal?',
+    placeholder: 'Sí, emergencias dentales hasta las 22:00' },
+  { key: 'spc_emergency_phone', type: 'text', required: false,
+    label: '¿Tienen número de emergencias 24 hrs?',
+    placeholder: 'Sí, 999-123-4567 para urgencias' },
+  { key: 'spc_walk_in_emergency', type: 'text', required: false,
+    label: '¿Atienden sin cita en casos urgentes?',
+    placeholder: 'Sí, urgencias se atienden sin cita previa' },
+  { key: 'spc_what_is_emergency', type: 'textarea', required: false,
+    label: '¿Qué se considera una urgencia en su especialidad?',
+    placeholder: 'Dolor intenso, fractura dental, sangrado, absceso, trauma' },
+  { key: 'spc_pregnant', type: 'text', required: false,
+    label: '¿Atienden mujeres embarazadas o en lactancia?',
+    placeholder: 'Sí, con precauciones especiales. Evitamos radiografías en 1er trimestre' },
+  { key: 'spc_chronic', type: 'text', required: false,
+    label: '¿Atienden pacientes con diabetes, hipertensión u otras enfermedades crónicas?',
+    placeholder: 'Sí, solicitamos estudios previos y coordinamos con su médico tratante' },
+  { key: 'spc_allergies', type: 'text', required: false,
+    label: '¿Atienden pacientes con alergias a medicamentos?',
+    placeholder: 'Sí, siempre preguntamos alergias antes de cualquier procedimiento' },
+  { key: 'spc_anticoagulants', type: 'text', required: false,
+    label: '¿Atienden pacientes anticoagulados o con condiciones de riesgo?',
+    placeholder: 'Sí, con protocolo especial y valoración previa' },
+  { key: 'spc_immunosuppressed', type: 'text', required: false,
+    label: '¿Tienen protocolos para pacientes inmunosuprimidos?',
+    placeholder: 'Sí, medidas adicionales de bioseguridad y horarios preferenciales' },
+  { key: 'spc_children_age', type: 'text', required: false,
+    label: '¿Atienden niños? ¿Desde qué edad?',
+    placeholder: 'Sí, desde los 3 años con odontopediatría' },
+  { key: 'spc_elderly', type: 'text', required: false,
+    label: '¿Atienden adultos mayores con necesidades geriátricas?',
+    placeholder: 'Sí, con atención especializada y accesibilidad en planta baja' },
+  { key: 'spc_oncology', type: 'text', required: false,
+    label: '¿Atienden pacientes oncológicos o postoperatorios?',
+    placeholder: 'Sí, coordinamos con su oncólogo para el plan de tratamiento' },
+];
+
 export const SHARED_BRAND_QUESTIONS: Question[] = [
   { key: 'tone', type: 'text', required: true,
     label: '¿Qué tono debe usar tu bot?',
@@ -333,7 +387,7 @@ export const ZONE_QUESTION_KEYS: Record<ZoneId, string[]> = {
 
   policies: ['pol_companions', 'pol_minors', 'pol_pets', 'pol_late_arrival', 'pol_photos', 'pol_complaints', 'pol_cancellation', 'pol_confidentiality', 'pol_warranty', 'cancellation', 'confidentiality', 'warranty', 'turnaround', 'min_age', 'age_range'],
 
-  special: ['insurances', 'insurance', 'allergens', 'vegetarian', 'kids_menu', 'pets', 'emergency', 'emergency_protocol', 'online', 'online_sessions', 'online_service', 'telemedicine', 'couples', 'happy_hour', 'events', 'hospitalization', 'ultrasound', 'prenatal_care', 'bridal', 'scholarships', 'extracurriculars'],
+  special: ['spc_insurers', 'spc_coverage', 'spc_insurance_docs', 'spc_major_medical', 'spc_insurance_billing', 'spc_after_hours_emergency', 'spc_emergency_phone', 'spc_walk_in_emergency', 'spc_what_is_emergency', 'spc_pregnant', 'spc_chronic', 'spc_allergies', 'spc_anticoagulants', 'spc_immunosuppressed', 'spc_children_age', 'spc_elderly', 'spc_oncology', 'insurances', 'insurance', 'allergens', 'vegetarian', 'kids_menu', 'pets', 'emergency', 'emergency_protocol', 'online', 'online_sessions', 'online_service', 'telemedicine', 'couples', 'happy_hour', 'events', 'hospitalization', 'ultrasound', 'prenatal_care', 'bridal', 'scholarships', 'extracurriculars'],
 
   experience: ['first_visit', 'first_session', 'visit_process', 'post_care', 'enrollment_process', 'arrangements', 'appointment_type', 'grooming', 'prescription_handling', 'otc_products', 'pharmacy', 'mortgage_help', 'claims_support', 'quote_process', 'parent_communication'],
 
@@ -393,6 +447,12 @@ function questionKeysForZone(zoneId: ZoneId, verticalQuestions: Question[]): str
       .map((q) => q.key)
       .filter((k) => ZONE_QUESTION_KEYS.policies.includes(k));
     return [...SHARED_POLICIES_QUESTIONS.map((q) => q.key), ...verticalPolKeys];
+  }
+  if (zoneId === 'special') {
+    const verticalSpcKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.special.includes(k));
+    return [...SHARED_SPECIAL_QUESTIONS.map((q) => q.key), ...verticalSpcKeys];
   }
   if (zoneId === 'brand') {
     // Brand zone always shows the shared brand questions plus any
@@ -478,6 +538,12 @@ export function getQuestionsForZone(
       ZONE_QUESTION_KEYS.policies.includes(q.key)
     );
     return [...SHARED_POLICIES_QUESTIONS, ...verticalPol];
+  }
+  if (zoneId === 'special') {
+    const verticalSpc = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.special.includes(q.key)
+    );
+    return [...SHARED_SPECIAL_QUESTIONS, ...verticalSpc];
   }
   if (zoneId === 'brand') {
     const verticalBrand = verticalQuestions.filter((q) =>
