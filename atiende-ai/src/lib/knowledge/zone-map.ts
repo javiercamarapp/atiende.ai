@@ -355,6 +355,58 @@ export const SHARED_SPECIAL_QUESTIONS: Question[] = [
     placeholder: 'Sí, coordinamos con su oncólogo para el plan de tratamiento' },
 ];
 
+export const SHARED_EXPERIENCE_QUESTIONS: Question[] = [
+  { key: 'exp_first_visit_process', type: 'textarea', required: true,
+    label: '¿Cómo es el proceso paso a paso de la primera visita?',
+    placeholder: '1. Llega y se registra en recepción 2. Llena historial clínico 3. Pasa a valoración 4. Se le explica el diagnóstico 5. Se agenda seguimiento',
+    help: 'Desde que el paciente llega hasta que sale' },
+  { key: 'exp_first_visit_duration', type: 'text', required: false,
+    label: '¿Cuánto dura la primera consulta?',
+    placeholder: '45 minutos a 1 hora' },
+  { key: 'exp_diagnosis_first_visit', type: 'text', required: false,
+    label: '¿Se hace diagnóstico en la primera visita o solo valoración?',
+    placeholder: 'Diagnóstico completo con radiografías incluidas' },
+  { key: 'exp_treatment_same_day', type: 'text', required: false,
+    label: '¿Le dan tratamiento el mismo día o hay que agendar otra cita?',
+    placeholder: 'Limpiezas sí, tratamientos complejos se agendan por separado' },
+  { key: 'exp_fasting', type: 'text', required: false,
+    label: '¿Debe llegar en ayunas o con preparación especial?',
+    placeholder: 'No es necesario para consulta general. Para cirugía: 8h de ayuno' },
+  { key: 'exp_medications_before', type: 'text', required: false,
+    label: '¿Puede tomar sus medicamentos habituales antes de la cita?',
+    placeholder: 'Sí, excepto anticoagulantes — consultar previamente' },
+  { key: 'exp_arrive_early', type: 'text', required: false,
+    label: '¿Cuánto tiempo antes debe llegar para el papeleo?',
+    placeholder: '15 minutos antes para llenar historial clínico' },
+  { key: 'exp_pre_forms', type: 'text', required: false,
+    label: '¿Hay formularios para llenar por adelantado?',
+    placeholder: 'Sí, enviamos el historial por WhatsApp para que lo llene antes' },
+  { key: 'exp_documents', type: 'textarea', required: false,
+    label: '¿Qué documentos debe traer a la primera cita?',
+    placeholder: 'Identificación oficial, estudios previos, lista de medicamentos, datos del seguro si aplica' },
+  { key: 'exp_referral_info', type: 'text', required: false,
+    label: '¿Necesita traer datos de su médico de cabecera o quien lo refiere?',
+    placeholder: 'Preferible si viene referido — nombre y teléfono del médico' },
+  { key: 'exp_companion_needed', type: 'text', required: false,
+    label: '¿Puede venir solo o necesita acompañante?',
+    placeholder: 'Solo, excepto menores de edad o procedimientos con sedación' },
+  { key: 'exp_minors_companion', type: 'text', required: false,
+    label: '¿Quién debe acompañar a los menores?',
+    placeholder: 'Padre, madre o tutor legal con identificación' },
+  { key: 'exp_waiting_room', type: 'text', required: false,
+    label: '¿Hay sala de espera? ¿Cuánto tiempo promedio de espera?',
+    placeholder: 'Sí, con wifi y agua. Espera promedio: 10-15 minutos' },
+  { key: 'exp_treatment_plan', type: 'text', required: false,
+    label: '¿Le dan un plan de tratamiento por escrito?',
+    placeholder: 'Sí, con diagnóstico, opciones de tratamiento y costos' },
+  { key: 'exp_second_appointment', type: 'text', required: false,
+    label: '¿Cómo se agenda la segunda cita?',
+    placeholder: 'En recepción al salir, o por WhatsApp con el bot' },
+  { key: 'exp_results_delivery', type: 'text', required: false,
+    label: '¿Por qué medio dan los resultados o diagnóstico?',
+    placeholder: 'En consulta presencial. Resultados de laboratorio por WhatsApp en 24-48h' },
+];
+
 export const SHARED_BRAND_QUESTIONS: Question[] = [
   { key: 'tone', type: 'text', required: true,
     label: '¿Qué tono debe usar tu bot?',
@@ -389,7 +441,7 @@ export const ZONE_QUESTION_KEYS: Record<ZoneId, string[]> = {
 
   special: ['spc_insurers', 'spc_coverage', 'spc_insurance_docs', 'spc_major_medical', 'spc_insurance_billing', 'spc_after_hours_emergency', 'spc_emergency_phone', 'spc_walk_in_emergency', 'spc_what_is_emergency', 'spc_pregnant', 'spc_chronic', 'spc_allergies', 'spc_anticoagulants', 'spc_immunosuppressed', 'spc_children_age', 'spc_elderly', 'spc_oncology', 'insurances', 'insurance', 'allergens', 'vegetarian', 'kids_menu', 'pets', 'emergency', 'emergency_protocol', 'online', 'online_sessions', 'online_service', 'telemedicine', 'couples', 'happy_hour', 'events', 'hospitalization', 'ultrasound', 'prenatal_care', 'bridal', 'scholarships', 'extracurriculars'],
 
-  experience: ['first_visit', 'first_session', 'visit_process', 'post_care', 'enrollment_process', 'arrangements', 'appointment_type', 'grooming', 'prescription_handling', 'otc_products', 'pharmacy', 'mortgage_help', 'claims_support', 'quote_process', 'parent_communication'],
+  experience: ['exp_first_visit_process', 'exp_first_visit_duration', 'exp_diagnosis_first_visit', 'exp_treatment_same_day', 'exp_fasting', 'exp_medications_before', 'exp_arrive_early', 'exp_pre_forms', 'exp_documents', 'exp_referral_info', 'exp_companion_needed', 'exp_minors_companion', 'exp_waiting_room', 'exp_treatment_plan', 'exp_second_appointment', 'exp_results_delivery', 'first_visit', 'first_session', 'visit_process', 'post_care', 'enrollment_process', 'arrangements', 'appointment_type', 'grooming', 'prescription_handling', 'otc_products', 'pharmacy', 'mortgage_help', 'claims_support', 'quote_process', 'parent_communication'],
 
   brand: ['tone', 'tagline', 'languages', 'differentiator', 'approach', 'specialties', 'brands', 'food_menu', 'beverages', 'salsas', 'amenities', 'equipment', 'tools', 'software', 'breakfast', 'meal_plans', 'levels', 'species', 'carriers', 'extra_info'],
 
@@ -453,6 +505,12 @@ function questionKeysForZone(zoneId: ZoneId, verticalQuestions: Question[]): str
       .map((q) => q.key)
       .filter((k) => ZONE_QUESTION_KEYS.special.includes(k));
     return [...SHARED_SPECIAL_QUESTIONS.map((q) => q.key), ...verticalSpcKeys];
+  }
+  if (zoneId === 'experience') {
+    const verticalExpKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.experience.includes(k));
+    return [...SHARED_EXPERIENCE_QUESTIONS.map((q) => q.key), ...verticalExpKeys];
   }
   if (zoneId === 'brand') {
     // Brand zone always shows the shared brand questions plus any
@@ -544,6 +602,12 @@ export function getQuestionsForZone(
       ZONE_QUESTION_KEYS.special.includes(q.key)
     );
     return [...SHARED_SPECIAL_QUESTIONS, ...verticalSpc];
+  }
+  if (zoneId === 'experience') {
+    const verticalExp = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.experience.includes(q.key)
+    );
+    return [...SHARED_EXPERIENCE_QUESTIONS, ...verticalExp];
   }
   if (zoneId === 'brand') {
     const verticalBrand = verticalQuestions.filter((q) =>
