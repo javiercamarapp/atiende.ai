@@ -73,8 +73,8 @@ export async function GET(req: NextRequest) {
     summary.optedout_contacts_error = err instanceof Error ? err.message : String(err);
   }
 
-  // AUDIT R28: audit_log guarda PII en `details` JSONB (phone, name, email,
-  // event data). LFPDPPP ARCO exige retención limitada — 13 meses iguala la
+  // audit_log guarda PII en `details` JSONB (phone, name, email, event
+  // data). LFPDPPP ARCO exige retención limitada — 13 meses iguala la
   // política de messages/appointments.
   try {
     const cutoff = new Date(Date.now() - RETENTION_DAYS_MESSAGES * 86_400_000).toISOString();
