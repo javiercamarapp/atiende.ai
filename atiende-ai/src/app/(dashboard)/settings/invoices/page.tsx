@@ -151,11 +151,31 @@ export default function InvoicesPage() {
 
       {/* Loading */}
       {loading && (
-        <div className="flex flex-col items-center justify-center py-24 animate-in fade-in duration-300">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[hsl(235,84%,55%)] to-[hsl(255,84%,60%)] flex items-center justify-center shadow-lg shadow-[hsl(235,84%,55%)]/20 mb-4">
-            <Loader2 className="w-6 h-6 text-white animate-spin" />
+        <div className="flex flex-col items-center justify-center py-24 animate-in fade-in duration-500">
+          {/* Pulsing skeleton cards */}
+          <div className="w-full grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-zinc-100 p-5 animate-pulse"
+                style={{ animationDelay: `${i * 150}ms` }}
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-zinc-100" />
+                  <div className="flex-1">
+                    <div className="h-3.5 w-24 bg-zinc-100 rounded-full" />
+                    <div className="h-2.5 w-16 bg-zinc-50 rounded-full mt-2" />
+                  </div>
+                  <div className="h-5 w-20 bg-zinc-100 rounded-full" />
+                </div>
+                <div className="mt-4 pt-3.5 border-t border-zinc-50 flex justify-between">
+                  <div className="h-2.5 w-20 bg-zinc-50 rounded-full" />
+                  <div className="h-7 w-28 bg-zinc-100 rounded-lg" />
+                </div>
+              </div>
+            ))}
           </div>
-          <p className="text-sm text-zinc-400">Cargando facturas...</p>
+          <p className="text-[12px] text-zinc-300 tracking-wide">Cargando facturas...</p>
         </div>
       )}
 
