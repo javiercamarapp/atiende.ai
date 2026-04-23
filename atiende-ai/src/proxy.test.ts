@@ -45,7 +45,7 @@ vi.mock('next/server', () => {
   return { NextResponse: MockNextResponse };
 });
 
-import { middleware } from './middleware';
+import { proxy } from './proxy';
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ function makeRequest(pathname: string): any {
 
 // ── Tests ──────────────────────────────────────────────────
 
-describe('middleware', () => {
+describe('proxy', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHeaders.clear();
@@ -82,7 +82,7 @@ describe('middleware', () => {
     it('allows unauthenticated access to /', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/'));
+      const response = await proxy(makeRequest('/'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -90,7 +90,7 @@ describe('middleware', () => {
     it('allows unauthenticated access to /login', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/login'));
+      const response = await proxy(makeRequest('/login'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -98,7 +98,7 @@ describe('middleware', () => {
     it('allows unauthenticated access to /register', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/register'));
+      const response = await proxy(makeRequest('/register'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -106,7 +106,7 @@ describe('middleware', () => {
     it('allows unauthenticated access to /api/webhook paths', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/api/webhook/whatsapp'));
+      const response = await proxy(makeRequest('/api/webhook/whatsapp'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -114,7 +114,7 @@ describe('middleware', () => {
     it('allows unauthenticated access to /api/webhook (exact)', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/api/webhook'));
+      const response = await proxy(makeRequest('/api/webhook'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -122,7 +122,7 @@ describe('middleware', () => {
     it('redirects unauthenticated users from protected routes like /dashboard', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/dashboard'));
+      const response = await proxy(makeRequest('/dashboard'));
 
       expect((response as any)._redirected).toBe(true);
       expect((response as any)._redirectUrl).toBe('/login');
@@ -131,7 +131,7 @@ describe('middleware', () => {
     it('redirects unauthenticated users from /settings', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      const response = await middleware(makeRequest('/settings'));
+      const response = await proxy(makeRequest('/settings'));
 
       expect((response as any)._redirected).toBe(true);
       expect((response as any)._redirectUrl).toBe('/login');
@@ -146,7 +146,7 @@ describe('middleware', () => {
     it('redirects authenticated users from /login to /', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
-      const response = await middleware(makeRequest('/login'));
+      const response = await proxy(makeRequest('/login'));
 
       expect((response as any)._redirected).toBe(true);
       expect((response as any)._redirectUrl).toBe('/home');
@@ -155,7 +155,7 @@ describe('middleware', () => {
     it('redirects authenticated users from /register to /', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
-      const response = await middleware(makeRequest('/register'));
+      const response = await proxy(makeRequest('/register'));
 
       expect((response as any)._redirected).toBe(true);
       expect((response as any)._redirectUrl).toBe('/home');
@@ -164,7 +164,7 @@ describe('middleware', () => {
     it('does NOT redirect authenticated users from /dashboard', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
-      const response = await middleware(makeRequest('/dashboard'));
+      const response = await proxy(makeRequest('/dashboard'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -174,7 +174,7 @@ describe('middleware', () => {
       // La landing de marketing vive fuera de este repo (useatiende.ai).
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
-      const response = await middleware(makeRequest('/'));
+      const response = await proxy(makeRequest('/'));
 
       expect((response as any)._redirected).toBe(true);
       expect((response as any)._redirectUrl).toBe('/home');
@@ -183,7 +183,7 @@ describe('middleware', () => {
     it('does NOT redirect authenticated users from /api/webhook', async () => {
       mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
-      const response = await middleware(makeRequest('/api/webhook/stripe'));
+      const response = await proxy(makeRequest('/api/webhook/stripe'));
 
       expect((response as any)._redirected).toBeUndefined();
     });
@@ -195,7 +195,7 @@ describe('middleware', () => {
     it('sets X-Content-Type-Options to nosniff', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       expect(mockHeaders.get('X-Content-Type-Options')).toBe('nosniff');
     });
@@ -203,7 +203,7 @@ describe('middleware', () => {
     it('sets X-Frame-Options to DENY', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       expect(mockHeaders.get('X-Frame-Options')).toBe('DENY');
     });
@@ -211,7 +211,7 @@ describe('middleware', () => {
     it('sets X-XSS-Protection', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       expect(mockHeaders.get('X-XSS-Protection')).toBe('1; mode=block');
     });
@@ -219,7 +219,7 @@ describe('middleware', () => {
     it('sets Referrer-Policy', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       expect(mockHeaders.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
     });
@@ -227,7 +227,7 @@ describe('middleware', () => {
     it('sets Permissions-Policy to deny camera/mic/geo', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       const pp = mockHeaders.get('Permissions-Policy');
       expect(pp).toContain('camera=()');
@@ -238,7 +238,7 @@ describe('middleware', () => {
     it('sets Content-Security-Policy with required domains', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       const csp = mockHeaders.get('Content-Security-Policy');
       expect(csp).toContain("default-src 'self'");
@@ -250,7 +250,7 @@ describe('middleware', () => {
     it('sets Strict-Transport-Security (HSTS) with correct max-age', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       const hsts = mockHeaders.get('Strict-Transport-Security');
       expect(hsts).toContain('max-age=31536000');
@@ -260,7 +260,7 @@ describe('middleware', () => {
     it('sets security headers even for public routes', async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
 
-      await middleware(makeRequest('/'));
+      await proxy(makeRequest('/'));
 
       expect(mockHeaders.get('X-Content-Type-Options')).toBe('nosniff');
       expect(mockHeaders.get('X-Frame-Options')).toBe('DENY');
@@ -270,7 +270,7 @@ describe('middleware', () => {
     it('sets all 7 OWASP security headers', async () => {
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       const expectedHeaders = [
         'X-Content-Type-Options',
@@ -293,7 +293,7 @@ describe('middleware', () => {
       // que es una ruta protegida donde los headers sí se aplican.
       mockGetUser.mockResolvedValue({ data: { user: { id: '1' } } });
 
-      await middleware(makeRequest('/dashboard'));
+      await proxy(makeRequest('/dashboard'));
 
       const csp = mockHeaders.get('Content-Security-Policy');
       expect(csp).toContain("'unsafe-inline'");
@@ -305,14 +305,14 @@ describe('middleware', () => {
 
   describe('matcher config', () => {
     it('exports a config with matcher array', async () => {
-      const { config } = await import('./middleware');
+      const { config } = await import('./proxy');
       expect(config.matcher).toBeDefined();
       expect(Array.isArray(config.matcher)).toBe(true);
       expect(config.matcher.length).toBeGreaterThan(0);
     });
 
     it('matcher excludes _next/static and favicon', async () => {
-      const { config } = await import('./middleware');
+      const { config } = await import('./proxy');
       const pattern = config.matcher[0];
       // The pattern uses negative lookahead to exclude static assets
       expect(pattern).toContain('_next/static');
