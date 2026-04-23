@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Request-to-NextRequest casts required throughout test */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockInsert = vi.fn(() => Promise.resolve({ data: null, error: null }));

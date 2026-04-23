@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 interface TypewriterMessageProps {
   text: string;
@@ -8,35 +8,34 @@ interface TypewriterMessageProps {
   className?: string;
 }
 
-export function TypewriterMessage({ text, speed = 20, onComplete, className = '' }: TypewriterMessageProps) {
-  const [displayed, setDisplayed] = useState('');
-  const [done, setDone] = useState(false);
-  const indexRef = useRef(0);
-  const prevTextRef = useRef(text);
+/**
+ * Outer component uses `key={text}` to remount the inner component
+ * whenever the text prop changes, cleanly resetting animation state
+ * without calling setState in effects or accessing refs during render.
+ */
+export function TypewriterMessage(props: TypewriterMessageProps) {
+  return <TypewriterInner key={props.text} {...props} />;
+}
 
-  // Reset derived state synchronously during render when text changes
-  if (prevTextRef.current !== text) {
-    prevTextRef.current = text;
-    indexRef.current = 0;
-    setDisplayed('');
-    setDone(false);
-  }
+function TypewriterInner({ text, speed = 20, onComplete, className = '' }: TypewriterMessageProps) {
+  const [charIndex, setCharIndex] = useState(0);
+
+  const done = charIndex >= text.length;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      indexRef.current += 1;
-      if (indexRef.current >= text.length) {
-        setDisplayed(text);
-        setDone(true);
-        clearInterval(interval);
-        onComplete?.();
-      } else {
-        setDisplayed(text.slice(0, indexRef.current));
-      }
+    if (done) {
+      onComplete?.();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCharIndex(prev => prev + 1);
     }, speed);
 
-    return () => clearInterval(interval);
-  }, [text, speed, onComplete]);
+    return () => clearTimeout(timer);
+  }, [charIndex, text.length, speed, done, onComplete]);
+
+  const displayed = text.slice(0, charIndex);
 
   return (
     <div className={`whitespace-pre-wrap ${className}`}>

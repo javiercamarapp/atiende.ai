@@ -54,6 +54,7 @@ const mockFrom = vi.fn(() => ({
   data: null,
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic mock data for tenant_agents query
 let mockActiveAgents: any[] = [];
 
 vi.mock('@/lib/supabase/admin', () => ({
