@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Clock, Sparkles, Users, MapPin, CreditCard, ShieldCheck,
-  Star, Compass, Palette, Truck, Check, Loader2,
+  Star, Compass, Palette, Truck, Check, Loader2, X, Zap,
   ChevronRight, MessageSquare, Minus, Plus, CheckCircle2, HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -346,6 +346,8 @@ export function ZoneDetailView({ zone, questions, allQuestions, initialResponses
   const Icon = ICONS[zone.icon as keyof typeof ICONS] ?? Sparkles;
 
   const [responses, setResponses] = useState<Record<string, unknown>>(initialResponses);
+  const [focusMode, setFocusMode] = useState(false);
+  const [focusIdx, setFocusIdx] = useState(0);
 
   const answeredKeys = useMemo(() => {
     const set = new Set<string>();
@@ -386,6 +388,86 @@ export function ZoneDetailView({ zone, questions, allQuestions, initialResponses
       throw new Error('save failed');
     }
   }, []);
+
+  function startFocusMode() {
+    const firstUnanswered = questions.findIndex((q) => !hasValue(responses[q.key]));
+    setFocusIdx(firstUnanswered >= 0 ? firstUnanswered : 0);
+    setFocusMode(true);
+  }
+
+  function focusNext() {
+    if (focusIdx < questions.length - 1) {
+      setFocusIdx((i) => i + 1);
+    } else {
+      setFocusMode(false);
+    }
+  }
+
+  // ── Focus Mode (Duolingo-style) ──────────────────────────────────────────
+  if (focusMode) {
+    const q = questions[focusIdx];
+    const progress = Math.round(((focusIdx + 1) / questions.length) * 100);
+    return (
+      <div className="w-full h-[calc(100dvh-64px)] flex flex-col animate-in fade-in duration-200">
+        {/* Top progress bar */}
+        <div className="shrink-0 px-4 lg:px-8 pt-3 pb-2">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setFocusMode(false)} className="text-zinc-400 hover:text-zinc-700 transition">
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex-1 h-2.5 rounded-full bg-zinc-100 overflow-hidden">
+              <div
+                className={cn(accent.bg, 'h-full rounded-full transition-all duration-500 ease-out')}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="text-[12px] font-bold text-zinc-500 tabular-nums">{focusIdx + 1}/{questions.length}</span>
+          </div>
+        </div>
+
+        {/* Question centered */}
+        <div className="flex-1 flex items-center justify-center px-6" key={q.key}>
+          <div className="w-full max-w-lg animate-in fade-in slide-in-from-right-8 duration-300">
+            <p className="text-[22px] font-bold text-zinc-900 text-center leading-snug mb-8">
+              {q.label}
+            </p>
+            {q.help && (
+              <p className="text-[13px] text-zinc-400 text-center mb-6 -mt-4">{q.help}</p>
+            )}
+            <QuestionWidget
+              question={q}
+              value={responses[q.key]}
+              accent={accent}
+              onSave={async (qq, val) => {
+                await saveQuestion(qq, val);
+                setTimeout(focusNext, 400);
+              }}
+              index={0}
+            />
+          </div>
+        </div>
+
+        {/* Bottom actions */}
+        <div className="shrink-0 px-6 pb-4 flex items-center justify-between">
+          <button
+            onClick={() => setFocusIdx((i) => Math.max(0, i - 1))}
+            disabled={focusIdx === 0}
+            className="text-[13px] text-zinc-400 hover:text-zinc-700 disabled:opacity-30 transition"
+          >
+            Anterior
+          </button>
+          <button
+            onClick={focusNext}
+            className="text-[13px] text-zinc-400 hover:text-zinc-700 transition"
+          >
+            {hasValue(responses[q.key]) ? 'Siguiente' : 'Saltar'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal View ──────────────────────────────────────────────────────────
 
   return (
     <div className="w-full h-[calc(100dvh-64px)] flex flex-col animate-in fade-in slide-in-from-right-4 duration-300">
@@ -464,6 +546,21 @@ export function ZoneDetailView({ zone, questions, allQuestions, initialResponses
               </div>
             </div>
           </section>
+
+          {/* Quick start button */}
+          {completion.percent < 100 && (
+            <button
+              onClick={startFocusMode}
+              className={cn(
+                'mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[14px] font-bold text-white transition-all duration-200 active:scale-[0.97] shadow-md',
+                accent.bg, 'hover:opacity-90',
+                'shadow-[hsl(235,84%,55%)]/20',
+              )}
+            >
+              <Zap className="w-4 h-4" />
+              Completar rapido
+            </button>
+          )}
         </div>
 
         {/* Right panel — questions */}
