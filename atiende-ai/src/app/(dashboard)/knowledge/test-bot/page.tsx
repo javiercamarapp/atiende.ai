@@ -89,7 +89,7 @@ export default function TestBotPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-64px)]">
+    <div className="flex flex-col h-full -mx-4 md:-mx-8 -mt-4 -mb-20 md:-mb-4">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 pt-1 pb-1.5 shrink-0">
         <Link
