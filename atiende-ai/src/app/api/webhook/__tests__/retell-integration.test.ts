@@ -195,8 +195,8 @@ describe('Retell webhook integration: billing + transcript flow', () => {
   it('returns 401 without a valid auth header', async () => {
     const res = await POST(makeReq({ event: 'call_started', call_id: 'c1' }));
     expect(res.status).toBe(401);
-    const json = await res.json();
-    expect(json.error).toBe('Unauthorized');
+    const text = await res.text();
+    expect(text).toBe('Unauthorized');
   });
 
   // ─── 2. Auth: accepts Bearer token ────────────────────────────────────────

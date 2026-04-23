@@ -48,7 +48,7 @@ vi.mock('@/lib/webhook-logger', () => ({
   WEBHOOK_MAX_BYTES: 2 * 1024 * 1024,
 }));
 
-import { POST } from '../../webhook/retell/route';
+import { POST } from '../webhook/retell/route';
 import { logWebhook } from '@/lib/webhook-logger';
 
 const API_KEY = 'retell-test-key-123';
@@ -62,7 +62,6 @@ function makeRetellReq(body: object, apiKey?: string, useBearerAuth = false) {
       headers['x-retell-api-key'] = apiKey;
     }
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
   return new Request('http://localhost/api/webhook/retell', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -168,7 +167,6 @@ describe('/api/webhook/retell', () => {
   });
 
   it('returns 400 on bad JSON body', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
     const req = new Request('http://localhost/api/webhook/retell', {
       method: 'POST',
       body: 'not json',

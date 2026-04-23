@@ -442,44 +442,44 @@ CREATE POLICY "tenant_own" ON tenants FOR ALL
 USING (user_id = auth.uid())
 WITH CHECK (user_id = auth.uid());
 CREATE POLICY "tenant_data" ON staff FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON services FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON contacts FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON conversations FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON messages FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON appointments FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON orders FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON leads FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON voice_calls FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON knowledge_chunks FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON daily_analytics FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON tenant_agents FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 CREATE POLICY "tenant_data" ON onboarding_responses FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 -- marketplace_agents es publico (lectura)
 CREATE POLICY "public_read" ON marketplace_agents FOR SELECT
 USING (true);
@@ -530,8 +530,8 @@ CREATE INDEX idx_wh_logs_tenant ON webhook_logs(tenant_id, created_at DESC);
 CREATE INDEX idx_wh_logs_provider ON webhook_logs(provider, created_at DESC);
 ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "tenant_data" ON webhook_logs FOR ALL
-USING (tenant_id = get_user_tenant_id())
-WITH CHECK (tenant_id = get_user_tenant_id());
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 
 -- ═══════════════════════════════════════════════════════════
 -- 21. AGENT VERSIONING (replaces webhook_logs abuse)
@@ -550,7 +550,9 @@ CREATE TABLE IF NOT EXISTS agent_versions (
 );
 CREATE INDEX idx_agent_versions_slug ON agent_versions(agent_slug, version DESC);
 ALTER TABLE agent_versions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "tenant_agent_versions" ON agent_versions FOR ALL USING (tenant_id = get_user_tenant_id());
+CREATE POLICY "tenant_agent_versions" ON agent_versions FOR ALL
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 
 -- ═══════════════════════════════════════════════════════════
 -- 22. INTENT CLASSIFICATION FEEDBACK (replaces webhook_logs abuse)
@@ -568,7 +570,9 @@ CREATE TABLE IF NOT EXISTS classification_feedback (
 CREATE INDEX idx_classification_feedback_tenant ON classification_feedback(tenant_id, created_at DESC);
 CREATE INDEX idx_classification_feedback_accuracy ON classification_feedback(original_intent, corrected_intent);
 ALTER TABLE classification_feedback ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "tenant_classification_feedback" ON classification_feedback FOR ALL USING (tenant_id = get_user_tenant_id());
+CREATE POLICY "tenant_classification_feedback" ON classification_feedback FOR ALL
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 
 -- ═══════════════════════════════════════════════════════════
 -- 23. AGENT EXECUTION LOGS (dedicated, not webhook_logs)
@@ -585,7 +589,9 @@ CREATE TABLE IF NOT EXISTS agent_executions (
 );
 CREATE INDEX idx_agent_executions_slug ON agent_executions(agent_slug, created_at DESC);
 ALTER TABLE agent_executions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "tenant_agent_executions" ON agent_executions FOR ALL USING (tenant_id = get_user_tenant_id());
+CREATE POLICY "tenant_agent_executions" ON agent_executions FOR ALL
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
 
 -- ═══════════════════════════════════════════════════════════
 -- 24. METRICS SNAPSHOTS (for long-term analytics beyond Redis 7-day TTL)
@@ -601,4 +607,6 @@ CREATE TABLE IF NOT EXISTS metrics_snapshots (
 );
 CREATE INDEX idx_metrics_snapshots_type ON metrics_snapshots(metric_type, period_start DESC);
 ALTER TABLE metrics_snapshots ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "tenant_metrics_snapshots" ON metrics_snapshots FOR ALL USING (tenant_id = get_user_tenant_id());
+CREATE POLICY "tenant_metrics_snapshots" ON metrics_snapshots FOR ALL
+USING (tenant_id = ANY(get_user_tenant_ids()))
+WITH CHECK (tenant_id = ANY(get_user_tenant_ids()));
