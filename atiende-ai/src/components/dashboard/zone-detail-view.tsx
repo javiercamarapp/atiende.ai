@@ -90,6 +90,23 @@ function draftToApiValue(q: Question, draft: string): unknown {
 
 type SaveStatus = 'idle' | 'saving' | 'saved';
 
+function extractQuickOptions(q: Question): string[] {
+  if (q.options?.length) return q.options;
+  if (!q.placeholder) return [];
+  const ph = q.placeholder;
+  if (ph.includes(',')) {
+    const parts = ph.split(',').map((s) => s.trim()).filter((s) => s.length > 0 && s.length < 40);
+    if (parts.length >= 2 && parts.length <= 8) return parts;
+  }
+  if (ph.includes('/')) {
+    const parts = ph.split('/').map((s) => s.trim()).filter((s) => s.length > 0 && s.length < 40);
+    if (parts.length >= 2 && parts.length <= 5) return parts;
+  }
+  return [];
+}
+
+const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
 function QuestionWidget({
   question: q,
   value,
@@ -106,7 +123,7 @@ function QuestionWidget({
   const answered = hasValue(value);
   const [localVal, setLocalVal] = useState(answerAsString(value));
   const [status, setStatus] = useState<SaveStatus>('idle');
-  const [showHelp, setShowHelp] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const timerRef = useRef<NodeJS.Timeout>(undefined);
   const savedTimerRef = useRef<NodeJS.Timeout>(undefined);
 
@@ -133,174 +150,190 @@ function QuestionWidget({
     timerRef.current = setTimeout(() => doSave(val), 600);
   }
 
-  function handleBooleanClick(val: boolean) {
-    const str = val ? 'Sí' : 'No';
-    setLocalVal(str);
-    doSave(str);
+  function selectQuickOption(opt: string) {
+    if (q.type === 'multi_select' || q.type === 'list') {
+      const parts = localVal.split(',').map((s) => s.trim()).filter(Boolean);
+      const next = parts.includes(opt) ? parts.filter((p) => p !== opt) : [...parts, opt];
+      const joined = next.join(', ');
+      setLocalVal(joined);
+      doSave(joined);
+    } else {
+      setLocalVal(opt);
+      doSave(opt);
+    }
   }
 
-  function toggleOption(opt: string) {
-    const parts = localVal.split(',').map((s) => s.trim()).filter(Boolean);
-    const next = parts.includes(opt)
-      ? parts.filter((p) => p !== opt)
-      : [...parts, opt];
-    const joined = next.join(', ');
-    setLocalVal(joined);
-    doSave(joined);
-  }
-
-  function handleNumberStep(delta: number) {
-    const n = (Number(localVal) || 0) + delta;
-    const str = String(n);
-    setLocalVal(str);
-    doSave(str);
-  }
+  const quickOpts = extractQuickOptions(q);
+  const isMulti = q.type === 'multi_select' || q.type === 'list';
+  const selectedParts = isMulti ? localVal.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
   return (
     <div
       className={cn(
-        'rounded-2xl border bg-white p-4 transition-all duration-300',
-        answered ? 'border-zinc-200' : 'border-dashed border-zinc-300',
+        'rounded-2xl border bg-white overflow-hidden transition-all duration-300',
+        status === 'saved' ? 'border-emerald-300' : answered ? 'border-zinc-200' : 'border-dashed border-zinc-300',
         'animate-in fade-in slide-in-from-bottom-2',
       )}
-      style={{ animationDelay: `${60 + index * 40}ms`, animationFillMode: 'backwards' }}
+      style={{ animationDelay: `${40 + index * 30}ms`, animationFillMode: 'backwards' }}
     >
-      {/* Label row */}
-      <div className="flex items-start gap-2 mb-2.5">
-        <span className={cn(
-          'inline-flex w-5 h-5 rounded-full items-center justify-center shrink-0 text-[10px] font-bold mt-0.5',
-          status === 'saved'
-            ? 'bg-emerald-100 text-emerald-600'
-            : answered
-              ? cn(accent.softBg, accent.text)
-              : 'bg-zinc-100 text-zinc-400',
-        )}>
-          {status === 'saving' ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : status === 'saved' ? (
-            <CheckCircle2 className="w-3 h-3" />
-          ) : answered ? (
-            <Check className="w-3 h-3" />
-          ) : (
-            index + 1
-          )}
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-medium text-zinc-900 leading-snug">{q.label}</p>
-          {q.help && showHelp && (
-            <p className="text-[11px] text-zinc-400 mt-0.5 animate-in fade-in duration-150">{q.help}</p>
-          )}
-        </div>
-        {q.help && (
-          <button
-            onClick={() => setShowHelp((h) => !h)}
-            className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-zinc-300 hover:text-zinc-500 transition"
-          >
-            <HelpCircle className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* Widget per type */}
-      {q.type === 'boolean' ? (
-        <div className="flex gap-2">
-          {['Sí', 'No'].map((opt) => {
-            const active = localVal.toLowerCase() === opt.toLowerCase();
-            return (
-              <button
-                key={opt}
-                onClick={() => handleBooleanClick(opt === 'Sí')}
-                className={cn(
-                  'flex-1 py-2 rounded-xl text-[13px] font-semibold transition-all duration-200',
-                  active
-                    ? cn(accent.bg, 'text-white shadow-sm')
-                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200',
-                )}
-              >
-                {opt}
-              </button>
-            );
-          })}
-        </div>
-      ) : q.type === 'number' ? (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => handleNumberStep(-1)}
-            className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
-          <input
-            value={localVal}
-            onChange={(e) => handleTextChange(e.target.value)}
-            type="number"
-            placeholder={q.placeholder}
-            className={cn(
-              'flex-1 text-center text-[15px] font-semibold rounded-xl bg-zinc-50 border border-zinc-200 px-3 py-2',
-              'focus:outline-none focus:ring-2 transition-all', accent.focus,
+      <div className="p-4">
+        {/* Status + label */}
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className={cn(
+            'w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all duration-300',
+            status === 'saved' ? 'bg-emerald-500' :
+            status === 'saving' ? cn(accent.bg, 'animate-pulse') :
+            answered ? accent.bg : 'bg-zinc-200',
+          )}>
+            {status === 'saving' ? (
+              <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+            ) : status === 'saved' ? (
+              <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none">
+                <path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <animate attributeName="stroke-dashoffset" from="20" to="0" dur="0.3s" fill="freeze" />
+                  <set attributeName="stroke-dasharray" to="20" />
+                </path>
+              </svg>
+            ) : answered ? (
+              <Check className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
+            ) : (
+              <span className="text-[11px] font-bold text-white">{index + 1}</span>
             )}
-          />
-          <button
-            onClick={() => handleNumberStep(1)}
-            className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 transition"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      ) : q.type === 'textarea' || q.type === 'list' ? (
-        <textarea
-          value={localVal}
-          onChange={(e) => handleTextChange(e.target.value)}
-          placeholder={q.placeholder}
-          rows={2}
-          className={cn(
-            'w-full text-[13px] rounded-xl bg-zinc-50 border border-zinc-200 px-3.5 py-2.5 resize-none',
-            'focus:outline-none focus:ring-2 focus:border-transparent transition-all', accent.focus,
+          </div>
+          <p className="text-[13px] font-semibold text-zinc-900 leading-snug flex-1">{q.label}</p>
+          {q.help && (
+            <span className="text-[10px] text-zinc-400 max-w-[180px] truncate hidden lg:inline">{q.help}</span>
           )}
-        />
-      ) : q.type === 'multi_select' && q.options?.length ? (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            {q.options.map((opt) => {
-              const active = localVal.split(',').map((s) => s.trim()).includes(opt);
+        </div>
+
+        {/* Boolean: big toggle cards */}
+        {q.type === 'boolean' ? (
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { val: 'Sí', icon: (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" className={localVal.toLowerCase() === 'sí' ? 'fill-emerald-100' : 'fill-zinc-100'} />
+                  <path d="M8 12.5L11 15.5L16 9" stroke={localVal.toLowerCase() === 'sí' ? '#059669' : '#a1a1aa'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )},
+              { val: 'No', icon: (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" className={localVal.toLowerCase() === 'no' ? 'fill-red-100' : 'fill-zinc-100'} />
+                  <path d="M9 9L15 15M15 9L9 15" stroke={localVal.toLowerCase() === 'no' ? '#dc2626' : '#a1a1aa'} strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              )},
+            ].map(({ val, icon }) => {
+              const active = localVal.toLowerCase() === val.toLowerCase();
               return (
                 <button
-                  key={opt}
-                  onClick={() => toggleOption(opt)}
+                  key={val}
+                  onClick={() => { setLocalVal(val); doSave(val); }}
                   className={cn(
-                    'text-[12px] px-3 py-1.5 rounded-full font-medium transition-all duration-200',
+                    'flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-[14px] transition-all duration-200 active:scale-[0.97]',
                     active
-                      ? cn(accent.bg, 'text-white shadow-sm')
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200',
+                      ? val === 'Sí' ? 'bg-emerald-50 text-emerald-700 border-2 border-emerald-400 shadow-sm' : 'bg-red-50 text-red-700 border-2 border-red-400 shadow-sm'
+                      : 'bg-zinc-50 text-zinc-500 border-2 border-transparent hover:bg-zinc-100',
                   )}
                 >
-                  {active && <Check className="w-3 h-3 inline mr-1 -mt-0.5" />}
-                  {opt}
+                  {icon}
+                  {val}
                 </button>
               );
             })}
           </div>
-          <input
+
+        /* Number: slider-style stepper */
+        ) : q.type === 'number' ? (
+          <div className="flex items-center gap-2">
+            <button onClick={() => { const n = Math.max(0, (Number(localVal) || 0) - 1); setLocalVal(String(n)); doSave(String(n)); }}
+              className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 active:scale-95 transition-all">
+              <Minus className="w-5 h-5" />
+            </button>
+            <div className="flex-1 relative">
+              <input value={localVal} onChange={(e) => handleTextChange(e.target.value)} type="number" placeholder={q.placeholder}
+                className={cn('w-full text-center text-[18px] font-bold rounded-xl bg-zinc-50 border border-zinc-200 px-4 py-2.5 focus:outline-none focus:ring-2 transition-all', accent.focus)} />
+            </div>
+            <button onClick={() => { const n = (Number(localVal) || 0) + 1; setLocalVal(String(n)); doSave(String(n)); }}
+              className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-600 hover:bg-zinc-200 active:scale-95 transition-all">
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+
+        /* Quick options: A/B/C/D cards */
+        ) : quickOpts.length >= 2 && !expanded ? (
+          <div className="space-y-2">
+            <div className={cn('grid gap-1.5', quickOpts.length <= 4 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3')}>
+              {quickOpts.slice(0, 6).map((opt, oi) => {
+                const active = isMulti ? selectedParts.includes(opt) : localVal === opt;
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => selectQuickOption(opt)}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-[12px] font-medium transition-all duration-200 active:scale-[0.97]',
+                      active
+                        ? cn(accent.softBg, accent.text, accent.border, 'border-2 shadow-sm')
+                        : 'bg-zinc-50 text-zinc-700 border-2 border-transparent hover:bg-zinc-100',
+                    )}
+                  >
+                    <span className={cn(
+                      'w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0',
+                      active ? cn(accent.bg, 'text-white') : 'bg-zinc-200 text-zinc-500',
+                    )}>
+                      {active && isMulti ? <Check className="w-3 h-3" /> : LETTERS[oi]}
+                    </span>
+                    <span className="truncate">{opt}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setExpanded(true)}
+              className="text-[11px] text-zinc-400 hover:text-zinc-600 transition pl-1"
+            >
+              Escribir otra respuesta...
+            </button>
+          </div>
+
+        /* Textarea */
+        ) : q.type === 'textarea' || q.type === 'list' ? (
+          <textarea
             value={localVal}
             onChange={(e) => handleTextChange(e.target.value)}
-            placeholder="O escribe tu respuesta..."
+            placeholder={q.placeholder}
+            rows={2}
             className={cn(
-              'w-full text-[12px] rounded-xl bg-zinc-50 border border-zinc-200 px-3 py-2',
+              'w-full text-[13px] rounded-xl bg-zinc-50 border border-zinc-200 px-3.5 py-2.5 resize-none',
               'focus:outline-none focus:ring-2 focus:border-transparent transition-all', accent.focus,
             )}
           />
-        </div>
-      ) : (
-        <input
-          value={localVal}
-          onChange={(e) => handleTextChange(e.target.value)}
-          placeholder={q.placeholder}
-          className={cn(
-            'w-full text-[13px] rounded-xl bg-zinc-50 border border-zinc-200 px-3.5 py-2.5',
-            'focus:outline-none focus:ring-2 focus:border-transparent transition-all', accent.focus,
-          )}
-        />
-      )}
+
+        /* Default text input with quick suggestions */
+        ) : (
+          <div className="space-y-2">
+            <input
+              value={localVal}
+              onChange={(e) => handleTextChange(e.target.value)}
+              placeholder={q.placeholder}
+              className={cn(
+                'w-full text-[13px] rounded-xl bg-zinc-50 border border-zinc-200 px-3.5 py-2.5',
+                'focus:outline-none focus:ring-2 focus:border-transparent transition-all', accent.focus,
+              )}
+            />
+            {expanded && quickOpts.length >= 2 && (
+              <div className="flex flex-wrap gap-1.5 animate-in fade-in duration-150">
+                {quickOpts.map((opt) => (
+                  <button key={opt} onClick={() => selectQuickOption(opt)}
+                    className={cn('text-[11px] px-2.5 py-1 rounded-full transition-all active:scale-95',
+                      localVal === opt ? cn(accent.bg, 'text-white') : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200')}>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
