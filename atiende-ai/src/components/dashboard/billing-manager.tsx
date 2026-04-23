@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import {
   Dialog,
   DialogContent,
@@ -552,20 +553,16 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
           Descarga facturas o administra tu método de pago.
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={openPortal}
-            disabled={loading === 'portal' || !hasCustomer}
-            className="inline-flex items-center gap-2 text-[13px] h-8"
-          >
-            {loading === 'portal' ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
+          <Link href="/settings/invoices">
+            <Button
+              variant="outline"
+              size="sm"
+              className="inline-flex items-center gap-2 text-[13px] h-8"
+            >
               <FileText className="w-3.5 h-3.5" />
-            )}
-            {loading === 'portal' ? 'Cargando...' : 'Facturas'}
-          </Button>
+              Facturas
+            </Button>
+          </Link>
 
           {!isTrialing && (
             <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
