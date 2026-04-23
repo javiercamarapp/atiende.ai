@@ -2,11 +2,12 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Clock, Sparkles, Users, MapPin, CreditCard, ShieldCheck,
   Star, Compass, Palette, Truck, Check, Pencil, Save, X, Loader2,
-  ChevronRight,
+  ChevronRight, MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Question } from '@/lib/onboarding/questions';
@@ -182,9 +183,9 @@ export function ZoneDetailView({ zone, questions, allQuestions, initialResponses
   }, [draft, fetchInsight]);
 
   return (
-    <div className="max-w-2xl mx-auto pb-8 animate-in fade-in slide-in-from-right-4 duration-300">
-      {/* Back + nav */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="w-full h-[calc(100dvh-64px)] flex flex-col animate-in fade-in slide-in-from-right-4 duration-300">
+      {/* Top nav bar */}
+      <div className="flex items-center justify-between px-4 py-3 shrink-0 border-b border-zinc-100">
         <button
           onClick={() => router.push('/knowledge')}
           className="inline-flex items-center gap-1.5 text-[13px] text-zinc-500 hover:text-zinc-800 transition-colors group"
@@ -192,242 +193,236 @@ export function ZoneDetailView({ zone, questions, allQuestions, initialResponses
           <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
           Conocimiento
         </button>
-        <div className="flex items-center gap-1">
-          {siblingZones.prev && (
-            <NavPill
-              zone={siblingZones.prev}
-              direction="prev"
-              allQuestions={allQuestions}
-              onClick={() => router.push(`/knowledge/${siblingZones.prev!.id}`)}
-            />
-          )}
-          {siblingZones.next && (
-            <NavPill
-              zone={siblingZones.next}
-              direction="next"
-              allQuestions={allQuestions}
-              onClick={() => router.push(`/knowledge/${siblingZones.next!.id}`)}
-            />
-          )}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {siblingZones.prev && (
+              <NavPill
+                zone={siblingZones.prev}
+                direction="prev"
+                allQuestions={allQuestions}
+                onClick={() => router.push(`/knowledge/${siblingZones.prev!.id}`)}
+              />
+            )}
+            {siblingZones.next && (
+              <NavPill
+                zone={siblingZones.next}
+                direction="next"
+                allQuestions={allQuestions}
+                onClick={() => router.push(`/knowledge/${siblingZones.next!.id}`)}
+              />
+            )}
+          </div>
+          <Link
+            href="/knowledge/test-bot"
+            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-4 py-2 rounded-xl bg-[hsl(235,84%,55%)] text-white shadow-sm shadow-[hsl(235,84%,55%)]/25 hover:bg-[hsl(235,84%,48%)] transition-all"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Probar bot
+          </Link>
         </div>
       </div>
 
-      {/* Hero card */}
-      <section className={cn(
-        'rounded-3xl border border-zinc-200/60 bg-gradient-to-br overflow-hidden',
-        'shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]',
-        accent.gradFrom, accent.gradTo,
-      )}>
-        <div className="px-6 py-8 flex flex-col items-center text-center">
-          {/* Animated ring */}
-          <div className="relative w-20 h-20 mb-4">
-            <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90 drop-shadow-sm">
-              <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-white/60" strokeWidth="2.5" />
-              <circle
-                cx="18" cy="18" r="15.9155" fill="none"
-                className={cn(accent.ring, 'transition-[stroke-dashoffset] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
-                strokeWidth="2.5" strokeLinecap="round"
-                strokeDasharray={CIRC} strokeDashoffset={dashOffset}
-              />
-            </svg>
-            <span className={cn(
-              'absolute inset-0 flex items-center justify-center',
-              completion.percent >= 100 ? accent.text : '',
-            )}>
-              {completion.percent >= 100 ? (
-                <Check className="w-7 h-7" strokeWidth={2} />
-              ) : (
-                <Icon className={cn('w-7 h-7', accent.text)} strokeWidth={1.5} />
-              )}
-            </span>
-          </div>
-
-          <h1 className="text-xl font-semibold text-zinc-900 tracking-tight">{zone.title}</h1>
-          <p className="text-[13px] text-zinc-500 mt-1 max-w-xs">{zone.description}</p>
-
-          {/* Progress bar */}
-          <div className="mt-5 w-full max-w-xs">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-medium text-zinc-500 tabular-nums">
-                {filled} de {questions.length} respondidas
-              </span>
-              <span className={cn('text-[11px] font-bold tabular-nums', accent.text)}>
-                {completion.percent}%
-              </span>
-            </div>
-            <div className="h-1.5 rounded-full bg-white/80 overflow-hidden shadow-inner">
-              <div
-                className={cn(accent.bg, 'h-full rounded-full transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
-                style={{ width: `${completion.percent}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Questions */}
-      <div className="mt-5 space-y-3">
-        {questions.map((q, i) => {
-          const value = responses[q.key];
-          const answered = hasValue(value);
-          const isEditing = editing === q.key;
-          const insight = insights[q.key] ?? { status: 'hidden' as const };
-
-          return (
-            <div
-              key={q.key}
-              className={cn(
-                'rounded-2xl border bg-white/90 backdrop-blur-sm overflow-hidden transition-all duration-300',
-                'shadow-[0_1px_3px_rgba(0,0,0,0.04)]',
-                isEditing ? cn(accent.border, 'shadow-[0_0_0_3px_rgba(0,0,0,0.02)]') : 'border-zinc-100 hover:border-zinc-200',
-                'animate-in fade-in slide-in-from-bottom-2',
-              )}
-              style={{ animationDelay: `${80 + i * 60}ms`, animationFillMode: 'backwards' }}
-            >
-              <div className="px-5 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={cn(
-                        'inline-flex w-5 h-5 rounded-full items-center justify-center shrink-0 text-[10px] font-bold',
-                        answered ? cn(accent.softBg, accent.text) : 'bg-zinc-100 text-zinc-400',
-                      )}>
-                        {answered ? <Check className="w-3 h-3" /> : i + 1}
-                      </span>
-                      <p className="text-[14px] font-medium text-zinc-900">{q.label}</p>
-                    </div>
-                    {q.help && !isEditing && (
-                      <p className="text-[12px] text-zinc-400 mt-1 ml-7">{q.help}</p>
-                    )}
-                  </div>
-                  {!isEditing && (
-                    <button
-                      onClick={() => startEdit(q)}
-                      className={cn(
-                        'text-[12px] inline-flex items-center gap-1 font-medium transition-colors shrink-0',
-                        answered ? 'text-zinc-400 hover:text-zinc-700' : cn(accent.text, 'hover:opacity-80'),
-                      )}
-                    >
-                      <Pencil className="w-3 h-3" />
-                      {answered ? 'Editar' : 'Responder'}
-                    </button>
+      {/* Two-column layout (desktop) / stacked (mobile) */}
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+        {/* Left panel — hero card */}
+        <div className="lg:w-[380px] lg:shrink-0 overflow-y-auto p-4 lg:p-6 lg:border-r lg:border-zinc-100">
+          <section className={cn(
+            'rounded-3xl border border-zinc-200/60 bg-gradient-to-br overflow-hidden',
+            'shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]',
+            accent.gradFrom, accent.gradTo,
+          )}>
+            <div className="px-6 py-8 flex flex-col items-center text-center">
+              {/* Animated ring */}
+              <div className="relative w-20 h-20 mb-4">
+                <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90 drop-shadow-sm">
+                  <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-white/60" strokeWidth="2.5" />
+                  <circle
+                    cx="18" cy="18" r="15.9155" fill="none"
+                    className={cn(accent.ring, 'transition-[stroke-dashoffset] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
+                    strokeWidth="2.5" strokeLinecap="round"
+                    strokeDasharray={CIRC} strokeDashoffset={dashOffset}
+                  />
+                </svg>
+                <span className={cn(
+                  'absolute inset-0 flex items-center justify-center',
+                  completion.percent >= 100 ? accent.text : '',
+                )}>
+                  {completion.percent >= 100 ? (
+                    <Check className="w-7 h-7" strokeWidth={2} />
+                  ) : (
+                    <Icon className={cn('w-7 h-7', accent.text)} strokeWidth={1.5} />
                   )}
-                </div>
-
-                {isEditing ? (
-                  <div className="mt-3 ml-7 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                    {q.type === 'textarea' || q.type === 'list' || q.type === 'multi_select' ? (
-                      <textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        rows={3}
-                        placeholder={q.placeholder}
-                        autoFocus
-                        className={cn(
-                          'w-full text-[13px] rounded-xl bg-zinc-50/80 border border-zinc-200 px-3.5 py-2.5',
-                          'focus:border-zinc-300 focus:outline-none focus:ring-2 transition-all',
-                          accent.focus,
-                        )}
-                      />
-                    ) : (
-                      <input
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        placeholder={q.placeholder}
-                        autoFocus
-                        onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) save(q); }}
-                        className={cn(
-                          'w-full text-[13px] rounded-xl bg-zinc-50/80 border border-zinc-200 px-3.5 py-2.5',
-                          'focus:border-zinc-300 focus:outline-none focus:ring-2 transition-all',
-                          accent.focus,
-                        )}
-                      />
-                    )}
-                    {q.options && q.options.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {q.options.map((opt) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => setDraft((d) => {
-                              const parts = d.split(',').map((s) => s.trim()).filter(Boolean);
-                              return parts.includes(opt) ? parts.filter((p) => p !== opt).join(', ') : [...parts, opt].join(', ');
-                            })}
-                            className={cn(
-                              'text-[11px] px-2 py-0.5 rounded-full border transition-all',
-                              draft.includes(opt)
-                                ? cn(accent.softBg, accent.border, accent.text, 'font-medium')
-                                : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300',
-                            )}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        onClick={() => save(q)}
-                        disabled={saving || !draft.trim()}
-                        className={cn(
-                          'inline-flex items-center gap-1.5 text-[12px] font-medium px-4 py-2 rounded-xl transition-all',
-                          accent.bg, 'text-white hover:opacity-90 disabled:opacity-40 shadow-sm',
-                        )}
-                      >
-                        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        Guardar
-                      </button>
-                      <button
-                        onClick={cancelEdit}
-                        className="inline-flex items-center gap-1 text-[12px] font-medium px-3 py-2 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ) : answered ? (
-                  <pre className="mt-2 ml-7 text-[13px] text-zinc-700 leading-relaxed whitespace-pre-wrap font-sans">
-                    {answerAsString(value)}
-                  </pre>
-                ) : (
-                  <p className="mt-1 ml-7 text-[12px] text-zinc-300 italic">Sin respuesta</p>
-                )}
+                </span>
               </div>
 
-              {insight.status !== 'hidden' && !isEditing && (
-                <div className="px-5 pb-4">
-                  <SmartInsightCard
-                    state={insight}
-                    onNextAction={(zoneId) => zoneId && router.push(`/knowledge/${zoneId}`)}
+              <h1 className="text-xl font-semibold text-zinc-900 tracking-tight">{zone.title}</h1>
+              <p className="text-[13px] text-zinc-500 mt-1 max-w-xs">{zone.description}</p>
+
+              {/* Progress bar */}
+              <div className="mt-5 w-full max-w-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-medium text-zinc-500 tabular-nums">
+                    {filled} de {questions.length} respondidas
+                  </span>
+                  <span className={cn('text-[11px] font-bold tabular-nums', accent.text)}>
+                    {completion.percent}%
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/80 overflow-hidden shadow-inner">
+                  <div
+                    className={cn(accent.bg, 'h-full rounded-full transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
+                    style={{ width: `${completion.percent}%` }}
                   />
                 </div>
-              )}
+              </div>
             </div>
-          );
-        })}
-      </div>
+          </section>
+        </div>
 
-      {/* Bottom nav */}
-      <div className="mt-6 flex items-center justify-between">
-        {siblingZones.prev ? (
-          <button
-            onClick={() => router.push(`/knowledge/${siblingZones.prev!.id}`)}
-            className="inline-flex items-center gap-2 text-[13px] text-zinc-500 hover:text-zinc-800 transition-colors group"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
-            {siblingZones.prev.title}
-          </button>
-        ) : <span />}
-        {siblingZones.next ? (
-          <button
-            onClick={() => router.push(`/knowledge/${siblingZones.next!.id}`)}
-            className="inline-flex items-center gap-2 text-[13px] text-zinc-500 hover:text-zinc-800 transition-colors group"
-          >
-            {siblingZones.next.title}
-            <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-          </button>
-        ) : <span />}
+        {/* Right panel — questions list (only scrollable area) */}
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <div className="space-y-3 max-w-2xl">
+            {questions.map((q, i) => {
+              const value = responses[q.key];
+              const answered = hasValue(value);
+              const isEditing = editing === q.key;
+              const insight = insights[q.key] ?? { status: 'hidden' as const };
+
+              return (
+                <div
+                  key={q.key}
+                  className={cn(
+                    'rounded-2xl border bg-white/90 backdrop-blur-sm overflow-hidden transition-all duration-300',
+                    'shadow-[0_1px_3px_rgba(0,0,0,0.04)]',
+                    isEditing ? cn(accent.border, 'shadow-[0_0_0_3px_rgba(0,0,0,0.02)]') : 'border-zinc-100 hover:border-zinc-200',
+                    'animate-in fade-in slide-in-from-bottom-2',
+                  )}
+                  style={{ animationDelay: `${80 + i * 60}ms`, animationFillMode: 'backwards' }}
+                >
+                  <div className="px-5 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn(
+                            'inline-flex w-5 h-5 rounded-full items-center justify-center shrink-0 text-[10px] font-bold',
+                            answered ? cn(accent.softBg, accent.text) : 'bg-zinc-100 text-zinc-400',
+                          )}>
+                            {answered ? <Check className="w-3 h-3" /> : i + 1}
+                          </span>
+                          <p className="text-[14px] font-medium text-zinc-900">{q.label}</p>
+                        </div>
+                        {q.help && !isEditing && (
+                          <p className="text-[12px] text-zinc-400 mt-1 ml-7">{q.help}</p>
+                        )}
+                      </div>
+                      {!isEditing && (
+                        <button
+                          onClick={() => startEdit(q)}
+                          className={cn(
+                            'text-[12px] inline-flex items-center gap-1 font-medium transition-colors shrink-0',
+                            answered ? 'text-zinc-400 hover:text-zinc-700' : cn(accent.text, 'hover:opacity-80'),
+                          )}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          {answered ? 'Editar' : 'Responder'}
+                        </button>
+                      )}
+                    </div>
+
+                    {isEditing ? (
+                      <div className="mt-3 ml-7 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                        {q.type === 'textarea' || q.type === 'list' || q.type === 'multi_select' ? (
+                          <textarea
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            rows={3}
+                            placeholder={q.placeholder}
+                            autoFocus
+                            className={cn(
+                              'w-full text-[13px] rounded-xl bg-zinc-50/80 border border-zinc-200 px-3.5 py-2.5',
+                              'focus:border-zinc-300 focus:outline-none focus:ring-2 transition-all',
+                              accent.focus,
+                            )}
+                          />
+                        ) : (
+                          <input
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            placeholder={q.placeholder}
+                            autoFocus
+                            onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) save(q); }}
+                            className={cn(
+                              'w-full text-[13px] rounded-xl bg-zinc-50/80 border border-zinc-200 px-3.5 py-2.5',
+                              'focus:border-zinc-300 focus:outline-none focus:ring-2 transition-all',
+                              accent.focus,
+                            )}
+                          />
+                        )}
+                        {q.options && q.options.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {q.options.map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => setDraft((d) => {
+                                  const parts = d.split(',').map((s) => s.trim()).filter(Boolean);
+                                  return parts.includes(opt) ? parts.filter((p) => p !== opt).join(', ') : [...parts, opt].join(', ');
+                                })}
+                                className={cn(
+                                  'text-[11px] px-2 py-0.5 rounded-full border transition-all',
+                                  draft.includes(opt)
+                                    ? cn(accent.softBg, accent.border, accent.text, 'font-medium')
+                                    : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300',
+                                )}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={() => save(q)}
+                            disabled={saving || !draft.trim()}
+                            className={cn(
+                              'inline-flex items-center gap-1.5 text-[12px] font-medium px-4 py-2 rounded-xl transition-all',
+                              accent.bg, 'text-white hover:opacity-90 disabled:opacity-40 shadow-sm',
+                            )}
+                          >
+                            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                            Guardar
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            className="inline-flex items-center gap-1 text-[12px] font-medium px-3 py-2 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : answered ? (
+                      <pre className="mt-2 ml-7 text-[13px] text-zinc-700 leading-relaxed whitespace-pre-wrap font-sans">
+                        {answerAsString(value)}
+                      </pre>
+                    ) : (
+                      <p className="mt-1 ml-7 text-[12px] text-zinc-300 italic">Sin respuesta</p>
+                    )}
+                  </div>
+
+                  {insight.status !== 'hidden' && !isEditing && (
+                    <div className="px-5 pb-4">
+                      <SmartInsightCard
+                        state={insight}
+                        onNextAction={(zoneId) => zoneId && router.push(`/knowledge/${zoneId}`)}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
