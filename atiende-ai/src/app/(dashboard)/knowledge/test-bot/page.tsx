@@ -65,47 +65,43 @@ export default function TestBotPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-64px)] bg-[#eaecf0]">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 shrink-0 border-b border-zinc-200/60">
+    <div className="flex flex-col h-[calc(100dvh-64px)]">
+      {/* Header — inline, no background */}
+      <div className="flex items-center gap-3 px-6 py-2.5 shrink-0">
         <Link
           href="/knowledge"
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-zinc-200/50 transition"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-zinc-100 transition"
         >
-          <ArrowLeft className="w-4 h-4 text-zinc-600" />
+          <ArrowLeft className="w-4 h-4 text-zinc-500" />
         </Link>
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[hsl(235,84%,55%)] to-[hsl(255,84%,60%)] flex items-center justify-center shadow-sm shadow-[hsl(235,84%,55%)]/20">
-          <Bot className="w-[18px] h-[18px] text-white" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[hsl(235,84%,55%)] to-[hsl(255,84%,60%)] flex items-center justify-center">
+          <Bot className="w-4 h-4 text-white" />
         </div>
         <div className="flex-1">
-          <p className="text-[14px] font-semibold text-zinc-900">Asistente atiende.ai</p>
+          <p className="text-[13px] font-semibold text-zinc-900">Asistente atiende.ai</p>
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <p className="text-[11px] text-emerald-600 font-medium">En linea — modo prueba</p>
+            <p className="text-[10px] text-emerald-600 font-medium">En linea — modo prueba</p>
           </div>
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+      {/* Messages — directly on page background */}
+      <div className="flex-1 overflow-y-auto px-6 py-3 space-y-2">
         {messages.map((msg) => (
           <div
             key={msg.id}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-200`}
           >
             <div
-              className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${
+              className={`max-w-[65%] rounded-2xl px-3.5 py-2 ${
                 msg.role === 'user'
-                  ? 'bg-[hsl(235,84%,55%)] text-white rounded-br-md'
-                  : 'bg-white text-zinc-800 border border-zinc-100 rounded-bl-md'
+                  ? 'bg-[hsl(235,84%,55%)] text-white rounded-br-sm shadow-sm shadow-[hsl(235,84%,55%)]/20'
+                  : 'bg-white text-zinc-800 rounded-bl-sm shadow-sm'
               }`}
             >
-              <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-              <p
-                className={`text-[10px] mt-1 text-right ${
-                  msg.role === 'user' ? 'text-white/60' : 'text-zinc-400'
-                }`}
-              >
+              <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+              <p className={`text-[9px] mt-0.5 text-right ${msg.role === 'user' ? 'text-white/50' : 'text-zinc-400'}`}>
                 {msg.time}
               </p>
             </div>
@@ -114,11 +110,11 @@ export default function TestBotPage() {
 
         {sending && (
           <div className="flex justify-start animate-in fade-in duration-200">
-            <div className="bg-white border border-zinc-100 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+            <div className="bg-white rounded-2xl rounded-bl-sm px-3.5 py-2.5 shadow-sm">
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </div>
@@ -126,8 +122,8 @@ export default function TestBotPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div className="shrink-0 px-4 py-3 border-t border-zinc-200/60">
+      {/* Input — no background, just the field */}
+      <div className="shrink-0 px-6 py-2.5">
         <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -136,17 +132,17 @@ export default function TestBotPage() {
             placeholder="Escribe un mensaje..."
             disabled={sending}
             autoFocus
-            className="flex-1 text-[14px] rounded-full bg-white border border-zinc-200/80 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[hsl(235,84%,55%)]/30 focus:border-transparent transition placeholder:text-zinc-400 shadow-sm"
+            className="flex-1 text-[13px] rounded-full bg-white px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[hsl(235,84%,55%)]/20 transition placeholder:text-zinc-400 shadow-sm"
           />
           <button
             type="submit"
             disabled={!input.trim() || sending}
-            className="w-10 h-10 rounded-full bg-[hsl(235,84%,55%)] text-white flex items-center justify-center shadow-sm shadow-[hsl(235,84%,55%)]/25 hover:bg-[hsl(235,84%,48%)] disabled:opacity-40 transition-all"
+            className="w-9 h-9 rounded-full bg-[hsl(235,84%,55%)] text-white flex items-center justify-center shadow-sm hover:bg-[hsl(235,84%,48%)] disabled:opacity-40 transition-all"
           >
             {sending ? (
-              <Loader2 className="w-[18px] h-[18px] animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Send className="w-[18px] h-[18px]" />
+              <Send className="w-4 h-4" />
             )}
           </button>
         </form>
