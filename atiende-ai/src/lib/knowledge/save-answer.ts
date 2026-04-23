@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { ingestKnowledgeWithMetadata } from '@/lib/rag/search';
 import { ZONES, zoneForQuestionKey, type ZoneId } from '@/lib/knowledge/zone-map';
+import { regeneratePrompt } from '@/lib/knowledge/prompt-builder';
 import { logger } from '@/lib/logger';
 
 export type SaveAnswerResult =
@@ -89,6 +90,9 @@ export async function saveAnswerAtomic(input: SaveAnswerInput): Promise<SaveAnsw
   }
 
   if (!answerText) {
+    regeneratePrompt(tenantId).catch((err) => {
+      log.warn('Prompt regeneration failed on clear', { error: err instanceof Error ? err.message : String(err) });
+    });
     return { ok: true, zoneId, cleared: true };
   }
 
@@ -116,6 +120,13 @@ export async function saveAnswerAtomic(input: SaveAnswerInput): Promise<SaveAnsw
       warning: 'Tu respuesta se guardó, pero el bot tardará unos minutos en aprenderla.',
     };
   }
+
+  // Regenerate the system prompt with all accumulated knowledge.
+  // Fire-and-forget: prompt rebuild is best-effort. If it fails the
+  // old prompt stays and RAG still has the latest chunk.
+  regeneratePrompt(tenantId).catch((err) => {
+    log.warn('Prompt regeneration failed', { error: err instanceof Error ? err.message : String(err) });
+  });
 
   return { ok: true, zoneId };
 }
