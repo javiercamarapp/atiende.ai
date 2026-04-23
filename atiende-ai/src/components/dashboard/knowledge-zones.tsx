@@ -170,7 +170,7 @@ function ZoneCard({ zone, completion, index }: { zone: Zone; completion: ZoneCom
   return (
     <Link
       href={`/knowledge/${zone.id}`}
-      className="group relative flex items-center gap-4 rounded-2xl border border-zinc-200/70 p-4 transition-all duration-300 hover:shadow-lg hover:shadow-zinc-900/5 hover:border-zinc-300/80 hover:-translate-y-0.5 active:scale-[0.98] animate-in fade-in slide-in-from-bottom-2 duration-300"
+      className="group relative flex items-center gap-4 rounded-2xl bg-white border border-zinc-200/70 p-4 transition-all duration-300 hover:shadow-lg hover:shadow-zinc-900/5 hover:border-zinc-300/80 hover:-translate-y-0.5 active:scale-[0.98] animate-in fade-in slide-in-from-bottom-2 duration-300"
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'backwards' }}
     >
       {/* Progress ring */}
@@ -230,7 +230,7 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-2xl border border-zinc-200/70 overflow-hidden transition-all duration-300">
+    <div className="rounded-2xl bg-white border border-zinc-200/70 overflow-hidden transition-all duration-300">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-zinc-50/50 transition-colors"
