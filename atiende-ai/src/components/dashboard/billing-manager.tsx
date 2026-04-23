@@ -147,7 +147,7 @@ function getPlanInfo(key: string): Plan | undefined {
 function usageGradient(pct: number): string {
   if (pct >= 90) return 'from-orange-500 to-red-500';
   if (pct >= 71) return 'from-amber-400 to-orange-500';
-  return 'from-emerald-400 to-blue-500';
+  return 'from-[hsl(235,84%,60%)] to-[hsl(235,84%,50%)]';
 }
 
 export function BillingManager({ tenant }: { tenant: Record<string, unknown> | null }) {
