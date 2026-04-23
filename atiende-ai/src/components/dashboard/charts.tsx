@@ -2,7 +2,7 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
-export function DashCharts({ tenant, data }:{ tenant:any; data:any[] }) {
+export function DashCharts({ tenant, data }:{ tenant:{ business_type: string }; data:Record<string,unknown>[] }) {
   const cd = data.map(d=>({
     date:new Date(d.date).toLocaleDateString('es-MX',{day:'numeric',month:'short'}),
     mensajes:d.messages_inbound||0, citas:d.appointments_booked||0,

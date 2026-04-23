@@ -3,8 +3,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { MessageSquare, Calendar, Clock } from 'lucide-react';
 import Link from 'next/link';
 
-export function RecentActivity({ conversations, appointments, tenant }:{
-  conversations:any[]; appointments:any[]; tenant:any;
+export function RecentActivity({ conversations, appointments }:{
+  conversations:Record<string,unknown>[]; appointments:Record<string,unknown>[];
 }) {
   return (
     <div className="space-y-4">

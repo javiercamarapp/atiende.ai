@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Flame, ThermometerSun, Snowflake } from 'lucide-react';
 const STAGES=[{key:'new',label:'Nuevos'},{key:'contacted',label:'Contactados'},{key:'qualified',label:'Calificados'},{key:'visit_scheduled',label:'Visita'},{key:'negotiating',label:'Negociando'},{key:'won',label:'Ganados'}];
-export function LeadsPipeline({leads}:{leads:any[]}) {
+export function LeadsPipeline({leads}:{leads:Record<string,unknown>[]}) {
   return(<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
     {STAGES.map(s=>{const sl=leads.filter(l=>l.status===s.key);return(
       <div key={s.key}><div className="flex items-center justify-between mb-2"><h3 className="text-xs font-bold text-gray-500 uppercase">{s.label}</h3><Badge variant="secondary">{sl.length}</Badge></div>

@@ -44,6 +44,7 @@ import { POST } from '../../webhook/stripe/route';
 import { logWebhook } from '@/lib/webhook-logger';
 
 function makeStripeReq(body: string, sig = 'whsec_test_sig') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
   return new Request('http://localhost/api/webhook/stripe', {
     method: 'POST',
     body,

@@ -11,7 +11,7 @@ export default function PlaygroundPage() {
   const [msgs, setMsgs] = useState<{ role: string; content: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [tenant, setTenant] = useState<any>(null);
+  const [tenant, setTenant] = useState<{ business_type: string; name: string } | null>(null);
 
   useEffect(() => {
     (async () => {

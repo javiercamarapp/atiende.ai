@@ -12,12 +12,17 @@ export function TypewriterMessage({ text, speed = 20, onComplete, className = ''
   const [displayed, setDisplayed] = useState('');
   const [done, setDone] = useState(false);
   const indexRef = useRef(0);
+  const prevTextRef = useRef(text);
 
-  useEffect(() => {
+  // Reset derived state synchronously during render when text changes
+  if (prevTextRef.current !== text) {
+    prevTextRef.current = text;
     indexRef.current = 0;
     setDisplayed('');
     setDone(false);
+  }
 
+  useEffect(() => {
     const interval = setInterval(() => {
       indexRef.current += 1;
       if (indexRef.current >= text.length) {

@@ -21,8 +21,17 @@ export interface ROIResult {
   totalSavingsMXN:number; monthlyCostMXN:number; roiPercent:number;
 }
 
+interface AnalyticsRow {
+  messages_inbound?: number;
+  handoffs_human?: number;
+  appointments_after_hours?: number;
+  appointments_booked?: number;
+  appointments_no_show?: number;
+  [key: string]: unknown;
+}
+
 export function calculateROI(
-  tenant:{business_type:string;plan:string}, analytics:any[]
+  tenant:{business_type:string;plan:string}, analytics:AnalyticsRow[]
 ): ROIResult {
   const msgSaved = analytics.reduce((s,d) => s+(d.messages_inbound||0)-(d.handoffs_human||0),0);
   const minSaved = msgSaved * 2.5;

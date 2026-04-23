@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Request-to-NextRequest casts required throughout test */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
 
@@ -26,7 +27,7 @@ vi.mock('@/lib/webhook-logger', () => ({
   WEBHOOK_MAX_BYTES: 2 * 1024 * 1024,
 }));
 
-const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => ({ then: vi.fn((cb: Function) => cb()) })) }));
+const mockUpdate = vi.fn(() => ({ eq: vi.fn(() => ({ then: vi.fn((cb: () => void) => cb()) })) }));
 // AUDIT P1 item 1 — webhook ahora hace idempotency multi-message vía
 // `supabaseAdmin.from('messages').select('wa_message_id').in(...)`. El mock
 // debe soportar esa cadena además de .update().eq(). Por default `in()`
@@ -59,6 +60,7 @@ import { processIncomingMessage } from '@/lib/whatsapp/processor';
 import { logWebhook } from '@/lib/webhook-logger';
 
 function makeRequest(url: string, init?: RequestInit) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cast Request to NextRequest for test
   const req = new Request(url, init) as any;
   const parsedUrl = new URL(url);
   req.nextUrl = {

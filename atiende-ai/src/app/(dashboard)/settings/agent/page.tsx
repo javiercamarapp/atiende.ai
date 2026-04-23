@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 export default function AgentSettingsPage() {
-  const[t,setT]=useState<any>(null);const[saving,setSaving]=useState(false);
+  const[t,setT]=useState<Record<string,unknown>|null>(null);const[saving,setSaving]=useState(false);
   useEffect(()=>{(async()=>{const s=createClient();const{data:{user}}=await s.auth.getUser();const{data}=await s.from('tenants').select('*').eq('user_id',user!.id).single();setT(data);})();},[]);
   const save=async()=>{setSaving(true);try{const s=createClient();const{error}=await s.from('tenants').update({bot_name:t.bot_name,welcome_message:t.welcome_message,chat_system_prompt:t.chat_system_prompt,temperature:t.temperature}).eq('id',t.id);if(error)throw error;toast.success('Guardado');}catch{toast.error('Error al guardar configuracion');}finally{setSaving(false);}};
   if(!t)return<div>Cargando...</div>;

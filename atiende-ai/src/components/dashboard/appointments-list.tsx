@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Clock, User } from 'lucide-react';
 const COLORS:Record<string,string>={scheduled:'bg-blue-100 text-blue-700',confirmed:'bg-green-100 text-green-700',completed:'bg-gray-100 text-gray-600',no_show:'bg-red-100 text-red-700',cancelled:'bg-gray-100 text-gray-400'};
-export function AppointmentsList({appointments}:{appointments:any[]}) {
+export function AppointmentsList({appointments}:{appointments:Record<string,unknown>[]}) {
   return(<div className="space-y-2">
     {appointments.length===0&&<p className="text-gray-400 text-center py-8">Sin citas</p>}
     {appointments.map(a=>(<Card key={a.id} className="p-4"><div className="flex items-center justify-between">

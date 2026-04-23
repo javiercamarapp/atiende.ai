@@ -184,7 +184,7 @@ export async function processPreviewMessage(
       content: m.content as string,
     }));
 
-  const agentName: 'agenda' = 'agenda';
+  const agentName = 'agenda' as const;
   const agentConfig = AGENT_REGISTRY[agentName];
   const tools = getToolSchemas(agentConfig.tools);
   const systemPrompt =

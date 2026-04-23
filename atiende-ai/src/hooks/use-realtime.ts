@@ -1,6 +1,6 @@
 'use client';
 import { createClient } from '@/lib/supabase/client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface Message {
   id: string;
@@ -28,11 +28,17 @@ export function useRealtimeMessages(conversationId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const prevConversationIdRef = useRef(conversationId);
+
+  // Reset loading synchronously during render when conversationId changes
+  if (prevConversationIdRef.current !== conversationId) {
+    prevConversationIdRef.current = conversationId;
+    setLoading(true);
+  }
 
   useEffect(() => {
     if (!conversationId) return;
 
-    setLoading(true);
     supabase
       .from('messages')
       .select('*')
