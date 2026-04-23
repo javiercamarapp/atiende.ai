@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, Loader2, Bot, Camera, Paperclip, Image as ImageIcon, X } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Camera, Paperclip, X } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 interface Message {
   id: string;
@@ -91,21 +92,25 @@ export default function TestBotPage() {
   return (
     <div className="flex flex-col min-h-[calc(100dvh-140px)] -mx-4 md:-mx-8 -mt-4">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 pt-1 pb-1.5 shrink-0">
+      <div className="flex items-center gap-3 px-6 pt-6 pb-3 shrink-0">
         <Link
           href="/knowledge"
-          className="inline-flex items-center justify-center w-7 h-7 rounded-full hover:bg-zinc-100 transition"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-zinc-100 transition"
         >
-          <ArrowLeft className="w-3.5 h-3.5 text-zinc-500" />
+          <ArrowLeft className="w-4 h-4 text-zinc-500" />
         </Link>
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[hsl(235,84%,55%)] to-[hsl(255,84%,60%)] flex items-center justify-center">
-          <Bot className="w-3.5 h-3.5 text-white" />
-        </div>
+        <Image
+          src="/trial-badge.png"
+          alt="Bot"
+          width={36}
+          height={36}
+          className="rounded-full"
+        />
         <div className="flex-1">
-          <p className="text-[12px] font-semibold text-zinc-900 leading-tight">Asistente atiende.ai</p>
-          <div className="flex items-center gap-1">
+          <p className="text-[13px] font-semibold text-zinc-900 leading-tight">Asistente atiende.ai</p>
+          <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <p className="text-[9px] text-emerald-600 font-medium">En linea — modo prueba</p>
+            <p className="text-[10px] text-emerald-600 font-medium">En linea — modo prueba</p>
           </div>
         </div>
       </div>
