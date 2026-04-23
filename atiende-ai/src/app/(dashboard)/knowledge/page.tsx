@@ -49,25 +49,11 @@ export default async function KnowledgePage() {
   };
 
   return (
-    <div className="space-y-2 max-w-4xl mx-auto">
-      <ConversationReviewWidget />
-
+    <div className="w-full h-[calc(100dvh-64px)] flex flex-col overflow-hidden">
       <KnowledgeZones
         verticalQuestions={verticalQuestions}
         initialResponses={responsesMap}
       />
-
-      <PersonalityCard initial={personalityInitial} />
-
-      <KnowledgeAdvanced
-        tenantId={tenant.id}
-        chunks={allChunks}
-        categories={cats}
-        initialPrompt={tenant.chat_system_prompt ?? ''}
-        initialWelcome={tenant.welcome_message ?? ''}
-      />
-
-      <BotPreviewLauncher />
     </div>
   );
 }

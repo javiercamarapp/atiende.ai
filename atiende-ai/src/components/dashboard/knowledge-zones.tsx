@@ -2,20 +2,36 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
-import { Sparkles } from 'lucide-react';
+import {
+  Sparkles, Clock, Users, MapPin, CreditCard, ShieldCheck, Star,
+  Compass, Palette, Truck, Check, MessageSquare, ChevronRight,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 import type { Question } from '@/lib/onboarding/questions';
+import type { Zone, ZoneCompletion } from '@/lib/knowledge/zone-map';
 import {
   getVisibleZones,
   computeZoneCompletion,
   computeOverallCompletion,
 } from '@/lib/knowledge/zone-map';
-import { KnowledgeZoneTile } from '@/components/dashboard/knowledge-zone-tile';
 
-const DELAY_CLASSES = [
-  'animate-delay-100', 'animate-delay-200', 'animate-delay-300', 'animate-delay-400',
-  'animate-delay-500', 'animate-delay-600', 'animate-delay-700', 'animate-delay-800',
-  'animate-delay-900', 'animate-delay-1000',
-];
+const ICONS: Record<string, React.ComponentType<{ className?: string; strokeWidth?: number }>> = {
+  Clock, Sparkles, Users, MapPin, CreditCard, ShieldCheck, Star,
+  Compass, Palette, Truck,
+};
+
+const ACCENT: Record<string, { ring: string; text: string; bg: string; gradFrom: string; gradTo: string }> = {
+  blue:    { ring: 'stroke-blue-500',    text: 'text-blue-600',    bg: 'bg-blue-500',    gradFrom: 'from-blue-500',    gradTo: 'to-blue-600' },
+  violet:  { ring: 'stroke-violet-500',  text: 'text-violet-600',  bg: 'bg-violet-500',  gradFrom: 'from-violet-500',  gradTo: 'to-violet-600' },
+  emerald: { ring: 'stroke-emerald-500', text: 'text-emerald-600', bg: 'bg-emerald-500', gradFrom: 'from-emerald-500', gradTo: 'to-emerald-600' },
+  orange:  { ring: 'stroke-orange-500',  text: 'text-orange-600',  bg: 'bg-orange-500',  gradFrom: 'from-orange-500',  gradTo: 'to-orange-600' },
+  amber:   { ring: 'stroke-amber-500',   text: 'text-amber-600',   bg: 'bg-amber-500',   gradFrom: 'from-amber-500',   gradTo: 'to-amber-600' },
+  indigo:  { ring: 'stroke-indigo-500',  text: 'text-indigo-600',  bg: 'bg-indigo-500',  gradFrom: 'from-indigo-500',  gradTo: 'to-indigo-600' },
+  rose:    { ring: 'stroke-rose-500',    text: 'text-rose-600',    bg: 'bg-rose-500',    gradFrom: 'from-rose-500',    gradTo: 'to-rose-600' },
+  teal:    { ring: 'stroke-teal-500',    text: 'text-teal-600',    bg: 'bg-teal-500',    gradFrom: 'from-teal-500',    gradTo: 'to-teal-600' },
+  fuchsia: { ring: 'stroke-fuchsia-500', text: 'text-fuchsia-600', bg: 'bg-fuchsia-500', gradFrom: 'from-fuchsia-500', gradTo: 'to-fuchsia-600' },
+  cyan:    { ring: 'stroke-cyan-500',    text: 'text-cyan-600',    bg: 'bg-cyan-500',    gradFrom: 'from-cyan-500',    gradTo: 'to-cyan-600' },
+};
 
 export interface KnowledgeZonesProps {
   verticalQuestions: Question[];
@@ -41,57 +57,121 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
     [verticalQuestions, answeredKeys],
   );
 
-  const HERO_CIRC = 100;
-  const heroOffset = HERO_CIRC - (overall.percent / 100) * HERO_CIRC;
+  const CIRC = 100;
+  const heroOffset = CIRC - (overall.percent / 100) * CIRC;
 
   return (
-    <section className="rounded-2xl bg-white/80 backdrop-blur-xl border border-zinc-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden animate-element animate-delay-100">
-      {/* Compact hero bar */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100/80">
-        <div className="relative w-9 h-9 shrink-0" aria-hidden="true">
-          <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
-            <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-zinc-100" strokeWidth="3" />
-            <circle
-              cx="18" cy="18" r="15.9155" fill="none"
-              className="stroke-[hsl(var(--brand-blue))] transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-              strokeWidth="3" strokeLinecap="round"
-              strokeDasharray={HERO_CIRC} strokeDashoffset={heroOffset}
-            />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-zinc-900 tabular-nums">
-            {overall.percent}%
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3 text-[hsl(var(--brand-blue))]" strokeWidth={1.75} />
-            <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--brand-blue))] font-semibold">
-              Conocimiento
+    <div className="flex flex-col h-full animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 lg:px-10 py-5 shrink-0">
+        <div className="flex items-center gap-4">
+          {/* Ring */}
+          <div className="relative w-12 h-12 shrink-0">
+            <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
+              <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-zinc-200" strokeWidth="2.5" />
+              <circle
+                cx="18" cy="18" r="15.9155" fill="none"
+                className="stroke-[hsl(235,84%,55%)] transition-[stroke-dashoffset] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                strokeWidth="2.5" strokeLinecap="round"
+                strokeDasharray={CIRC} strokeDashoffset={heroOffset}
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-zinc-900 tabular-nums">
+              {overall.percent}%
             </span>
           </div>
-          <p className="text-[13px] font-medium text-zinc-700 leading-tight">
-            {overall.answered === overall.total
-              ? 'Tu agente ya sabe todo'
-              : `${overall.answered} de ${overall.total} respuestas`}
-          </p>
+          <div>
+            <h1 className="text-lg font-bold text-zinc-900 tracking-tight">Conocimiento</h1>
+            <p className="text-[13px] text-zinc-500">
+              {overall.answered === overall.total
+                ? 'Tu agente sabe todo lo necesario'
+                : `${overall.answered} de ${overall.total} respuestas configuradas`}
+            </p>
+          </div>
         </div>
+
+        <Link
+          href="/knowledge/test-bot"
+          className="inline-flex items-center gap-2 text-[13px] font-semibold px-5 py-2.5 rounded-xl bg-[hsl(235,84%,55%)] text-white shadow-md shadow-[hsl(235,84%,55%)]/25 hover:bg-[hsl(235,84%,48%)] hover:shadow-lg hover:shadow-[hsl(235,84%,55%)]/30 transition-all duration-200"
+        >
+          <MessageSquare className="w-4 h-4" />
+          Probar bot
+        </Link>
       </div>
 
-      {/* Zone grid — tiles link to /knowledge/[zoneId] */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-px bg-zinc-100/60">
-        {visibleZones.map((zone, i) => {
-          const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
-          return (
-            <Link key={zone.id} href={`/knowledge/${zone.id}`} className="contents">
-              <KnowledgeZoneTile
+      {/* Zone grid — fills remaining space */}
+      <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {visibleZones.map((zone, i) => {
+            const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
+            return (
+              <ZoneCard
+                key={zone.id}
                 zone={zone}
                 completion={completion}
-                delayClass={DELAY_CLASSES[i % DELAY_CLASSES.length]}
+                index={i}
               />
-            </Link>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function ZoneCard({ zone, completion, index }: { zone: Zone; completion: ZoneCompletion; index: number }) {
+  const Icon = ICONS[zone.icon as keyof typeof ICONS] ?? Sparkles;
+  const accent = ACCENT[zone.accent] ?? ACCENT.blue;
+  const isComplete = completion.percent >= 100 && completion.total > 0;
+  const CIRC = 100;
+  const dashOffset = CIRC - (completion.percent / 100) * CIRC;
+
+  return (
+    <Link
+      href={`/knowledge/${zone.id}`}
+      className="group relative flex items-center gap-4 rounded-2xl border border-zinc-200/70 p-4 transition-all duration-300 hover:shadow-lg hover:shadow-zinc-900/5 hover:border-zinc-300/80 hover:-translate-y-0.5 active:scale-[0.98] animate-in fade-in slide-in-from-bottom-2 duration-300"
+      style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'backwards' }}
+    >
+      {/* Progress ring */}
+      <div className="relative w-11 h-11 shrink-0">
+        <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+          <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-zinc-100" strokeWidth="3" />
+          <circle
+            cx="18" cy="18" r="15.9155" fill="none"
+            className={cn(accent.ring, 'transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]')}
+            strokeWidth="3" strokeLinecap="round"
+            strokeDasharray={CIRC} strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <span className={cn('absolute inset-0 flex items-center justify-center', accent.text)}>
+          {isComplete ? (
+            <Check className="w-4 h-4" strokeWidth={2.5} />
+          ) : (
+            <Icon className="w-4 h-4" strokeWidth={1.75} />
+          )}
+        </span>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[14px] font-semibold text-zinc-900 truncate">{zone.title}</p>
+          <ChevronRight className="w-4 h-4 text-zinc-300 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-zinc-500" />
+        </div>
+        <p className="text-[12px] text-zinc-500 mt-0.5 line-clamp-1">{zone.description}</p>
+        {/* Mini progress bar */}
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1 h-1 rounded-full bg-zinc-100 overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]', accent.bg)}
+              style={{ width: `${completion.percent}%` }}
+            />
+          </div>
+          <span className="text-[10px] font-semibold text-zinc-400 tabular-nums shrink-0">
+            {completion.answered}/{completion.total}
+          </span>
+        </div>
+      </div>
+    </Link>
   );
 }
