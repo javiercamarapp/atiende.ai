@@ -1,11 +1,12 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
 import {
   Sparkles, Megaphone, Send, Plus, Search, MessageSquare,
   Mail, Hash, FileText, Image as ImageIcon, Users, Calendar,
-  Cake, Smile, RotateCcw, ClipboardCheck, LayoutGrid, Lock,
+  Cake, Smile, RotateCcw, ClipboardCheck, LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -159,8 +160,15 @@ export default function MarketingPage() {
     return (
       <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4">
         <div className="max-w-md w-full text-center animate-element">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-lg shadow-[hsl(var(--brand-blue))]/20">
-            <Lock className="w-8 h-8 text-white" />
+          <div className="mx-auto w-32 h-32 md:w-40 md:h-40 relative animate-float">
+            <Image
+              src="/Untitled design (7).png"
+              alt=""
+              fill
+              sizes="160px"
+              priority
+              className="object-contain drop-shadow-xl"
+            />
           </div>
           <h1 className="mt-6 text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
             Marketing con IA
