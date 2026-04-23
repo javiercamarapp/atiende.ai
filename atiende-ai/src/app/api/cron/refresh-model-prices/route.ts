@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// CRON: refresh-model-prices (AUDIT R17 BUG-011)
+// CRON: refresh-model-prices
 //
 // Descarga precios actuales de cada modelo que trackeamos desde la API
 // pública de OpenRouter (`https://openrouter.ai/api/v1/models`) y los

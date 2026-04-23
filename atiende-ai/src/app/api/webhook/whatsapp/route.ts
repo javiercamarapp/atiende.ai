@@ -13,15 +13,15 @@ import {
 import crypto from 'crypto';
 import { logger } from '@/lib/logger';
 
-// AUDIT P1 item 3: rechazar payloads cuyos mensajes tengan >5 min de edad.
-// Meta normalmente entrega en <5s; >5 min indica replay (captura previa
-// reenviada por un atacante con el secret) o un reintento ya irrelevante.
+// Rechazar payloads cuyos mensajes tengan >5 min de edad. Meta normalmente
+// entrega en <5s; >5 min indica replay (captura previa reenviada por un
+// atacante con el secret) o un reintento ya irrelevante.
 const WEBHOOK_REPLAY_MAX_AGE_SECONDS = 300;
 
-// AUDIT P1 item 4: rate limit por IP de origen. Meta usa un pool acotado de
-// IPs; 300/min es generoso (tráfico real típico <50/min por IP). Se aplica
-// después del HMAC para que un atacante sin el secret gaste primero el HMAC
-// check (cheap) y el rate-limit segundo.
+// Rate limit por IP de origen. Meta usa un pool acotado de IPs; 300/min es
+// generoso (tráfico real típico <50/min por IP). Se aplica después del HMAC
+// para que un atacante sin el secret gaste primero el HMAC check (cheap) y
+// el rate-limit segundo.
 const WEBHOOK_IP_RATE_LIMIT = 300;
 const WEBHOOK_IP_RATE_WINDOW = 60;
 
@@ -104,14 +104,14 @@ export async function POST(req: NextRequest) {
 
     const signature = req.headers.get('x-hub-signature-256');
 
-    // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear. Rechaza payloads
-    // >2MB (Meta payloads típicamente <10KB) para evitar OOM en el worker
-    // antes de llegar a la validación HMAC.
+    // Guard de tamaño ANTES de bufferear. Rechaza payloads >2MB (Meta
+    // payloads típicamente <10KB) para evitar OOM en el worker antes de
+    // llegar a la validación HMAC.
     const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'whatsapp', startTime);
     if (!sizeCheck.ok) return sizeCheck.response;
 
-    // AUDIT-R8 CRÍT: req.text() puede re-codificar UTF-8 (emojis compuestos,
-    // acentos español) cambiando los bytes originales — el HMAC fallaría
+    // req.text() puede re-codificar UTF-8 (emojis compuestos, acentos
+    // español) cambiando los bytes originales — el HMAC fallaría
     // intermitentemente con mensajes que tengan ñ, á, é, emojis compuestos.
     // Usamos arrayBuffer() para preservar bytes EXACTOS que firmó Meta.
     const rawBuffer = Buffer.from(await req.arrayBuffer());
@@ -148,9 +148,9 @@ export async function POST(req: NextRequest) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    // AUDIT P1 item 4: rate-limit por IP POST-HMAC. Un atacante sin el
-    // secret ya fue rechazado arriba; este gate protege contra payload floods
-    // desde IPs legítimas (o un secret leaked). Fail-open si Redis no responde.
+    // Rate-limit por IP POST-HMAC. Un atacante sin el secret ya fue
+    // rechazado arriba; este gate protege contra payload floods desde IPs
+    // legítimas (o un secret leaked). Fail-open si Redis no responde.
     const clientIp = extractClientIp(req);
     const rateLimited = await checkApiRateLimit(
       `wa_webhook:${clientIp}`,
@@ -170,9 +170,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'rate_limited' });
     }
 
-    // AUDIT P1 item 2: JSON.parse seguro. Si el body está corrupto devolver
-    // 500 haría que Meta reintente hasta 3x, duplicando procesamiento cuando
-    // eventualmente una retry sí parse correctamente. Respondemos 200 con
+    // JSON.parse seguro. Si el body está corrupto devolver 500 haría que
+    // Meta reintente hasta 3x, duplicando procesamiento cuando eventualmente
+    // una retry sí parse correctamente. Respondemos 200 con
     // status='invalid_json' para que Meta deje de reintentar.
     let body: unknown;
     try {
@@ -189,8 +189,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'invalid_json' });
     }
 
-    // AUDIT P2 item 6: validar schema del payload con Zod. `.passthrough()` en
-    // todos los objetos preserva campos desconocidos (Meta cambia la API
+    // Validar schema del payload con Zod. `.passthrough()` en todos los
+    // objetos preserva campos desconocidos (Meta cambia la API
     // constantemente); solo imponemos validación estricta en los campos que
     // el pipeline usa y que si son garbage causan crashes downstream.
     const parseResult = WhatsAppWebhookSchema.safeParse(body);
@@ -239,9 +239,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // AUDIT P1 item 3: replay protection. Si el payload trae mensajes con
-    // timestamp > 5 min de edad es replay o retry ya irrelevante. Respondemos
-    // 200 para no triggear reintento de Meta.
+    // Replay protection. Si el payload trae mensajes con timestamp > 5 min
+    // de edad es replay o retry ya irrelevante. Respondemos 200 para no
+    // triggear reintento de Meta.
     if (hasMessages) {
       const replay = checkWebhookReplay(validated, WEBHOOK_REPLAY_MAX_AGE_SECONDS);
       if (!replay.ok) {
@@ -257,12 +257,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // AUDIT P1 item 1: idempotency MULTI-MESSAGE. Antes solo verificábamos
-    // `messages[0].id` — un batch de N mensajes (raro pero Meta lo hace en
-    // reintentos) procesaba N-1 duplicados. Ahora query batch con .in().
-    // Si TODOS los IDs están en DB, es duplicado completo → short-circuit
-    // sin disparar worker. Si solo algunos, dejamos que el processor filtre
-    // (su propio check por-mensaje ya es idempotente vía UNIQUE constraint).
+    // Idempotency MULTI-MESSAGE. Antes solo verificábamos `messages[0].id`
+    // — un batch de N mensajes (raro pero Meta lo hace en reintentos)
+    // procesaba N-1 duplicados. Ahora query batch con .in(). Si TODOS los
+    // IDs están en DB, es duplicado completo → short-circuit sin disparar
+    // worker. Si solo algunos, dejamos que el processor filtre (su propio
+    // check por-mensaje ya es idempotente vía UNIQUE constraint).
     try {
       const allMessageIds = extractMessageIds(validated);
       if (allMessageIds.length > 0) {
@@ -297,10 +297,10 @@ export async function POST(req: NextRequest) {
     //   - Decouple total: webhook responde a Meta sin depender del LLM
     //   - Observabilidad: dashboard de QStash muestra errores/retries
     if (isQStashConfigured()) {
-      // AUDIT-R8 ALTO: misma URL base que el worker usa para verificar firma.
-      // Si difieren, QStash firma con base A pero el worker valida contra base B.
-      // AUDIT R12 BUG-002: triple fallback. WORKER_URL_BASE > NEXT_PUBLIC_APP_URL
-      // > req.nextUrl.origin. En Vercel preview/edge, nextUrl.origin puede ser
+      // Misma URL base que el worker usa para verificar firma. Si difieren,
+      // QStash firma con base A pero el worker valida contra base B.
+      // Triple fallback: WORKER_URL_BASE > NEXT_PUBLIC_APP_URL >
+      // req.nextUrl.origin. En Vercel preview/edge, nextUrl.origin puede ser
       // interno (localhost, *.vercel.app sin custom domain) y QStash firmaría
       // con una URL que el worker valida con origen diferente → 401.
       const baseUrl = process.env.WORKER_URL_BASE

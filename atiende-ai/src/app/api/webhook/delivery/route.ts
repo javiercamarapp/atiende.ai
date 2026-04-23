@@ -34,7 +34,7 @@ function verifyProviderAuth(req: NextRequest, provider: DeliveryProvider): boole
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   try {
-    // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+    // Guard de tamaño ANTES de bufferear.
     const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'delivery', startTime);
     if (!sizeCheck.ok) return sizeCheck.response;
 

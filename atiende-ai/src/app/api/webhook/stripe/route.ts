@@ -7,7 +7,7 @@ import { logger } from '@/lib/logger';
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
-  // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+  // Guard de tamaño ANTES de bufferear.
   const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'stripe', startTime);
   if (!sizeCheck.ok) return sizeCheck.response;
 
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     ? (obj.metadata as Record<string, string>)?.tenant_id
     : undefined;
 
-  // AUDIT R19 #9 — idempotency check contra processed_stripe_events.
+  // Idempotency check contra processed_stripe_events.
   // Stripe reintenta el mismo event.id con semántica at-least-once.
   const { error: dedupError } = await supabaseAdmin
     .from('processed_stripe_events')
@@ -132,9 +132,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // AUDIT R19 #10 — Payment failure: pausar tenant hasta que el pago se
-  // resuelva. Sin este handler el tenant seguía activo post-tarjeta-declinada
-  // y nos sangraba en LLM+WhatsApp+infra.
+  // Payment failure: pausar tenant hasta que el pago se resuelva. Sin este
+  // handler el tenant seguía activo post-tarjeta-declinada y nos sangraba
+  // en LLM+WhatsApp+infra.
   if (event.type === 'invoice.payment_failed') {
     const inv = event.data.object as unknown as Record<string, unknown>;
     const customerId = inv.customer as string | undefined;
@@ -146,11 +146,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // AUDIT R21 — Payment recovery. Si un tenant estaba en past_due y paga
-  // tarde (invoice retry exitoso), Stripe dispara invoice.payment_succeeded
-  // pero NO un customer.subscription.updated consistente. Sin este handler
-  // el tenant queda permanentemente past_due aunque ya esté al corriente =
-  // revenue leak + tenant bloqueado en producción aun pagando.
+  // Payment recovery. Si un tenant estaba en past_due y paga tarde (invoice
+  // retry exitoso), Stripe dispara invoice.payment_succeeded pero NO un
+  // customer.subscription.updated consistente. Sin este handler el tenant
+  // queda permanentemente past_due aunque ya esté al corriente = revenue
+  // leak + tenant bloqueado en producción aun pagando.
   if (event.type === 'invoice.payment_succeeded') {
     const inv = event.data.object as unknown as {
       customer?: string;
@@ -174,10 +174,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // AUDIT R19 #10 — Subscription updates (upgrade/downgrade desde el portal
-  // de Stripe). Sin este handler la app quedaba desincronizada con el plan
-  // real pagado. Se detecta el plan por el product.metadata.plan o por el
-  // precio — aquí priorizamos el metered voice item para detectar premium.
+  // Subscription updates (upgrade/downgrade desde el portal de Stripe). Sin
+  // este handler la app quedaba desincronizada con el plan real pagado. Se
+  // detecta el plan por el product.metadata.plan o por el precio — aquí
+  // priorizamos el metered voice item para detectar premium.
   if (event.type === 'customer.subscription.updated') {
     const sub = event.data.object as unknown as {
       customer?: string;

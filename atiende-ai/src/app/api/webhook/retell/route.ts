@@ -18,7 +18,7 @@ function getRedis(): Redis | null {
 }
 
 /**
- * AUDIT-R8 ALTO: cooldown anti-spam de alertas al dueño.
+ * Cooldown anti-spam de alertas al dueño.
  * Sin esto, un consultorio con 5 llamadas overage en 1h recibe 5 mensajes.
  * TTL = 6h por tipo (warning vs overage). El owner recibe máximo 1 alerta
  * de cada tipo cada 6h por mes.
@@ -38,7 +38,7 @@ async function shouldSendAlert(tenantId: string, type: 'warning' | 'overage'): P
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
-  // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+  // Guard de tamaño ANTES de bufferear.
   const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'retell', startTime);
   if (!sizeCheck.ok) return sizeCheck.response;
 
@@ -159,8 +159,8 @@ async function handleCallEnded(body: Record<string, unknown>) {
                   `Minutos extra: $${VOICE_OVERAGE_PRICE_MXN} MXN c/u.`
                 );
 
-            // AUDIT-R8 ALTO: usar sendTextMessageSafe para respetar la
-            // ventana 24h de Meta. Si está cerrada, no rompe (solo no envía).
+            // Usar sendTextMessageSafe para respetar la ventana 24h de
+            // Meta. Si está cerrada, no rompe (solo no envía).
             const r = await sendTextMessageSafe(
               tenant.wa_phone_number_id as string,
               tenant.phone as string,

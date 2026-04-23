@@ -129,9 +129,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let totalCost = 0;
   const perTenant: Array<Record<string, unknown>> = [];
 
-  // AUDIT R30: paralelizar por chunks con cap de 5. Serial era O(tenants × ~3s
-  // por LLM) y bloqueaba maxDuration=300s a >100 tenants. Cap evita saturar
-  // rate limits de OpenRouter.
+  // Paralelizar por chunks con cap de 5. Serial era O(tenants x ~3s por LLM)
+  // y bloqueaba maxDuration=300s a >100 tenants. Cap evita saturar rate
+  // limits de OpenRouter.
   const CONCURRENCY = 5;
   for (let i = 0; i < tenants.length; i += CONCURRENCY) {
     const chunk = tenants.slice(i, i + CONCURRENCY);

@@ -6,7 +6,7 @@ import { trialEndingEmail } from '@/lib/email/templates';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  // Verify cron secret — timing-safe (AUDIT R19 P0.3).
+  // Verify cron secret — timing-safe.
   const authHeader = request.headers.get('authorization');
   const secret = process.env.CRON_SECRET;
   if (!secret || !authHeader) {

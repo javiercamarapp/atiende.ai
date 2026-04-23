@@ -50,8 +50,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const now = new Date();
   const nowIso = now.toISOString();
 
-  // AUDIT R24: claim atómico para prevenir doble envío cuando dos cron
-  // instances arrancan concurrentes. Patrón: SELECT candidatos + UPDATE con
+  // Claim atómico para prevenir doble envío cuando dos cron instances
+  // arrancan concurrentes. Patrón: SELECT candidatos + UPDATE con
   // status guard y re-chequeo de next_retry_at, usando `next_retry_at` como
   // lock de 5 min. Otro cron concurrente ve next_retry_at en el futuro y salta
   // la fila. Si este run crashea, el lock expira y el siguiente cron la
@@ -114,8 +114,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let failed = 0;
   let deferred = 0;
   const failureSamples: Array<{ id: string; tenant: string; error: string }> = [];
-  // AUDIT R31: rastrear tenants con cualquier fallo definitivo. El cálculo
-  // previo `tenantIds.length - (failed > 0 ? 1 : 0)` contaba máximo 1 tenant
+  // Rastrear tenants con cualquier fallo definitivo. El cálculo previo
+  // `tenantIds.length - (failed > 0 ? 1 : 0)` contaba máximo 1 tenant
   // fallido aunque N tenants tuvieran mensajes fallidos — corrompe SLA metrics.
   const failedTenantIds = new Set<string>();
 

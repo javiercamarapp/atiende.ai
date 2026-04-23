@@ -26,9 +26,9 @@ export const maxDuration = 30;
  * bucket, no retention.
  */
 export async function POST(request: Request) {
-  // AUDIT R18: auth + rate limit defense in depth. Middleware redirects
-  // non-auth requests a /login, pero un user autenticado sigue poder abusar
-  // (Gemini costs $). 10 uploads/min por usuario basta para onboarding real.
+  // Auth + rate limit defense in depth. Middleware redirects non-auth
+  // requests a /login, pero un user autenticado sigue poder abusar (Gemini
+  // costs $). 10 uploads/min por usuario basta para onboarding real.
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {

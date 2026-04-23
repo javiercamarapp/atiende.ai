@@ -45,9 +45,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const start = Date.now();
   const tenants = await listEligibleTenants();
-  // FIX 1 (audit R3): paralelizar tenants — con 10 tenants × 5 sub-tasks el
-  // loop serial llegaba a ~300s (timeout de Vercel). allSettled nunca falla
-  // el cron por un tenant roto; los errores se agregan al summary.
+  // Paralelizar tenants — con 10 tenants x 5 sub-tasks el loop serial
+  // llegaba a ~300s (timeout de Vercel). allSettled nunca falla el cron por
+  // un tenant roto; los errores se agregan al summary.
   const settled = await Promise.allSettled(
     tenants.map((tenant) => processTenant(tenant)),
   );
@@ -273,9 +273,9 @@ async function detectUnsatisfiedConversations(tenantId: string): Promise<number>
 
   if (!convs || convs.length === 0) return 0;
 
-  // FIX 2 (audit R3): reemplaza N queries COUNT por conversación por UNA sola
-  // query que trae todos los `conversation_id` de mensajes recientes y
-  // cuenta en memoria. Con 30 convs × ~50 msgs cada = 1500 rows, es trivial.
+  // Reemplaza N queries COUNT por conversación por UNA sola query que trae
+  // todos los `conversation_id` de mensajes recientes y cuenta en memoria.
+  // Con 30 convs x ~50 msgs cada = 1500 rows, es trivial.
   const conversationIds = convs.map((c) => c.id as string);
   const { data: recentMessages } = await supabaseAdmin
     .from('messages')

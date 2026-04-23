@@ -21,11 +21,11 @@ import { reportVoiceOverageToStripe } from '@/lib/billing/stripe';
 import { requireCronAuth, logCronRun } from '@/lib/agents/internal/cron-helpers';
 import { VOICE_OVERAGE_MONTHLY_CAP } from '@/lib/config';
 
-// AUDIT-R8 ALTO: lock Redis para idempotency a nivel cron run.
-// Vercel ocasionalmente dispara crons 2× el mismo día. Si pasa, sin este
-// lock cobraríamos el overage doble. El WHERE overage_billed=false es la
-// red defensiva extra (solo cobramos las filas que aún no están marcadas),
-// pero el lock evita la condición de carrera entre el SELECT y el UPDATE.
+// Lock Redis para idempotency a nivel cron run. Vercel ocasionalmente
+// dispara crons 2x el mismo día. Si pasa, sin este lock cobraríamos el
+// overage doble. El WHERE overage_billed=false es la red defensiva extra
+// (solo cobramos las filas que aún no están marcadas), pero el lock evita
+// la condición de carrera entre el SELECT y el UPDATE.
 let _redis: Redis | null = null;
 function getRedis(): Redis | null {
   if (_redis) return _redis;
@@ -63,9 +63,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   now.setUTCMonth(now.getUTCMonth() - 1);
   const lastMonth = now.toISOString().substring(0, 7);
 
-  // AUDIT-R8 ALTO: lock idempotency — el cron solo puede correr una vez por
-  // mes-objetivo. TTL 7 días para que un retry tardío del próximo día también
-  // sea bloqueado.
+  // Lock idempotency — el cron solo puede correr una vez por mes-objetivo.
+  // TTL 7 días para que un retry tardío del próximo día también sea bloqueado.
   const redis = getRedis();
   if (redis) {
     const lockKey = `cron:billing-overage:${lastMonth}`;
@@ -128,10 +127,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       continue;
     }
 
-    // AUDIT-R9 CRÍT: cap mensual contra abuse / mal-config.
-    // Si un tenant acumula más de VOICE_OVERAGE_MONTHLY_CAP min (default
-    // 1000 = $5,000 MXN), capamos el cobro y alertamos al equipo. Evita
-    // facturas catastróficas si bot recibe spam o staff calling loop.
+    // Cap mensual contra abuse / mal-config. Si un tenant acumula más de
+    // VOICE_OVERAGE_MONTHLY_CAP min (default 1000 = $5,000 MXN), capamos
+    // el cobro y alertamos al equipo. Evita facturas catastróficas si bot
+    // recibe spam o staff calling loop.
     let billableMinutes = Number(row.overage_minutes);
     if (billableMinutes > VOICE_OVERAGE_MONTHLY_CAP) {
       console.error(
@@ -143,9 +142,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       cappedAlerts++;
     }
 
-    // AUDIT R14 BUG-011: pasar year_month de la row (ej. "2026-03") como
-    // periodKey estable, para que la idempotency key de Stripe sea
-    // determinística aunque el retry cruce el mes calendario.
+    // Pasar year_month de la row (ej. "2026-03") como periodKey estable,
+    // para que la idempotency key de Stripe sea determinística aunque el
+    // retry cruce el mes calendario.
     const result = await reportVoiceOverageToStripe(itemId, billableMinutes, row.year_month);
 
     if (result.success) {

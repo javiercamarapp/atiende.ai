@@ -16,7 +16,7 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
-          // AUDIT-VC R11: cookies hardenadas (SameSite=lax + Secure + HttpOnly).
+          // Cookies hardenadas (SameSite=lax + Secure + HttpOnly).
           // Supabase SSR ya setea HttpOnly por default, pero aquí somos
           // explícitos para defensa en profundidad. `lax` (no strict) para que
           // el flujo de OAuth redirect funcione.
@@ -60,15 +60,15 @@ export async function middleware(request: NextRequest) {
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-  // AUDIT R15 + R20: CSP endurecida. `img-src` ya no permite `http:` ni wildcard
-  // `https:`; solo allowlist específica (Supabase storage + CDNs de WhatsApp
-  // para previews). `media-src` mismo tratamiento. `connect-src` mantiene
+  // CSP endurecida. `img-src` ya no permite `http:` ni wildcard `https:`;
+  // solo allowlist específica (Supabase storage + CDNs de WhatsApp para
+  // previews). `media-src` mismo tratamiento. `connect-src` mantiene
   // comodín `*.sentry.io` porque Sentry usa N ingest URLs según DSN.
   supabaseResponse.headers.set(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      // 'unsafe-eval' removido tras audit — Next.js prod no lo requiere
+      // 'unsafe-eval' removido — Next.js prod no lo requiere
       // (solo dev con turbopack/webpack HMR). 'unsafe-inline' se mantiene por
       // ahora porque los inline scripts de Next generan hashes inestables; ir
       // a nonce-based requiere propagar el nonce por el árbol de RSC, fuera
@@ -95,9 +95,9 @@ export async function middleware(request: NextRequest) {
     ].join('; '),
   );
 
-  // AUDIT-VC R11 + R15: HSTS siempre activa (antes solo en prod). Ya estás
-  // HTTPS en Vercel incluso para preview deploys, y tests nuevos validan
-  // esto como parte del header set.
+  // HSTS siempre activa (antes solo en prod). Ya estás HTTPS en Vercel
+  // incluso para preview deploys, y tests nuevos validan esto como parte
+  // del header set.
   supabaseResponse.headers.set(
     'Strict-Transport-Security',
     'max-age=31536000; includeSubDomains; preload',

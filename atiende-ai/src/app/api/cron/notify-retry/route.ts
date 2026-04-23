@@ -139,13 +139,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let failed = 0;
   let permanentlyFailed = 0;
   const permanentlyFailedIds: string[] = [];
-  // AUDIT R31: Set per-tenant para SLA metrics correctas. La fórmula anterior
+  // Set per-tenant para SLA metrics correctas. La fórmula anterior
   // (`failed > 0 ? 1 : 0`) subcontaba cuando N tenants fallaban simultáneos.
   const failedTenantIds = new Set<string>();
 
-  // AUDIT R32: Promise.allSettled traga rejections silenciosamente. Log cada
-  // rechazo para que los errores inesperados (p.ej. network transient) sean
-  // visibles en Vercel logs sin romper el cron.
+  // Promise.allSettled traga rejections silenciosamente. Log cada rechazo
+  // para que los errores inesperados (p.ej. network transient) sean visibles
+  // en Vercel logs sin romper el cron.
   const settled = await Promise.allSettled(
     Array.from(byTenant.entries()).map(async ([tenantId, appts]) => {
       const tenant = tenantMap.get(tenantId);

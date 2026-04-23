@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
   // ═══ 24-HOUR REMINDERS ═══
   try {
-    // AUDIT R27: `wa_token` quitado del SELECT. `sendTemplate()` usa
+    // `wa_token` quitado del SELECT. `sendTemplate()` usa
     // `WA_SYSTEM_TOKEN` global (env var), no el token per-tenant. Pedirlo
     // solo expande la superficie de exposición en logs/errores sin aportar.
     const { data: a24 } = await supabaseAdmin

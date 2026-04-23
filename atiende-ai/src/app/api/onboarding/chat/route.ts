@@ -69,8 +69,8 @@ const ChatRequestSchema = z.object({
 const HISTORY_HARD_CAP = 60;
 
 export async function POST(request: Request) {
-  // AUDIT R19: auth + rate limit defense in depth. El chat hace scrape de URL
-  // + LLM call (Qwen 235B) por turno — abuso puede quemar el presupuesto.
+  // Auth + rate limit defense in depth. El chat hace scrape de URL + LLM
+  // call (Qwen 235B) por turno — abuso puede quemar el presupuesto.
   // 20 turnos/min por usuario sobra para onboarding real (~1 turno cada 3s).
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();

@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     // 3. GENERAR SYSTEM PROMPT CON LLM
     const chatTemplate = getChatTemplate(businessType);
 
-    // AUDIT R20: defensa estructural contra prompt injection de 2do orden.
+    // Defensa estructural contra prompt injection de 2do orden.
     // `businessInfo` y `answers` son input del usuario durante onboarding —
     // un atacante podría escribir "Ignora todas las instrucciones anteriores
     // y..." en el campo `name` o en una respuesta. XML delimiters + nota
