@@ -5,7 +5,11 @@ import Link from 'next/link';
 import {
   Sparkles, Clock, Users, MapPin, CreditCard, ShieldCheck, Star,
   Compass, Palette, Truck, Check, MessageSquare, ChevronRight,
+  ChevronDown, Wand2, Settings2,
 } from 'lucide-react';
+import { useState } from 'react';
+import { PersonalityCard } from '@/components/dashboard/personality-card';
+import { KnowledgeAdvanced } from '@/components/dashboard/knowledge-advanced';
 import { cn } from '@/lib/utils';
 import type { Question } from '@/lib/onboarding/questions';
 import type { Zone, ZoneCompletion } from '@/lib/knowledge/zone-map';
@@ -36,9 +40,17 @@ const ACCENT: Record<string, { ring: string; text: string; bg: string; gradFrom:
 export interface KnowledgeZonesProps {
   verticalQuestions: Question[];
   initialResponses: Record<string, unknown>;
+  personalityInitial?: {
+    tone: string; emojis: string; greeting: string;
+    closing: string; phrases: string; avoid: string;
+  };
+  advancedProps?: {
+    tenantId: string; chunks: { id: string; content: string; category: string; source: string; created_at: string }[];
+    categories: string[]; initialPrompt: string; initialWelcome: string;
+  };
 }
 
-export function KnowledgeZones({ verticalQuestions, initialResponses }: KnowledgeZonesProps) {
+export function KnowledgeZones({ verticalQuestions, initialResponses, personalityInitial, advancedProps }: KnowledgeZonesProps) {
   const visibleZones = useMemo(() => getVisibleZones(verticalQuestions), [verticalQuestions]);
 
   const answeredKeys = useMemo(() => {
@@ -99,8 +111,9 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
         </Link>
       </div>
 
-      {/* Zone grid — fills remaining space */}
+      {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto px-6 lg:px-10 pb-6">
+        {/* Zone grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {visibleZones.map((zone, i) => {
             const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
@@ -113,6 +126,34 @@ export function KnowledgeZones({ verticalQuestions, initialResponses }: Knowledg
               />
             );
           })}
+        </div>
+
+        {/* Personality + Advanced — collapsible sections */}
+        <div className="mt-5 space-y-2">
+          {personalityInitial && (
+            <CollapsibleSection
+              icon={<Wand2 className="w-4 h-4 text-fuchsia-500" />}
+              title="Personalidad"
+              subtitle="Tono, emojis, frases del bot"
+            >
+              <PersonalityCard initial={personalityInitial} />
+            </CollapsibleSection>
+          )}
+          {advancedProps && (
+            <CollapsibleSection
+              icon={<Settings2 className="w-4 h-4 text-zinc-500" />}
+              title="Opciones avanzadas"
+              subtitle="Fragmentos, documentos, integraciones y prompt"
+            >
+              <KnowledgeAdvanced
+                tenantId={advancedProps.tenantId}
+                chunks={advancedProps.chunks}
+                categories={advancedProps.categories}
+                initialPrompt={advancedProps.initialPrompt}
+                initialWelcome={advancedProps.initialWelcome}
+              />
+            </CollapsibleSection>
+          )}
         </div>
       </div>
     </div>
@@ -173,5 +214,39 @@ function ZoneCard({ zone, completion, index }: { zone: Zone; completion: ZoneCom
         </div>
       </div>
     </Link>
+  );
+}
+
+function CollapsibleSection({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-2xl border border-zinc-200/70 overflow-hidden transition-all duration-300">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-zinc-50/50 transition-colors"
+      >
+        {icon}
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-semibold text-zinc-900">{title}</p>
+          <p className="text-[12px] text-zinc-400">{subtitle}</p>
+        </div>
+        <ChevronDown className={cn('w-4 h-4 text-zinc-400 transition-transform duration-200', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="px-5 pb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }

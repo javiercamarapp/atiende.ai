@@ -53,6 +53,14 @@ export default async function KnowledgePage() {
       <KnowledgeZones
         verticalQuestions={verticalQuestions}
         initialResponses={responsesMap}
+        personalityInitial={personalityInitial}
+        advancedProps={{
+          tenantId: tenant.id,
+          chunks: allChunks,
+          categories: cats,
+          initialPrompt: tenant.chat_system_prompt ?? '',
+          initialWelcome: tenant.welcome_message ?? '',
+        }}
       />
     </div>
   );

@@ -65,21 +65,24 @@ export default function TestBotPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-64px)] bg-[#f0f2f5]">
+    <div className="flex flex-col h-[calc(100dvh-64px)] bg-[#eaecf0]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-zinc-200 shrink-0">
+      <div className="flex items-center gap-3 px-5 py-3 shrink-0 border-b border-zinc-200/60">
         <Link
           href="/knowledge"
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-zinc-100 transition"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-zinc-200/50 transition"
         >
           <ArrowLeft className="w-4 h-4 text-zinc-600" />
         </Link>
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[hsl(235,84%,55%)] to-[hsl(255,84%,60%)] flex items-center justify-center shadow-sm">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[hsl(235,84%,55%)] to-[hsl(255,84%,60%)] flex items-center justify-center shadow-sm shadow-[hsl(235,84%,55%)]/20">
           <Bot className="w-[18px] h-[18px] text-white" />
         </div>
-        <div>
+        <div className="flex-1">
           <p className="text-[14px] font-semibold text-zinc-900">Asistente atiende.ai</p>
-          <p className="text-[11px] text-emerald-600 font-medium">En linea — modo prueba</p>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <p className="text-[11px] text-emerald-600 font-medium">En linea — modo prueba</p>
+          </div>
         </div>
       </div>
 
@@ -124,7 +127,7 @@ export default function TestBotPage() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 px-4 py-3 bg-white border-t border-zinc-200">
+      <div className="shrink-0 px-4 py-3 border-t border-zinc-200/60">
         <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -133,7 +136,7 @@ export default function TestBotPage() {
             placeholder="Escribe un mensaje..."
             disabled={sending}
             autoFocus
-            className="flex-1 text-[14px] rounded-full bg-zinc-100 border-0 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[hsl(235,84%,55%)]/30 transition placeholder:text-zinc-400"
+            className="flex-1 text-[14px] rounded-full bg-white border border-zinc-200/80 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[hsl(235,84%,55%)]/30 focus:border-transparent transition placeholder:text-zinc-400 shadow-sm"
           />
           <button
             type="submit"
