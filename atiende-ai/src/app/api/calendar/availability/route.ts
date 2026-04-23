@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const startDate = `${date}T00:00:00-06:00`;
     const endDate = `${date}T23:59:59-06:00`;
     const busySlots = await getFreeBusySlots({
-      calendarId: staff.google_calendar_id, startDate, endDate,
+      staffId, calendarId: staff.google_calendar_id, startDate, endDate,
     });
 
     const hours2 = staff.schedule?.[new Date(date).getDay()] || { open: '09:00', close: '18:00' };

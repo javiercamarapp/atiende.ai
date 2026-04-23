@@ -282,6 +282,7 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
     try {
       const { createCalendarEvent } = await import('@/lib/calendar/google');
       const ev = await createCalendarEvent({
+        staffId: staffMember.id,
         calendarId: staffMember.google_calendar_id,
         summary: `${matchedService?.name || 'Cita'} - ${ctx.customerName}`,
         description: `Agendada por WhatsApp AI\nTel: ${ctx.customerPhone}`,
@@ -389,13 +390,19 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
   // Find the customer's upcoming appointment
   const { data: apt } = await supabaseAdmin
     .from('appointments')
-    .select('id, staff_id, google_event_id, duration_minutes')
+    .select('id, staff_id, google_event_id, duration_minutes, staff:staff_id(google_calendar_id)')
     .eq('tenant_id', ctx.tenantId)
     .eq('customer_phone', ctx.customerPhone)
     .in('status', ['scheduled', 'confirmed'])
     .order('datetime', { ascending: true })
     .limit(1)
-    .single();
+    .single<{
+      id: string;
+      staff_id: string;
+      google_event_id: string | null;
+      duration_minutes: number | null;
+      staff: { google_calendar_id: string | null } | { google_calendar_id: string | null }[] | null;
+    }>();
 
   if (!apt) {
     return {
@@ -466,15 +473,24 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
     };
   }
 
-  // (G) Google Calendar — cancel old event and track if it failed
+  // (G) Google Calendar — patch existing event in place (preserves event id and attendees)
+  const staffRel = Array.isArray(apt.staff) ? apt.staff[0] : apt.staff;
+  const calendarId = staffRel?.google_calendar_id;
   let calSyncFailed = false;
-  if (apt.google_event_id) {
+  if (apt.google_event_id && calendarId) {
     try {
-      const { cancelCalendarEvent } = await import('@/lib/calendar/google');
-      await cancelCalendarEvent('primary', apt.google_event_id);
+      const { updateCalendarEvent } = await import('@/lib/calendar/google');
+      await updateCalendarEvent({
+        staffId: apt.staff_id,
+        calendarId,
+        eventId: apt.google_event_id,
+        startTime: newDatetime,
+        endTime: newEnd,
+        timezone,
+      });
     } catch (err) {
       calSyncFailed = true;
-      console.warn('[appointment.modify] Google Calendar cancel failed:', err);
+      console.warn('[appointment.modify] Google Calendar update failed:', err);
     }
   }
 
@@ -493,11 +509,34 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
 
 // ═══ APPOINTMENT: CANCEL ═══
 async function handleCancelAppointment(ctx: ActionContext): Promise<ActionResult> {
-  const { data: apt } = await supabaseAdmin.from('appointments').select('id, datetime, google_event_id').eq('tenant_id', ctx.tenantId).eq('customer_phone', ctx.customerPhone).in('status', ['scheduled', 'confirmed']).order('datetime', { ascending: true }).limit(1).single();
+  const { data: apt } = await supabaseAdmin
+    .from('appointments')
+    .select('id, datetime, google_event_id, staff_id, staff:staff_id(google_calendar_id)')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('customer_phone', ctx.customerPhone)
+    .in('status', ['scheduled', 'confirmed'])
+    .order('datetime', { ascending: true })
+    .limit(1)
+    .single<{
+      id: string;
+      datetime: string;
+      google_event_id: string | null;
+      staff_id: string;
+      staff: { google_calendar_id: string | null } | { google_calendar_id: string | null }[] | null;
+    }>();
   if (!apt) return { actionTaken: true, actionType: 'appointment.not_found', followUpMessage: 'No encontré una cita próxima a su nombre.' };
 
   await supabaseAdmin.from('appointments').update({ status: 'cancelled' }).eq('id', apt.id);
-  if (apt.google_event_id) { try { const { cancelCalendarEvent } = await import('@/lib/calendar/google'); await cancelCalendarEvent('primary', apt.google_event_id); } catch { /* ok */ } }
+  if (apt.google_event_id) {
+    const staffRel = Array.isArray(apt.staff) ? apt.staff[0] : apt.staff;
+    const calendarId = staffRel?.google_calendar_id;
+    if (calendarId) {
+      try {
+        const { cancelCalendarEvent } = await import('@/lib/calendar/google');
+        await cancelCalendarEvent(calendarId, apt.google_event_id, apt.staff_id);
+      } catch { /* ok */ }
+    }
+  }
   try { const { executeEventAgents } = await import('@/lib/marketplace/engine'); await executeEventAgents('appointment.cancelled', { tenant_id: ctx.tenantId, appointment_id: apt.id }); } catch { /* ok */ }
 
   const d = new Date(apt.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });

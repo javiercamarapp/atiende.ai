@@ -1,34 +1,82 @@
 import { google } from 'googleapis';
+import type { OAuth2Client } from 'google-auth-library';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { decryptPII, encryptPII } from '@/lib/utils/crypto';
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/calendar',
-  'https://www.googleapis.com/auth/calendar.events',
-];
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL}/api/calendar/connect`;
 
-export async function getCalendarClient() {
+async function getOAuth2ClientForStaff(staffId: string): Promise<OAuth2Client | null> {
+  const { data } = await supabaseAdmin
+    .from('staff')
+    .select('google_refresh_token')
+    .eq('id', staffId)
+    .maybeSingle();
+
+  const encrypted = data?.google_refresh_token as string | null | undefined;
+  if (!encrypted) return null;
+
+  const refreshToken = decryptPII(encrypted);
+  if (!refreshToken) return null;
+
+  const client = new google.auth.OAuth2(
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    REDIRECT_URI,
+  );
+  client.setCredentials({ refresh_token: refreshToken });
+
+  // Persist rotated refresh tokens if Google ever issues a new one.
+  // Access tokens are cached in-memory on the client and auto-refreshed
+  // by googleapis whenever they expire (using the refresh_token).
+  client.on('tokens', async (tokens) => {
+    if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
+      const nextEncrypted = encryptPII(tokens.refresh_token);
+      if (nextEncrypted) {
+        await supabaseAdmin
+          .from('staff')
+          .update({ google_refresh_token: nextEncrypted })
+          .eq('id', staffId);
+      }
+    }
+  });
+
+  return client;
+}
+
+async function getCalendarApi(staffId?: string) {
+  if (staffId) {
+    const oauth = await getOAuth2ClientForStaff(staffId);
+    if (oauth) return google.calendar({ version: 'v3', auth: oauth });
+  }
+  // Legacy service-account fallback (only works with domain-wide delegation).
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
       private_key: process.env.GOOGLE_PRIVATE_KEY?.split('\\n').join('\n'),
       project_id: process.env.GOOGLE_PROJECT_ID,
     },
-    scopes: SCOPES,
+    scopes: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/calendar.events',
+    ],
   });
   return google.calendar({ version: 'v3', auth });
 }
 
-// Crear evento en Google Calendar del doctor/staff
 export async function createCalendarEvent(opts: {
-  calendarId: string; // el Google Calendar ID del staff
+  staffId?: string;
+  calendarId: string;
   summary: string;
   description: string;
-  startTime: string; // ISO 8601
+  startTime: string;
   endTime: string;
   attendeeEmail?: string;
   attendeeName?: string;
   timezone?: string;
 }) {
-  const calendar = await getCalendarClient();
+  const calendar = await getCalendarApi(opts.staffId);
   const event = await calendar.events.insert({
     calendarId: opts.calendarId,
     requestBody: {
@@ -39,9 +87,10 @@ export async function createCalendarEvent(opts: {
       attendees: opts.attendeeEmail
         ? [{ email: opts.attendeeEmail, displayName: opts.attendeeName }]
         : [],
-      reminders: { useDefault: false, overrides: [
-        { method: 'popup', minutes: 30 },
-      ]},
+      reminders: {
+        useDefault: false,
+        overrides: [{ method: 'popup', minutes: 30 }],
+      },
     },
   });
   return {
@@ -50,14 +99,45 @@ export async function createCalendarEvent(opts: {
   };
 }
 
-// Verificar disponibilidad del staff
-export async function getFreeBusySlots(opts: {
+export async function updateCalendarEvent(opts: {
+  staffId?: string;
   calendarId: string;
-  startDate: string; // ISO
+  eventId: string;
+  summary?: string;
+  description?: string;
+  startTime?: string;
+  endTime?: string;
+  timezone?: string;
+}) {
+  const calendar = await getCalendarApi(opts.staffId);
+  const patch: Record<string, unknown> = {};
+  if (opts.summary !== undefined) patch.summary = opts.summary;
+  if (opts.description !== undefined) patch.description = opts.description;
+  if (opts.startTime) {
+    patch.start = { dateTime: opts.startTime, timeZone: opts.timezone || 'America/Merida' };
+  }
+  if (opts.endTime) {
+    patch.end = { dateTime: opts.endTime, timeZone: opts.timezone || 'America/Merida' };
+  }
+  const event = await calendar.events.patch({
+    calendarId: opts.calendarId,
+    eventId: opts.eventId,
+    requestBody: patch,
+  });
+  return {
+    eventId: event.data.id!,
+    htmlLink: event.data.htmlLink!,
+  };
+}
+
+export async function getFreeBusySlots(opts: {
+  staffId?: string;
+  calendarId: string;
+  startDate: string;
   endDate: string;
   timezone?: string;
 }) {
-  const calendar = await getCalendarClient();
+  const calendar = await getCalendarApi(opts.staffId);
   const res = await calendar.freebusy.query({
     requestBody: {
       timeMin: opts.startDate,
@@ -67,25 +147,27 @@ export async function getFreeBusySlots(opts: {
     },
   });
   const busy = res.data.calendars?.[opts.calendarId]?.busy || [];
-  return busy.map(b => ({
+  return busy.map((b) => ({
     start: b.start!,
     end: b.end!,
   }));
 }
 
-// Cancelar evento
-export async function cancelCalendarEvent(calendarId: string, eventId: string) {
-  const calendar = await getCalendarClient();
+export async function cancelCalendarEvent(
+  calendarId: string,
+  eventId: string,
+  staffId?: string,
+) {
+  const calendar = await getCalendarApi(staffId);
   await calendar.events.delete({ calendarId, eventId });
 }
 
-// Generar slots disponibles para un dia
 export function generateAvailableSlots(opts: {
-  date: string; // YYYY-MM-DD
-  businessHours: { open: string; close: string }; // "09:00", "18:00"
-  duration: number; // minutos
+  date: string;
+  businessHours: { open: string; close: string };
+  duration: number;
   busySlots: { start: string; end: string }[];
-  padding?: number; // minutos entre citas
+  padding?: number;
 }) {
   const slots: { start: string; end: string }[] = [];
   const pad = opts.padding || 0;
@@ -99,8 +181,7 @@ export function generateAvailableSlots(opts: {
     const slotEnd = new Date(cursor.getTime() + opts.duration * 60000);
     if (slotEnd > endOfDay) break;
 
-    // Verificar que no choque con slots ocupados
-    const isBusy = opts.busySlots.some(busy => {
+    const isBusy = opts.busySlots.some((busy) => {
       const busyStart = new Date(busy.start);
       const busyEnd = new Date(busy.end);
       return cursor < busyEnd && slotEnd > busyStart;

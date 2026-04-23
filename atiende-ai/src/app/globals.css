@@ -17,6 +17,14 @@
 @keyframes shimmer {
   to { background-position: 200% center; }
 }
+@keyframes gentleFloat {
+  0%, 100% { transform: translateY(0px) rotate(-1deg); }
+  50%      { transform: translateY(-10px) rotate(1deg); }
+}
+
+.animate-float {
+  animation: gentleFloat 4s ease-in-out infinite;
+}
 
 .animate-element {
   opacity: 0; filter: blur(4px); transform: translateY(12px);
