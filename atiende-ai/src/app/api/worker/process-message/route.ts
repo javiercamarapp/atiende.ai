@@ -26,12 +26,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const signature = req.headers.get('upstash-signature');
   const rawBody = await req.text();
 
-  // AUDIT-R8 ALTO: la firma QStash se hace contra la URL exacta que se
-  // pasó a publishMessage. Si Vercel cambia el host (preview vs prod), la
-  // firma falla. Usamos WORKER_URL_BASE env var como fuente de verdad.
+  // La firma QStash se hace contra la URL exacta que se pasó a
+  // publishMessage. Si Vercel cambia el host (preview vs prod), la firma
+  // falla. Usamos WORKER_URL_BASE env var como fuente de verdad.
   // Fallback: req.nextUrl.origin para dev local sin env.
-  // Mismo chain que webhook/whatsapp/route.ts — tiene que matchear para que
-  // la firma QStash valide. Ver AUDIT R12 BUG-002.
+  // Mismo chain que webhook/whatsapp/route.ts — tiene que matchear para
+  // que la firma QStash valide.
   const baseUrl = process.env.WORKER_URL_BASE
     || process.env.NEXT_PUBLIC_APP_URL
     || req.nextUrl.origin;

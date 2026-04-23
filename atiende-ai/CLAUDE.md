@@ -28,26 +28,26 @@ Multi-tenant WhatsApp AI agent SaaS for Mexican SMEs. Businesses get a 24/7 chat
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `src/lib/whatsapp/processor.ts` | Main message processing orchestrator | ~100 |
-| `src/lib/whatsapp/classifier.ts` | Intent classification (18 intents) | ~80 |
-| `src/lib/whatsapp/rag-context.ts` | RAG context building (pgvector search) | ~60 |
-| `src/lib/whatsapp/response-builder.ts` | LLM response generation + validation | ~80 |
-| `src/lib/llm/openrouter.ts` | Multi-model routing + cost calculation | 145 |
-| `src/lib/guardrails/validate.ts` | Crisis detection, medical safety, price validation | 80 |
-| `src/lib/actions/engine.ts` | 21 intent action handlers | 530 |
-| `src/lib/actions/state-machine.ts` | Conversation state management | 51 |
-| `src/lib/marketplace/engine.ts` | Marketplace agent executor (parallel) | 136 |
-| `src/lib/marketplace/versioning.ts` | Agent versioning + rollback | ~60 |
-| `src/lib/intelligence/feedback-loop.ts` | Intent classification accuracy tracking | ~40 |
-| `src/lib/intelligence/conversation-memory.ts` | Multi-turn conversation context | ~50 |
-| `src/lib/cache.ts` | Tenant config caching (Redis, 1hr TTL) | ~60 |
-| `src/lib/rate-limit.ts` | Per-tenant rate limiting (Redis) | ~80 |
-| `src/lib/logger.ts` | Structured JSON logging | ~50 |
-| `src/lib/monitoring.ts` | Metrics tracking (LLM, webhooks, agents) | ~80 |
-| `src/lib/pagination.ts` | Query pagination helper | ~30 |
-| `src/lib/webhook-logger.ts` | Webhook logging with PII redaction | 60 |
-| `src/middleware.ts` | Auth + OWASP security headers + CSP + HSTS | 80 |
-| `schema.sql` | Full PostgreSQL schema (15 tables + RLS) | 504 |
+| `src/lib/whatsapp/processor.ts` | Main message processing orchestrator | 587 |
+| `src/lib/whatsapp/classifier.ts` | Intent classification (18 intents) | 40 |
+| `src/lib/whatsapp/rag-context.ts` | RAG context building (pgvector search) | 31 |
+| `src/lib/whatsapp/response-builder.ts` | LLM response generation + validation | 113 |
+| `src/lib/llm/openrouter.ts` | Multi-model routing + cost calculation | 727 |
+| `src/lib/guardrails/validate.ts` | Crisis detection, medical safety, price validation | 255 |
+| `src/lib/actions/engine.ts` | 21 intent action handlers | 1065 |
+| `src/lib/actions/state-machine.ts` | Conversation state management | 69 |
+| `src/lib/marketplace/engine.ts` | Marketplace agent executor (parallel) | 210 |
+| `src/lib/marketplace/versioning.ts` | Agent versioning + rollback | 396 |
+| `src/lib/intelligence/feedback-loop.ts` | Intent classification accuracy tracking | 391 |
+| `src/lib/intelligence/conversation-memory.ts` | Multi-turn conversation context | 340 |
+| `src/lib/cache.ts` | Tenant config caching (Redis, 1hr TTL) | 106 |
+| `src/lib/rate-limit.ts` | Per-tenant rate limiting (Redis) | 123 |
+| `src/lib/logger.ts` | Structured JSON logging | 111 |
+| `src/lib/monitoring.ts` | Metrics tracking (LLM, webhooks, agents) | 185 |
+| `src/lib/pagination.ts` | Query pagination helper | 42 |
+| `src/lib/webhook-logger.ts` | Webhook logging with PII redaction | 149 |
+| `src/middleware.ts` | Auth + OWASP security headers + CSP + HSTS | 118 |
+| `schema.sql` | Full PostgreSQL schema (RLS + RPCs + triggers) | 593 |
 
 ## Code Conventions
 

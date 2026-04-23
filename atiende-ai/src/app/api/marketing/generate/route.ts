@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { generateStructured, MODELS } from '@/lib/llm/openrouter';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,13 @@ export async function POST(req: NextRequest) {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  if (await checkApiRateLimit(`${user.id}:marketing_gen`, 10, 60)) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': '60' } },
+    );
+  }
 
   const { data: tenant } = await supabase
     .from('tenants')

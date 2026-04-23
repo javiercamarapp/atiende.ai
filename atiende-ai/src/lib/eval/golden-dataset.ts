@@ -1,7 +1,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // GOLDEN DATASET — casos canónicos para medir calidad del bot
 //
-// AUDIT sub-agent 3 (AI/ML): el bot no tiene evals. "A ojo" no escala.
+// El bot no tiene evals. "A ojo" no escala.
 // Esta dataset es el primer eje de medición: casos esperados con outputs
 // aceptables. El runner (eval/runner.ts) pasa cada caso por el bot real
 // (RAG + guardrails + LLM) y mide si la respuesta cumple los criterios.

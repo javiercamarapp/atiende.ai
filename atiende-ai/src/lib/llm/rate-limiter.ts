@@ -49,8 +49,14 @@ async function checkBucket(
   const redis = getRedis();
   if (!redis) return { allowed: true, remaining: limit, resetIn: windowSeconds };
 
-  const current = await redis.incr(key);
-  if (current === 1) await redis.expire(key, windowSeconds);
+  // INCR + EXPIRE atómicos via Lua. El patrón previo dejaba keys inmortales
+  // si el segundo request llegaba entre INCR y EXPIRE y el primer EXPIRE
+  // fallaba. Redis.eval garantiza atomicidad del script.
+  const current = (await redis.eval(
+    "local v = redis.call('INCR', KEYS[1]); if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return v",
+    [key],
+    [String(windowSeconds)],
+  )) as number;
   const ttl = current === 1 ? windowSeconds : await redis.ttl(key);
   return {
     allowed: current <= limit,

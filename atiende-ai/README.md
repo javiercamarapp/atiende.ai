@@ -24,7 +24,7 @@
 
 ## The Problem
 
-67% of appointments in Mexican SMEs are requested outside business hours. Small clinics, salons, and service businesses lose ~30% of potential customers because nobody answers WhatsApp at 11pm. Hiring a 24/7 receptionist costs $6,000+ MXN/month. Most can't afford it.
+A large share of appointment requests in Mexican SMEs arrive outside business hours (internal estimate based on customer interviews, pending published baseline). Clinics, salons, and service businesses lose potential customers because nobody answers WhatsApp at 11pm, and hiring a 24/7 receptionist costs $6,000+ MXN/month — prohibitive for most SMEs.
 
 ## The Solution
 
@@ -75,13 +75,13 @@ Customer WhatsApp Message
 | **UI** | shadcn/ui + Tailwind CSS 4 |
 | **Database** | Supabase (PostgreSQL 15 + pgvector HNSW + RLS on 23 tables) |
 | **LLM Orchestration** | OpenRouter — Grok 4.1 Fast (primary), GPT-4.1-mini (fallback), Claude Sonnet 4.6 (crisis/sensitive), Gemini Flash-Lite (standard), DeepSeek V3.2 (batch) |
-| **Voice** | Retell AI + ElevenLabs + Deepgram Nova-3 + Telnyx |
+| **Voice** | Retell AI (STT/TTS orchestrator — internally uses ElevenLabs and Deepgram) + Telnyx (SIP/number) + Deepgram Nova-3 (direct, for WhatsApp audio transcription) |
 | **Messaging** | WhatsApp Cloud API v21.0 + HMAC-SHA256 |
 | **Queue** | Upstash QStash (async webhooks, DLQ, retries) |
 | **Cache** | Upstash Redis (rate-limit, monthly quotas, model price cache) |
-| **Payments** | Stripe (metered billing) + Conekta (OXXO/SPEI for Mexico) |
+| **Payments** | Stripe (MXN, metered billing for voice overage, supports card + OXXO + SPEI via Stripe Mexico) |
 | **Observability** | Sentry + structured JSON logs + per-tenant metrics |
-| **Deploy** | Vercel Pro + 25 cron jobs |
+| **Deploy** | Vercel Pro + 25 cron jobs (Hobby plan caps at 2 — Pro required) |
 
 ## Key Numbers
 
@@ -103,7 +103,7 @@ Production SaaS handling medical appointment data = bar is high.
 - HMAC-SHA256 signature verification on all 5 webhook endpoints + 2MB payload size cap
 - Row-Level Security on 23 tenant-scoped tables with explicit `WITH CHECK`
 - Tenant-scoped admin wrapper (`getTenantScopedAdmin`) as defense-in-depth over RLS
-- AES-256-GCM encryption for PII at rest (phone numbers, messages)
+- AES-256-GCM encryption at rest for message bodies (`messages.content`) and media transcriptions. Contact phone/name encryption is tracked in the roadmap — current protection is RLS + tenant-scoped admin wrapper
 - Atomic monthly quota pre-reservation (Redis INCR before LLM call, not after)
 - Tool-call mutation cache (defense-in-depth against ghost mutations in LLM fallback)
 - 5-layer anti-hallucination guardrails: price validation (sum-aware), medical blocklist, crisis detection (SAPTEL/911 hotlines), length cap, optional LLM-judge
@@ -142,7 +142,7 @@ atiende-ai/
 │   │   ├── (auth)/              # Login, register, forgot password
 │   │   ├── (dashboard)/         # Business owner dashboard
 │   │   └── api/                 # 35+ API routes
-│   │       ├── webhook/         # WhatsApp, Stripe, Conekta, Retell, Delivery
+│   │       ├── webhook/         # WhatsApp, Stripe, Retell, Delivery
 │   │       ├── cron/            # 25 scheduled jobs
 │   │       └── onboarding/      # 6-step AI-guided setup
 │   ├── lib/
@@ -152,7 +152,7 @@ atiende-ai/
 │   │   ├── guardrails/          # Anti-hallucination, crisis detection, price validation
 │   │   ├── rag/                 # Hybrid search (pgvector + tsvector + RRF)
 │   │   ├── eval/                # Golden dataset + synthetic eval runner
-│   │   ├── billing/             # Stripe metered + Conekta OXXO/SPEI
+│   │   ├── billing/             # Stripe subscriptions + metered voice overage
 │   │   ├── intelligence/        # Sentiment, journey, predictive, feedback loop
 │   │   ├── marketplace/         # 25 autonomous agents (cron/event-triggered)
 │   │   └── observability/       # Sentry, metrics, error tracker
@@ -163,14 +163,28 @@ atiende-ai/
 └── vercel.json                  # 25 cron job schedules
 ```
 
+## Security & Compliance Roadmap
+
+Tracked gaps with implementation status:
+
+1. ~~**Full PII encryption**~~ ✅ — `contacts.phone`, `contacts.name`, `conversations.customer_phone`, `appointments.customer_phone` now encrypted with AES-256-GCM + HMAC blind indexes for lookups. Migration: `pii_encryption_phone_columns.sql`. Backfill script: `scripts/backfill/pii-encrypt-phones.ts`. **Deployment note:** run migration first, deploy code, then run backfill.
+2. ~~**Encryption key rotation**~~ ✅ — `MESSAGES_ENCRYPTION_KEY_V2` supported. App writes with newest key, reads with dual-fallback. Re-encrypt script: `scripts/backfill/re-encrypt-v2.ts`. After full re-encryption, rename V2→V1 and remove old key.
+3. ~~**MFA + login lockout + rate-limit**~~ ✅ — TOTP MFA via Supabase Auth built-in factors (`/api/auth/mfa`). Login brute-force protection via Redis: 5 attempts/15min window, progressive delay (1s→8s), account lockout. See `src/lib/auth/login-protection.ts`.
+4. ~~**ARCO-S titular-facing flow**~~ ✅ — Patient can send "BORRAR MIS DATOS" → signed WhatsApp token (24h expiry) → `/api/privacy/confirm-deletion?token=X` executes deletion + logs to `data_deletion_log` audit table. Tenant-initiated deletion also logs audit trail. Migration: `arco_data_deletion_log.sql`.
+5. **INAI registration + legal review** — ⚠️ Legal/administrative action required. Compliance checklist in `docs/INAI-COMPLIANCE-CHECKLIST.md`. Key blockers: engage Mexican privacy lawyer, register with INAI, implement explicit consent for health data.
+6. ~~**Load testing**~~ ✅ — k6 scripts in `scripts/load/` for WhatsApp webhook (50 VU peak), auth rate-limit validation, and dashboard API endpoints. Thresholds: p95 < 500ms webhook, p95 < 1s auth, p95 < 2s dashboard.
+7. ~~**CI maturity**~~ ✅ — Pipeline now includes: gitleaks secret scanning, 80% coverage gate (vitest v8), coverage artifact upload, build smoke tests, dependabot (weekly npm + GitHub Actions).
+
 ## CI/CD
 
 GitHub Actions pipeline on every push to `main` and all PRs:
-1. Install dependencies
-2. ESLint
-3. TypeScript strict check (`tsc --noEmit`)
-4. Vitest (513 tests)
-5. Next.js production build
+1. Install dependencies (npm ci, cached)
+2. Secret scanning (gitleaks)
+3. ESLint
+4. TypeScript strict check (`tsc --noEmit`)
+5. Vitest with coverage (80% line/statement gate)
+6. Next.js production build
+7. Build smoke tests (critical route validation)
 
 ## License
 

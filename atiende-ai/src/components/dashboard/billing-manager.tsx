@@ -1,9 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,48 +9,145 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { CreditCard, FileText, AlertTriangle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  BookOpen,
+  Briefcase,
+  Calendar,
+  Check,
+  ChevronDown,
+  Clock,
+  Code,
+  CreditCard,
+  DollarSign,
+  Download,
+  FileText,
+  Hash,
+  Headphones,
+  Loader2,
+  Mail,
+  MessageCircle,
+  MessageSquare,
+  Mic,
+  PenTool,
+  Phone,
+  PhoneCall,
+  RefreshCw,
+  Rocket,
+  Send,
+  Shield,
+  Sparkles,
+  Sun,
+  TrendingUp,
+  Unlock,
+  User,
+  UserCheck,
+  UserPlus,
+  Users,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
+interface Feature {
+  icon: LucideIcon;
+  text: string;
+}
+
 interface Plan {
-  key: string;
+  key: 'basic' | 'pro' | 'premium';
   name: string;
   price: number;
   msgLimit: number;
-  msgs: string;
-  features: string[];
+  tagline: string;
+  tierIcon: LucideIcon;
+  popular?: boolean;
+  features: Feature[];
 }
 
 const PLANS: Plan[] = [
   {
     key: 'basic',
-    name: 'Basico',
-    price: 499,
+    name: 'Básico',
+    price: 599,
     msgLimit: 500,
-    msgs: '500 msgs/mes',
-    features: ['Chatbot WhatsApp', 'Base de conocimiento', 'Dashboard basico'],
+    tagline: 'Ideal para empezar',
+    tierIcon: MessageSquare,
+    features: [
+      { icon: MessageSquare, text: 'Mensajes entrantes de WhatsApp ilimitados' },
+      { icon: Sparkles, text: 'Agente con IA entrenado para tu consultorio' },
+      { icon: Calendar, text: 'Agenda integrada con Google Calendar' },
+      { icon: Bell, text: 'Recordatorios automáticos de cita' },
+      { icon: Clock, text: 'Responde 24/7 en español natural' },
+      { icon: Hash, text: '1 número de WhatsApp Business conectado' },
+      { icon: BookOpen, text: 'Knowledge base personalizable' },
+      { icon: UserCheck, text: 'Handoff inteligente a tu recepcionista' },
+      { icon: BarChart3, text: 'Dashboard con métricas de conversaciones' },
+      { icon: User, text: '1 usuario administrador' },
+      { icon: Zap, text: 'Onboarding auto-deploy en menos de 24h' },
+      { icon: Unlock, text: 'Sin contratos anuales, cancelas cuando quieras' },
+      { icon: Mail, text: 'Soporte por email en menos de 24h' },
+    ],
   },
   {
     key: 'pro',
     name: 'Pro',
     price: 999,
     msgLimit: 2000,
-    msgs: '2,000 msgs/mes',
-    features: ['Todo en Basico', 'RAG avanzado', 'Reportes', 'API access'],
+    popular: true,
+    tagline: 'Para consultorios que ya escalaron',
+    tierIcon: Sparkles,
+    features: [
+      { icon: Check, text: 'Todo lo del plan Básico' },
+      { icon: Sun, text: 'Briefing diario a las 8am con tu agenda' },
+      { icon: Mic, text: 'Voice notes a acciones: dicta y la IA ejecuta' },
+      { icon: PenTool, text: 'Contenido para Instagram, Facebook y blog' },
+      { icon: RefreshCw, text: 'Reactivación de pacientes inactivos (+6 meses)' },
+      { icon: Send, text: '500 mensajes salientes para campañas' },
+      { icon: TrendingUp, text: 'Reporte semanal con métricas clave' },
+      { icon: Download, text: 'Dashboard avanzado con exports a Excel' },
+      { icon: Users, text: '3 usuarios con permisos granulares' },
+      { icon: FileText, text: 'Templates de WhatsApp pre-aprobados (hasta 10)' },
+      { icon: Headphones, text: 'Soporte prioritario por WhatsApp' },
+    ],
   },
   {
     key: 'premium',
-    name: 'Premium',
+    name: 'Ultimate',
     price: 1499,
     msgLimit: 10000,
-    msgs: 'Ilimitado + Voz',
-    features: ['Todo en Pro', 'Agente de voz', 'Prioridad soporte', 'Multi-agente'],
+    tagline: 'Con Valeria, tu secretaria de voz IA',
+    tierIcon: Phone,
+    features: [
+      { icon: Check, text: 'Todo lo del plan Pro' },
+      { icon: Phone, text: 'Valeria: secretaria de voz con IA, 24/7' },
+      { icon: Clock, text: '300 minutos de voz incluidos' },
+      { icon: PhoneCall, text: 'Llamadas entrantes y salientes automatizadas' },
+      { icon: DollarSign, text: 'Minuto adicional de voz a $5 MXN' },
+      { icon: CreditCard, text: 'Links de pago dentro del chat' },
+      { icon: Code, text: 'API completa para integraciones custom' },
+      { icon: UserPlus, text: 'Usuarios administradores ilimitados' },
+      { icon: Rocket, text: 'Onboarding 1:1 con especialista (2h)' },
+      { icon: Briefcase, text: 'Account manager dedicado' },
+      { icon: Shield, text: 'Alta disponibilidad con monitoreo 24/7' },
+      { icon: MessageCircle, text: 'Soporte 24/7 por WhatsApp y llamada' },
+    ],
   },
 ];
 
-function getPlanLimit(plan: string): number {
-  const found = PLANS.find((p) => p.key === plan);
-  return found?.msgLimit ?? 50;
+const VISIBLE_FEATURES = 4;
+
+function getPlanInfo(key: string): Plan | undefined {
+  return PLANS.find((p) => p.key === key);
+}
+
+function usageGradient(pct: number): string {
+  if (pct >= 90) return 'from-orange-500 to-red-500';
+  if (pct >= 71) return 'from-amber-400 to-orange-500';
+  return 'from-emerald-400 to-blue-500';
 }
 
 export function BillingManager({ tenant }: { tenant: Record<string, unknown> | null }) {
@@ -62,9 +155,13 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [usage, setUsage] = useState<{ count: number } | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const tenantPlan = (tenant?.plan as string) || 'free_trial';
   const tenantId = tenant?.id as string;
+  const hasCustomer = Boolean(tenant?.stripe_customer_id as string);
+  const trialEndsAt = tenant?.trial_ends_at as string | null | undefined;
+  const isTrialing = tenantPlan === 'free_trial';
 
   const fetchUsage = useCallback(async () => {
     if (!tenantId) return;
@@ -83,31 +180,24 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
     fetchUsage();
   }, [fetchUsage]);
 
-  const upgrade = async (plan: string, method: string) => {
-    setLoading(plan + method);
+  const upgrade = async (plan: string) => {
+    setLoading(plan);
     try {
       const r = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId,
-          email: tenant?.email,
-          plan,
-          method,
-          name: tenant?.name,
-        }),
+        body: JSON.stringify({ plan }),
       });
-      if (!r.ok) throw new Error('Checkout failed');
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        const msg = body?.error || 'Error al procesar el pago';
+        toast.error(msg);
+        return;
+      }
       const d = await r.json();
-      if (method === 'stripe' && d.url) window.location.href = d.url;
-      if (method === 'oxxo' && d.oxxoReference) {
-        window.location.href = `/settings/billing/oxxo?ref=${d.oxxoReference}&amount=${d.amount || ''}&expires=${d.expiresAt || ''}`;
-      }
-      if (method === 'spei' && d.clabe) {
-        window.location.href = `/settings/billing/oxxo?clabe=${d.clabe}&amount=${d.amount || ''}&expires=${d.expiresAt || ''}`;
-      }
+      if (d.url) window.location.href = d.url;
     } catch {
-      toast.error('Error al procesar el pago');
+      toast.error('Error de conexión. Intenta de nuevo.');
     } finally {
       setLoading('');
     }
@@ -116,11 +206,12 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
   const handleCancel = async () => {
     setCancelling(true);
     try {
-      await fetch('/api/billing/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId }),
-      });
+      const r = await fetch('/api/billing/cancel', { method: 'POST' });
+      if (!r.ok) {
+        toast.error('No se pudo cancelar. Intenta desde el portal de facturación.');
+        return;
+      }
+      toast.success('Suscripción cancelada al fin del periodo actual.');
       setCancelOpen(false);
       window.location.reload();
     } finally {
@@ -131,11 +222,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
   const openPortal = async () => {
     setLoading('portal');
     try {
-      const r = await fetch('/api/billing/portal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId }),
-      });
+      const r = await fetch('/api/billing/portal', { method: 'POST' });
       const d = await r.json();
       if (d.url) window.location.href = d.url;
     } finally {
@@ -143,171 +230,374 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
     }
   };
 
-  const limit = getPlanLimit(tenantPlan);
+  const currentPlan = getPlanInfo(tenantPlan);
+  const limit = currentPlan?.msgLimit ?? 50;
   const usedCount = usage?.count ?? 0;
   const usagePercent = limit > 0 ? Math.min(100, Math.round((usedCount / limit) * 100)) : 0;
+  const remaining = Math.max(0, limit - usedCount);
+  const usageColor = useMemo(() => usageGradient(usagePercent), [usagePercent]);
 
-  const currentPlanInfo = PLANS.find((p) => p.key === tenantPlan);
+  const trialDaysLeft = useMemo(() => {
+    if (!trialEndsAt) return null;
+    const diff = new Date(trialEndsAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / 86400000));
+  }, [trialEndsAt]);
+
+  const toggleExpanded = (key: string) =>
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   return (
-    <div className="space-y-6">
-      {/* Current plan + features */}
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Plan actual</p>
-              <Badge className="text-lg px-3 py-1 mt-1">
-                {tenantPlan === 'free_trial' ? 'Prueba gratuita' : (currentPlanInfo?.name || tenantPlan)}
-              </Badge>
+    <div className="space-y-5">
+      {/* Hero — current plan + usage */}
+      <div className="stagger-item glass-card p-5 relative overflow-hidden">
+        <div
+          aria-hidden
+          className="absolute -top-20 -right-20 w-52 h-52 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 blur-3xl opacity-60 pointer-events-none"
+        />
+        <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Current plan */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-gradient-to-br from-blue-50 to-indigo-50 ring-1 ring-blue-100">
+                {isTrialing ? (
+                  <Sparkles className="w-4.5 h-4.5 text-blue-600" />
+                ) : currentPlan ? (
+                  <currentPlan.tierIcon className="w-4.5 h-4.5 text-blue-600" />
+                ) : (
+                  <Sparkles className="w-4.5 h-4.5 text-blue-600" />
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                  Plan actual
+                </p>
+                <p className="text-lg font-semibold text-zinc-900 leading-tight">
+                  {isTrialing ? 'Prueba gratuita' : currentPlan?.name ?? tenantPlan}
+                </p>
+              </div>
             </div>
-            {Boolean(tenant?.stripe_customer_id as string) && (
-              <div className="flex items-center gap-1 text-sm text-gray-500">
-                <CreditCard className="w-4 h-4" />
-                <span>Metodo de pago registrado</span>
+
+            {!isTrialing && currentPlan && (
+              <p className="text-sm text-zinc-600">
+                <span className="font-medium text-zinc-900">
+                  ${currentPlan.price.toLocaleString('es-MX')} MXN
+                </span>{' '}
+                / mes
+              </p>
+            )}
+
+            {isTrialing && trialDaysLeft !== null && (
+              <div
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${
+                  trialDaysLeft <= 3
+                    ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
+                    : 'bg-amber-50 text-amber-800 ring-1 ring-amber-100'
+                }`}
+              >
+                <Clock className="w-3 h-3" />
+                {trialDaysLeft > 0
+                  ? `${trialDaysLeft} día${trialDaysLeft !== 1 ? 's' : ''} restantes`
+                  : 'Tu prueba terminó — elige un plan abajo'}
+              </div>
+            )}
+
+            {hasCustomer && (
+              <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                <CreditCard className="w-3 h-3" />
+                <span>Método de pago registrado</span>
               </div>
             )}
           </div>
 
-          {Boolean(tenant?.trial_ends_at as string) && (
-            <p className="text-sm text-gray-500">
-              Prueba hasta: {new Date(tenant!.trial_ends_at as string).toLocaleDateString('es-MX')}
-            </p>
-          )}
-
-          {currentPlanInfo && (
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-1">Incluye:</p>
-              <ul className="text-sm text-gray-500 space-y-0.5">
-                {currentPlanInfo.features.map((f) => (
-                  <li key={f}>- {f}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Usage this month */}
-      <Card>
-        <CardContent className="pt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Uso este mes</p>
-            <p className="text-sm text-gray-500">
-              {usedCount.toLocaleString()} / {limit.toLocaleString()} mensajes
-            </p>
-          </div>
-          <Progress value={usagePercent} />
-          {usagePercent >= 90 && (
-            <p className="text-xs text-amber-600 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              {usagePercent >= 100
-                ? 'Limite de mensajes alcanzado. Mejora tu plan para continuar.'
-                : 'Estas cerca del limite de mensajes de tu plan.'}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Plan cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {PLANS.map((p) => (
-          <Card
-            key={p.key}
-            className={tenantPlan === p.key ? 'border-blue-500 bg-blue-50' : ''}
-          >
-            <CardContent className="pt-6">
-              <h3 className="font-bold text-lg">{p.name}</h3>
-              <p className="text-2xl font-bold mt-1">
-                ${p.price}
-                <span className="text-sm text-gray-500"> MXN/mes</span>
+          {/* Usage meter */}
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                Uso este mes
               </p>
-              <p className="text-xs text-gray-500 mt-1">{p.msgs}</p>
-              <ul className="text-xs text-gray-500 mt-2 space-y-0.5">
-                {p.features.map((f) => (
-                  <li key={f}>- {f}</li>
-                ))}
-              </ul>
-              {tenantPlan !== p.key && (
-                <div className="mt-4 space-y-2">
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    onClick={() => upgrade(p.key, 'stripe')}
-                    disabled={!!loading}
-                  >
-                    {loading === p.key + 'stripe' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    Tarjeta
-                  </Button>
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => upgrade(p.key, 'oxxo')}
-                    disabled={!!loading}
-                  >
-                    {loading === p.key + 'oxxo' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    OXXO
-                  </Button>
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => upgrade(p.key, 'spei')}
-                    disabled={!!loading}
-                  >
-                    {loading === p.key + 'spei' && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    SPEI
-                  </Button>
-                </div>
-              )}
-              {tenantPlan === p.key && (
-                <p className="mt-4 text-sm text-blue-600 font-medium text-center">
-                  Plan actual
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+              <p className="text-[11px] text-zinc-500">
+                {usedCount.toLocaleString('es-MX')} / {limit.toLocaleString('es-MX')} mensajes
+              </p>
+            </div>
+
+            <div className="relative h-2.5 w-full rounded-full bg-zinc-100 overflow-hidden">
+              <div
+                className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${usageColor} transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]`}
+                style={{ width: `${usagePercent}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-zinc-500">
+              <span>{remaining.toLocaleString('es-MX')} restantes</span>
+              <span className="font-medium text-zinc-700">{usagePercent}%</span>
+            </div>
+
+            {usagePercent >= 90 && (
+              <p className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-100 rounded-lg px-2.5 py-1.5">
+                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                {usagePercent >= 100
+                  ? 'Límite alcanzado. Mejora tu plan.'
+                  : 'Cerca del límite mensual.'}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Invoice history + cancel */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Button variant="outline" onClick={openPortal} disabled={loading === 'portal'}>
-          <FileText className="w-4 h-4 mr-2" />
-          {loading === 'portal' ? 'Cargando...' : 'Historial de facturas'}
-        </Button>
+      {/* Plan grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:items-start">
+        {PLANS.map((plan, idx) => {
+          const isCurrent = tenantPlan === plan.key;
+          const isLoading = loading === plan.key;
+          const isDark = plan.key === 'premium';
+          const isPopular = Boolean(plan.popular);
+          const TierIcon = plan.tierIcon;
+          const isExpanded = expanded[plan.key] ?? false;
+          const visibleFeatures = isExpanded
+            ? plan.features
+            : plan.features.slice(0, VISIBLE_FEATURES);
+          const hiddenCount = plan.features.length - VISIBLE_FEATURES;
 
-        {tenantPlan !== 'free_trial' && (
-          <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
-                Cancelar suscripcion
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Cancelar suscripcion</DialogTitle>
-                <DialogDescription>
-                  Al cancelar tu suscripcion, perderas acceso a las funciones de tu plan al
-                  finalizar el periodo de facturacion actual. Esta accion no se puede deshacer.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCancelOpen(false)}>
-                  Conservar plan
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleCancel}
-                  disabled={cancelling}
+          const baseCard =
+            'stagger-item relative flex flex-col rounded-[var(--radius)] p-5 transition-all duration-300 hover:-translate-y-0.5';
+          const themeCard = isDark
+            ? 'bg-zinc-900 text-white shadow-xl hover:shadow-2xl ring-1 ring-zinc-800'
+            : isPopular
+              ? 'bg-white shadow-md hover:shadow-xl ring-2 ring-[hsl(235_84%_55%)] lg:scale-[1.02]'
+              : 'bg-white shadow-sm hover:shadow-lg ring-1 ring-zinc-200';
+          const currentBorder =
+            isCurrent && !isDark && !isPopular
+              ? ' ring-2 ring-[hsl(235_84%_55%)]'
+              : '';
+
+          return (
+            <div key={plan.key} className={`${baseCard} ${themeCard}${currentBorder}`}>
+              {isPopular && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span className="inline-flex items-center gap-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-full shadow-lg tracking-wide">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    Más popular
+                  </span>
+                </div>
+              )}
+
+              {isCurrent && (
+                <div className="absolute top-2.5 right-2.5">
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      isDark
+                        ? 'bg-white/10 text-white ring-1 ring-white/20'
+                        : 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                    }`}
+                  >
+                    <Check className="w-2.5 h-2.5" />
+                    Tu plan
+                  </span>
+                </div>
+              )}
+
+              {/* Header */}
+              <div className="flex items-center gap-2.5 mb-0.5">
+                <div
+                  className={`p-1.5 rounded-full ${
+                    isDark
+                      ? 'bg-white/10 ring-1 ring-white/10'
+                      : isPopular
+                        ? 'bg-gradient-to-br from-blue-50 to-indigo-50 ring-1 ring-blue-100'
+                        : 'bg-zinc-50 ring-1 ring-zinc-100'
+                  }`}
                 >
-                  {cancelling ? 'Cancelando...' : 'Si, cancelar'}
+                  <TierIcon
+                    className={`w-4 h-4 ${
+                      isDark
+                        ? 'text-indigo-300'
+                        : isPopular
+                          ? 'text-blue-600'
+                          : 'text-zinc-700'
+                    }`}
+                  />
+                </div>
+                <h4
+                  className={`text-base font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}
+                >
+                  {plan.name}
+                </h4>
+              </div>
+
+              <p className={`text-[11px] mb-3 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                {plan.tagline}
+              </p>
+
+              {/* Price */}
+              <div className="mb-4">
+                <div className="flex items-baseline gap-1">
+                  <span
+                    className={`text-3xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}
+                  >
+                    ${plan.price.toLocaleString('es-MX')}
+                  </span>
+                  <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                    MXN/mes
+                  </span>
+                </div>
+                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {plan.msgLimit.toLocaleString('es-MX')} mensajes incluidos
+                </p>
+              </div>
+
+              {/* Features */}
+              <ul className="space-y-2 mb-4 flex-1">
+                {visibleFeatures.map((f, i) => {
+                  const FeatureIcon = f.icon;
+                  return (
+                    <li
+                      key={`${plan.key}-${i}`}
+                      className={`flex items-start gap-2 text-[13px] leading-snug ${
+                        isDark ? 'text-zinc-200' : 'text-zinc-700'
+                      }`}
+                    >
+                      <FeatureIcon
+                        className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${
+                          isDark
+                            ? 'text-indigo-300'
+                            : isPopular
+                              ? 'text-blue-600'
+                              : 'text-zinc-500'
+                        }`}
+                      />
+                      <span>{f.text}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {!isExpanded && hiddenCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(plan.key)}
+                  className={`inline-flex items-center gap-1 text-[12px] font-medium mb-4 transition-colors ${
+                    isDark
+                      ? 'text-indigo-300 hover:text-indigo-200'
+                      : isPopular
+                        ? 'text-blue-600 hover:text-blue-700'
+                        : 'text-zinc-500 hover:text-zinc-700'
+                  }`}
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  Ver {hiddenCount} más
+                </button>
+              )}
+
+              {isExpanded && hiddenCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(plan.key)}
+                  className={`inline-flex items-center gap-1 text-[12px] font-medium mb-4 transition-colors ${
+                    isDark
+                      ? 'text-indigo-300 hover:text-indigo-200'
+                      : isPopular
+                        ? 'text-blue-600 hover:text-blue-700'
+                        : 'text-zinc-500 hover:text-zinc-700'
+                  }`}
+                >
+                  <ChevronDown className="w-3.5 h-3.5 rotate-180 transition-transform" />
+                  Ver menos
+                </button>
+              )}
+
+              {/* CTA */}
+              {isCurrent ? (
+                <div
+                  className={`w-full rounded-lg px-3 py-2 text-[13px] font-medium text-center ${
+                    isDark
+                      ? 'bg-white/5 text-white ring-1 ring-white/10'
+                      : 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                  }`}
+                >
+                  Plan activo
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => upgrade(plan.key)}
+                  disabled={!!loading}
+                  aria-label={`Contratar plan ${plan.name}`}
+                  className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${
+                    isDark
+                      ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white hover:from-indigo-400 hover:to-violet-400 shadow-lg hover:shadow-indigo-500/30'
+                      : isPopular
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500 shadow-md hover:shadow-blue-500/30'
+                        : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                  }`}
+                  style={{ animationDelay: `${idx * 60}ms` }}
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      Elegir {plan.name}
+                      <Sparkles className="w-3 h-3 opacity-80" />
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Secondary actions */}
+      <div className="stagger-item flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-zinc-100">
+        <p className="text-[11px] text-zinc-500">
+          Descarga facturas o administra tu método de pago.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openPortal}
+            disabled={loading === 'portal' || !hasCustomer}
+            className="inline-flex items-center gap-2 text-[13px] h-8"
+          >
+            {loading === 'portal' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5" />
+            )}
+            {loading === 'portal' ? 'Cargando...' : 'Facturas'}
+          </Button>
+
+          {!isTrialing && (
+            <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="inline-flex items-center gap-2 text-[13px] h-8 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                >
+                  Cancelar suscripción
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Cancelar suscripción</DialogTitle>
+                  <DialogDescription>
+                    Al cancelar tu suscripción, perderás acceso a las funciones de tu plan al
+                    finalizar el periodo de facturación actual. Esta acción no se puede deshacer.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCancelOpen(false)}>
+                    Conservar plan
+                  </Button>
+                  <Button variant="destructive" onClick={handleCancel} disabled={cancelling}>
+                    {cancelling ? 'Cancelando...' : 'Sí, cancelar'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
       </div>
     </div>
   );

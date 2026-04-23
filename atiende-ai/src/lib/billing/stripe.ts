@@ -31,20 +31,50 @@ const PLAN_PRICES: Record<string, string> = {
 const VOICE_OVERAGE_PRICE_ID = process.env.STRIPE_VOICE_OVERAGE_PRICE_ID ?? '';
 
 export async function createCheckoutSession(tenantId: string, email: string, plan: string) {
+  const priceId = PLAN_PRICES[plan];
+  if (!priceId) {
+    throw new Error(`Plan "${plan}" no tiene price ID configurado.`);
+  }
+  if (!priceId.startsWith('price_')) {
+    throw new Error(
+      `STRIPE_PRICE_${plan.toUpperCase()} tiene un valor inválido: "${priceId}". ` +
+      'Debe empezar con "price_". Revisa la env var en Vercel.',
+    );
+  }
+
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-    { price: PLAN_PRICES[plan], quantity: 1 },
+    { price: priceId, quantity: 1 },
   ];
   // Premium incluye el item metered de voice overage (cantidad 0 al inicio —
   // Stripe agrega los usageRecords reportados por el cron mensual).
-  // AUDIT-R9 MED: si premium y NO hay VOICE_OVERAGE_PRICE_ID configurado,
-  // ALERTAR al equipo — el tenant tendría plan voz pero NO se le podrá
-  // cobrar overage. Lanzamos error para forzar fix antes de cobrar premium.
+  // Si premium y NO hay VOICE_OVERAGE_PRICE_ID configurado, ALERTAR al
+  // equipo — el tenant tendría plan voz pero NO se le podrá cobrar
+  // overage. Lanzamos error para forzar fix antes de cobrar premium.
   if (plan === 'premium') {
     if (!VOICE_OVERAGE_PRICE_ID) {
       throw new Error(
         'STRIPE_VOICE_OVERAGE_PRICE_ID no está configurado. ' +
         'Crea el producto "Minutos de Voz Adicionales" ($5 MXN, metered, SUM) ' +
         'en Stripe Dashboard y ponlo en Vercel env antes de aceptar checkouts premium.',
+      );
+    }
+    if (!VOICE_OVERAGE_PRICE_ID.startsWith('price_')) {
+      throw new Error(
+        `STRIPE_VOICE_OVERAGE_PRICE_ID tiene un valor inválido: "${VOICE_OVERAGE_PRICE_ID}". ` +
+        'Debe empezar con "price_". Revisa la env var en Vercel.',
+      );
+    }
+    // Validar que el price esté configurado como metered — licensed prices
+    // requieren `quantity`, metered NO. Si el admin configuró mal el price en
+    // Stripe, damos error claro en vez del críptico "Quantity is required".
+    const overagePrice = await getStripe().prices.retrieve(VOICE_OVERAGE_PRICE_ID);
+    const isMetered = overagePrice.recurring?.usage_type === 'metered';
+    if (!isMetered) {
+      throw new Error(
+        `El price ${VOICE_OVERAGE_PRICE_ID} (Minutos de Voz Adicionales) no está ` +
+        'configurado como "metered". En Stripe: edita el price → Pricing model → ' +
+        'Usage-based → Aggregate usage = Sum of values during the period. ' +
+        'Un price licensed no puede usarse para overage.',
       );
     }
     lineItems.push({ price: VOICE_OVERAGE_PRICE_ID });
@@ -87,9 +117,9 @@ export async function reportVoiceOverageToStripe(
   subscriptionItemId: string,
   overageMinutes: number,
   /**
-   * AUDIT R14 BUG-011: identificador ESTABLE del periodo de facturación que se
-   * está cerrando (ej. "2026-03" = cerramos marzo). Se usa como componente
-   * determinístico de la idempotency key de Stripe.
+   * Identificador ESTABLE del periodo de facturación que se está cerrando
+   * (ej. "2026-03" = cerramos marzo). Se usa como componente determinístico
+   * de la idempotency key de Stripe.
    *
    * Antes usábamos `new Date().toISOString().substring(0,7)` — el problema:
    * si el cron dispara a las 23:59 del 31 de Enero (reportando Enero) y falla,
@@ -122,9 +152,9 @@ export async function reportVoiceOverageToStripe(
     }
   }
 
-  // AUDIT-R8 MEDIO: retry con backoff exponencial sobre 429 / 5xx.
-  // Stripe rate-limit es 100 r/s en write — improbable saturarlo, pero un
-  // 5xx transitorio del provider sin retry = pérdida del cobro del mes.
+  // Retry con backoff exponencial sobre 429 / 5xx. Stripe rate-limit es
+  // 100 r/s en write — improbable saturarlo, pero un 5xx transitorio del
+  // provider sin retry = pérdida del cobro del mes.
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return { success: false, error: 'STRIPE_SECRET_KEY missing' };
 
@@ -147,19 +177,19 @@ export async function reportVoiceOverageToStripe(
           'Content-Type': 'application/x-www-form-urlencoded',
           // Idempotency key — Stripe deduplica internamente si reintentamos
           // dentro de 24h con la misma key. Garantía contra doble-cobro.
-          // AUDIT R14 BUG-011: key determinística basada en el periodo que se
-          // cierra (no en wall-clock), para que retry cross-month-boundary
-          // mantenga la misma key.
+          // Key determinística basada en el periodo que se cierra (no en
+          // wall-clock), para que retry cross-month-boundary mantenga la
+          // misma key.
           'Idempotency-Key': `voice-overage:${subscriptionItemId}:${resolvedPeriod}`,
         },
         body: params.toString(),
       });
 
-      // AUDIT R12 BUG-004: validar que el JSON tenga `id` (= usage record
-      // creado). Si Stripe devuelve 200 pero response malformado (network
-      // proxy / cache), retornamos failure para que el cron marque el row
-      // como NO billed y reintente el próximo run en vez de dar por válido
-      // un cobro potencialmente fantasma.
+      // Validar que el JSON tenga `id` (= usage record creado). Si Stripe
+      // devuelve 200 pero response malformado (network proxy / cache),
+      // retornamos failure para que el cron marque el row como NO billed y
+      // reintente el próximo run en vez de dar por válido un cobro
+      // potencialmente fantasma.
       if (res.ok) {
         const json = (await res.json()) as { id?: string; object?: string };
         if (!json.id || typeof json.id !== 'string') {

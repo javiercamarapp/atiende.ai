@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// OpenRouter circuit breaker (AUDIT P2 item 7)
+// OpenRouter circuit breaker
 //
 // Cuando OpenRouter está caído (incidente upstream) o degrada (timeout
 // sostenido), sin circuit breaker TODOS los requests siguen llegando:
@@ -95,8 +95,14 @@ export async function reportFailure(reason: string): Promise<void> {
   if (!redis) return;
 
   try {
-    const count = await redis.incr(FAILURE_COUNT_KEY);
-    if (count === 1) await redis.expire(FAILURE_COUNT_KEY, FAILURE_WINDOW_SECONDS);
+    // INCR + EXPIRE atómicos via Lua. El patrón previo dejaba keys
+    // inmortales si el segundo request llegaba entre INCR y EXPIRE y el
+    // primer EXPIRE fallaba.
+    const count = (await redis.eval(
+      "local v = redis.call('INCR', KEYS[1]); if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return v",
+      [FAILURE_COUNT_KEY],
+      [String(FAILURE_WINDOW_SECONDS)],
+    )) as number;
     if (count >= FAILURE_THRESHOLD) {
       await redis.set(BREAKER_KEY, 'open', { ex: OPEN_DURATION_SECONDS });
       // Reset counter para que cuando el breaker cierre, empecemos limpio.

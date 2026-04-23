@@ -1,5 +1,6 @@
 import { generateResponse, selectModel } from '@/lib/llm/openrouter';
 import { validateResponse } from '@/lib/guardrails/validate';
+import { RESPONSE_GENERATION_TIMEOUT_MS } from '@/lib/config';
 
 interface TenantRecord {
   id: string;
@@ -45,18 +46,23 @@ export async function generateAndValidateResponse(opts: {
 
   const startTime = Date.now();
 
-  const result = await generateResponse({
-    model,
-    system: systemPrompt,
-    messages: history
-      .filter((m) => m.content)
-      .map((m) => ({
-        role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: m.content!,
-      })),
-    maxTokens: 400,
-    temperature: tenant.temperature || 0.5,
-  });
+  const result = await Promise.race([
+    generateResponse({
+      model,
+      system: systemPrompt,
+      messages: history
+        .filter((m) => m.content)
+        .map((m) => ({
+          role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: m.content!,
+        })),
+      maxTokens: 400,
+      temperature: tenant.temperature || 0.5,
+    }),
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error(`LLM response timeout after ${RESPONSE_GENERATION_TIMEOUT_MS}ms`)), RESPONSE_GENERATION_TIMEOUT_MS),
+    ),
+  ]);
 
   const responseTimeMs = Date.now() - startTime;
 

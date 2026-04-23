@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendEmail } from '@/lib/email/send';
 import { trialEndingEmail } from '@/lib/email/templates';
@@ -5,9 +6,16 @@ import { trialEndingEmail } from '@/lib/email/templates';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  // Verify cron secret (Vercel cron or manual trigger)
+  // Verify cron secret — timing-safe.
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || !authHeader) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const expected = `Bearer ${secret}`;
+  const a = Buffer.from(authHeader);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -20,7 +28,7 @@ export async function GET(request: Request) {
     const { data: trialTenants, error } = await supabaseAdmin
       .from('tenants')
       .select('id, name, email')
-      .eq('plan', 'trial')
+      .eq('plan', 'free_trial')
       .eq('status', 'active')
       .gte('created_at', twelveDaysAgo.toISOString())
       .lte('created_at', elevenDaysAgo.toISOString());
@@ -50,7 +58,7 @@ export async function GET(request: Request) {
     const { data: urgentTenants } = await supabaseAdmin
       .from('tenants')
       .select('id, name, email')
-      .eq('plan', 'trial')
+      .eq('plan', 'free_trial')
       .eq('status', 'active')
       .gte('created_at', fourteenDaysAgo.toISOString())
       .lte('created_at', thirteenDaysAgo.toISOString());

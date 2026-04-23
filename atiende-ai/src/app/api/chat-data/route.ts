@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -96,7 +97,7 @@ function validateSql(sql: string, tenantId: string): { ok: true } | { ok: false;
     }
   }
 
-  // BUG 4 FIX: validación estricta del filtro tenant_id.
+  // Validación estricta del filtro tenant_id.
   // Antes solo verificábamos `sql.includes(tenantId)` — trivialmente
   // bypass-eable con prompt injection: `SELECT * FROM contacts WHERE 1=1
   // -- <tenant-uuid>` hacía que el UUID estuviera en el string pero en un
@@ -144,6 +145,13 @@ export async function POST(req: NextRequest) {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  if (await checkApiRateLimit(`${user.id}:chat_data`, 15, 60)) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': '60' } },
+    );
+  }
 
   const { data: tenant } = await supabase
     .from('tenants')

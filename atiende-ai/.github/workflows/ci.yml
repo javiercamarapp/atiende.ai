@@ -47,6 +47,11 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Lint
         run: npm run lint
 
@@ -54,7 +59,18 @@ jobs:
         run: npm run type-check
 
       - name: Run tests
-        run: npm test
+        run: npx vitest run --coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
 
       - name: Build
         run: npm run build
+
+      - name: Smoke test
+        run: bash scripts/ci/smoke-test.sh

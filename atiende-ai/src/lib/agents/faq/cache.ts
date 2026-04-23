@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// FAQ response cache (AUDIT P2 item 8)
+// FAQ response cache
 //
 // El fast-path de FAQ (handleFAQ) ya evita el LLM. Pero a escala (100+
 // mensajes/día por tenant) las queries Supabase se repiten constantemente:

@@ -19,7 +19,7 @@ async function getAdminStats() {
   ] = await Promise.all([
     supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }),
     supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-    supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }).eq('plan', 'trial'),
+    supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }).eq('plan', 'free_trial'),
     supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
     supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).gte('created_at', monthStart),
     supabaseAdmin.from('tenants').select('id, plan').eq('status', 'active'),

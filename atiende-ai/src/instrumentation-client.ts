@@ -4,10 +4,11 @@
 
 import * as Sentry from '@sentry/nextjs';
 
+// See sentry.server.config.ts — hardcoded DSN fallback removed for public
+// repo; missing NEXT_PUBLIC_SENTRY_DSN disables Sentry rather than leaking
+// the real DSN (which would let anyone spam our ingest quota).
 Sentry.init({
-  dsn:
-    process.env.NEXT_PUBLIC_SENTRY_DSN ||
-    'https://30827be580c7d347af98c473f618d7e7@o4511223361896448.ingest.us.sentry.io/4511223364648960',
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || '',
 
   // Session replay (record user sessions for debugging)
   integrations: [Sentry.replayIntegration()],
@@ -16,8 +17,6 @@ Sentry.init({
   tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
   replaysSessionSampleRate: 0.1, // 10% of sessions
   replaysOnErrorSampleRate: 1.0, // 100% when error occurs
-
-  enableLogs: true,
 
   // WhatsApp phone numbers = PII. Keep OFF; mask explicitly where needed.
   sendDefaultPii: false,

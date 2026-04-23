@@ -10,7 +10,7 @@ Not a chatbot. Not a wrapper. An <strong>autonomous operations platform</strong>
 
 <p align="center">
   <a href="https://useatiende.ai"><img src="https://img.shields.io/badge/🌐_Live-useatiende.ai-000?style=for-the-badge" /></a>
-  <img src="https://img.shields.io/badge/tests-513%2F513-success?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/tests-589%2F589-success?style=for-the-badge" />
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
   <img src="https://img.shields.io/badge/Next.js-15-000?style=for-the-badge&logo=nextdotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20pgvector-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" />
@@ -115,7 +115,7 @@ The market was waiting for all four to click simultaneously. They did.
 | Metric | Value |
 |---|---:|
 | Production code (TS/TSX) | **55,300+ LOC** |
-| Tests (Vitest, all passing) | **513 / 513** |
+| Tests (Vitest, all passing) | **589 / 589** |
 | Migrations (idempotent SQL) | **25** |
 | API routes | **70** |
 | Scheduled cron jobs | **25** |
@@ -124,7 +124,7 @@ The market was waiting for all four to click simultaneously. They did.
 | Tool handlers | **30+** (book, cancel, modify, confirm, send, mark, etc.) |
 | LLM models routed by intent | **9** (Grok, GPT, Claude, Gemini, DeepSeek, Qwen) |
 | Webhook p95 | **< 500ms** (Meta requires < 5s) |
-| Audit rounds survived | **18** (R11–R18 all committed + tested) |
+| Security hardening iterations | **18** |
 
 ## Tech stack
 
@@ -180,7 +180,7 @@ Production SaaS handling Mexican health data. The bar is high:
 - ✅ `waitUntil` for fire-and-forget (no killed background promises)
 - ✅ Dynamic OpenRouter price refresh (cron) — cost dashboards can't go stale
 
-Every item above has a test. Every item has a commit trail in `git log` under `audit-rNN` tags.
+Every item above has a test.
 
 ## Getting started
 
@@ -207,7 +207,7 @@ Full ops:
 
 ```bash
 npm run type-check   # TypeScript strict pass
-npm run test         # Vitest — 513/513 passing
+npm run test         # Vitest — 589/589 passing
 npm run build        # Production build
 npm run lint         # ESLint
 ```
@@ -263,7 +263,7 @@ Sister project: **[Moni AI](https://monifinancialai.com)** — consumer fintech 
 
 **Proprietary.** © atiende.ai 2026. All rights reserved. Commercial use requires a signed agreement.
 
-The repo is public so investors, collaborators, and early partners can audit the system — not as OSS. If you want to build on top, [reach out](https://x.com/javiercamarapp).
+The repo is public so collaborators and early partners can review the system — not as OSS. If you want to build on top, [reach out](https://x.com/javiercamarapp).
 
 ## Talk to us
 
@@ -271,7 +271,7 @@ The repo is public so investors, collaborators, and early partners can audit the
 - 📩 **DMs open:** [x.com/javiercamarapp](https://x.com/javiercamarapp)
 - 💼 **LinkedIn:** [Javier Cámara Porte Petit](https://www.linkedin.com/in/javier-cámara-porte-petit)
 
-Investors looking at the LATAM SMB × agentic-AI thesis — we're happy to walk through the playbook, unit economics, and GTM in detail.
+If you're building in the LATAM SMB × agentic-AI space — we're happy to walk through the playbook and GTM in detail.
 
 ---
 

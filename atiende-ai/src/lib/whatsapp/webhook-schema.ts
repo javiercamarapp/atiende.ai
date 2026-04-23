@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// WhatsApp webhook payload schema (AUDIT P2 item 6)
+// WhatsApp webhook payload schema
 //
 // Meta envía un JSON estructurado predecible pero con campos opcionales. Antes
 // lo accedíamos con optional chaining crudo (`body?.entry?.[0]?.changes?.[0]`).
@@ -121,8 +121,8 @@ export function checkWebhookReplay(
 
 /**
  * Extrae todos los `messages[].id` (wa_message_id) del payload. Usado para
- * idempotency multi-mensaje (AUDIT P1 item 1): un batch puede traer varios
- * mensajes; antes solo verificábamos `messages[0].id`.
+ * Idempotency multi-mensaje: un batch puede traer varios mensajes; antes
+ * solo verificábamos `messages[0].id`.
  */
 export function extractMessageIds(payload: WhatsAppWebhookPayload): string[] {
   const ids: string[] = [];

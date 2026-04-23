@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeCronAgents } from '@/lib/marketplace/engine';
+import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authFail = requireCronAuth(request);
+  if (authFail) return authFail;
 
   const now = new Date();
   const hour = now.getUTCHours();

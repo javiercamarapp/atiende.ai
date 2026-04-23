@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- RLS MULTI-TENANT SAFETY (AUDIT-R10 ALTO)
+-- RLS MULTI-TENANT SAFETY
 --
 -- Problema detectado:
 --   `get_user_tenant_id()` usa `SELECT id FROM tenants WHERE user_id = auth.uid() LIMIT 1`.

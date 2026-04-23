@@ -21,7 +21,7 @@ export async function searchKnowledge(
   });
   const queryEmbedding = embResponse.data[0].embedding;
 
-  // 2. Hybrid search (pgvector + tsvector con RRF) — AUDIT R13 rubro AI/ML.
+  // 2. Hybrid search (pgvector + tsvector con RRF).
   // Mejor recall para queries cortas en español ("cita muela" matchea
   // "extracción dental" vía vector Y "muela" vía tsvector).
   // Fallback automático a search_knowledge legacy si el RPC no existe
@@ -64,6 +64,68 @@ export async function searchKnowledge(
     .join('\n---\n');
 }
 
+export interface KnowledgeChunkMatch {
+  content: string;
+  category: string | null;
+  source: string | null;
+  metadata: Record<string, unknown>;
+  similarity: number;
+}
+
+// Variant of searchKnowledge that returns raw chunks with metadata.
+// Used by the knowledge preview-chat endpoint to render "source chips"
+// linking an answer back to its zone. Keeps searchKnowledge() untouched so
+// the live WhatsApp bot path is not modified in Fase 2.
+export async function searchKnowledgeChunks(
+  tenantId: string,
+  query: string,
+  limit: number = 5,
+): Promise<KnowledgeChunkMatch[]> {
+  const embResponse = await getOpenAI().embeddings.create({
+    model: 'text-embedding-3-small',
+    input: query,
+  });
+  const queryEmbedding = embResponse.data[0].embedding;
+
+  // Direct query: cosine distance via pgvector `<=>` operator.
+  // ORDER BY distance ASC, LIMIT N. Returns metadata so callers can map
+  // a match back to its owning zone.
+  const { data, error } = await supabaseAdmin.rpc('search_knowledge_meta', {
+    p_tenant: tenantId,
+    p_query: queryEmbedding,
+    p_limit: limit,
+  });
+
+  if (!error && Array.isArray(data) && data.length > 0) {
+    return (data as Array<{
+      content: string; category: string | null; source: string | null;
+      metadata: Record<string, unknown> | null; similarity: number;
+    }>).map((d) => ({
+      content: d.content,
+      category: d.category,
+      source: d.source,
+      metadata: d.metadata ?? {},
+      similarity: d.similarity,
+    }));
+  }
+
+  // Fallback when the RPC is not installed: direct table query with
+  // `<=>` operator. Slightly slower but works without the function.
+  const { data: fallback } = await supabaseAdmin
+    .from('knowledge_chunks')
+    .select('content, category, source, metadata')
+    .eq('tenant_id', tenantId)
+    .limit(limit);
+
+  return (fallback ?? []).map((row) => ({
+    content: row.content,
+    category: row.category,
+    source: row.source,
+    metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    similarity: 0,
+  }));
+}
+
 // Ingestar nuevo conocimiento (usado en onboarding y manual)
 export async function ingestKnowledge(
   tenantId: string,
@@ -85,6 +147,60 @@ export async function ingestKnowledge(
     category,
     source,
   });
+}
+
+// Ingestar un chunk con metadata JSONB para trazabilidad.
+// Usado por save-answer (metadata.question_key/zone), report-correction
+// (metadata.origin='faq') y uploads de docs (metadata.doc_id). La metadata
+// permite DELETE+INSERT dirigido sin afectar chunks de otras fuentes.
+export async function ingestKnowledgeWithMetadata(
+  tenantId: string,
+  content: string,
+  category: string,
+  source: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  const embResponse = await getOpenAI().embeddings.create({
+    model: 'text-embedding-3-small',
+    input: content,
+  });
+
+  await supabaseAdmin.from('knowledge_chunks').insert({
+    tenant_id: tenantId,
+    content,
+    embedding: embResponse.data[0].embedding,
+    category,
+    source,
+    metadata,
+  });
+}
+
+// Variant of ingestKnowledgeBatch that writes per-chunk metadata JSONB.
+// Uses a single OpenAI embeddings API call (supports up to 2048 inputs)
+// so tagging metadata doesn't cost extra network trips — critical for the
+// initial onboarding path which ingests ~10 chunks at once.
+export async function ingestKnowledgeBatchWithMetadata(
+  tenantId: string,
+  chunks: { content: string; category: string; metadata: Record<string, unknown> }[],
+  source: string = 'onboarding',
+): Promise<void> {
+  if (chunks.length === 0) return;
+
+  const embResponse = await getOpenAI().embeddings.create({
+    model: 'text-embedding-3-small',
+    input: chunks.map((c) => c.content),
+  });
+
+  const rows = chunks.map((chunk, i) => ({
+    tenant_id: tenantId,
+    content: chunk.content,
+    embedding: embResponse.data[i].embedding,
+    category: chunk.category,
+    source,
+    metadata: chunk.metadata,
+  }));
+
+  await supabaseAdmin.from('knowledge_chunks').insert(rows);
 }
 
 // Ingestar multiples chunks de una vez (batch)

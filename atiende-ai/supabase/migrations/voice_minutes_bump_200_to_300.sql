@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- VOICE MINUTES — bump default 200 → 300 minutos (AUDIT-VC R11)
+-- VOICE MINUTES — bump default 200 → 300 minutos
 --
 -- Contexto de negocio:
 --   - Consumo promedio por consultorio observado: ~300 min/mes.
@@ -68,4 +68,4 @@ WHERE vu.tenant_id = t.id
   AND vu.year_month = to_char(NOW(), 'YYYY-MM');
 
 COMMENT ON FUNCTION increment_voice_minutes IS
-  'UPSERT atómico. Default 300 min/mes (bumpeado de 200 en AUDIT-VC R11).';
+  'UPSERT atómico. Default 300 min/mes (bumpeado de 200).';

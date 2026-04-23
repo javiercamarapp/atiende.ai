@@ -1,11 +1,11 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- RLS WITH CHECK — defensive explicit policy clauses (AUDIT R18)
+-- RLS WITH CHECK — defensive explicit policy clauses
 --
--- Motivación: el audit R18 señaló que las policies RLS tenían solo `USING`
--- sin `WITH CHECK` explícito. En Postgres `FOR ALL USING ...` sí aplica la
--- expresión también a INSERT/UPDATE new-rows (comportamiento documentado),
--- pero ser EXPLÍCITO es buena práctica defensiva:
---   - Ninguna lectura ambigua del código por parte de auditores.
+-- Las policies RLS tenían solo `USING` sin `WITH CHECK` explícito. En
+-- Postgres `FOR ALL USING ...` sí aplica la expresión también a
+-- INSERT/UPDATE new-rows (comportamiento documentado), pero ser EXPLÍCITO
+-- es buena práctica defensiva:
+--   - Ninguna lectura ambigua del código.
 --   - Si en el futuro cambiamos a `FOR SELECT` / `FOR INSERT` por separado,
 --     el comportamiento de WITH CHECK queda claramente definido.
 --   - Cumple con recomendación oficial de Supabase.

@@ -1,7 +1,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // GATES — controles de entrada antes de procesar un mensaje de WhatsApp
 //
-// Extraído de processor.ts (AUDIT sub-agent 4 "God Object"). Estas checks
+// Extraído de processor.ts. Estas checks
 // corren ANTES de la ingestión/LLM; rechazan tráfico no deseado, tenants
 // inactivos, o usuarios fuera de cuota. Si cualquiera falla, se responde
 // algo útil al usuario y se devuelve `false` para abortar el pipeline.
@@ -19,6 +19,7 @@
 
 import { sendTextMessage } from '@/lib/whatsapp/send';
 import { checkRateLimit, checkTenantLimit, checkTenantRateLimit } from '@/lib/rate-limit';
+import { PLAN_MSG_LIMITS_MONTHLY } from '@/lib/config';
 
 /** Shape mínimo del tenant que necesitan los gates. */
 export interface GatesTenant {
@@ -29,13 +30,9 @@ export interface GatesTenant {
   [key: string]: unknown;
 }
 
-/** Límites de mensajes outbound por plan (mes calendario, UTC). */
-const PLAN_MSG_LIMITS: Record<string, number> = {
-  free_trial: 50,
-  basic: 500,
-  pro: 2000,
-  premium: 10000,
-};
+/** Límites de mensajes outbound por plan (mes calendario, UTC).
+ *  Delegado a config.ts — fuente de verdad única compartida con billing/KPI. */
+const PLAN_MSG_LIMITS = PLAN_MSG_LIMITS_MONTHLY;
 
 /**
  * Ejecuta todos los gates. Si alguno bloquea, envía un mensaje al usuario
@@ -76,10 +73,10 @@ export async function runGates(
     }
   }
 
-  // 4. Monthly cap — reserva ATÓMICA en Redis (AUDIT R14 BUG-002).
-  // INCR + DECR si excede; garantiza que concurrent webhooks NO pueden pasar
-  // el mismo count desfasado al LLM.
-  const monthlyLimit = PLAN_MSG_LIMITS[tenant.plan] ?? 50;
+  // 4. Monthly cap — reserva ATÓMICA en Redis. INCR + DECR si excede;
+  // garantiza que concurrent webhooks NO pueden pasar el mismo count
+  // desfasado al LLM.
+  const monthlyLimit = PLAN_MSG_LIMITS[tenant.plan] ?? PLAN_MSG_LIMITS.free_trial;
   const { reserveMonthlyMessage } = await import('@/lib/rate-limit-monthly');
   const reservation = await reserveMonthlyMessage(tenant.id, monthlyLimit);
   if (!reservation.allowed) {

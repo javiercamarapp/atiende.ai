@@ -129,52 +129,60 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let totalCost = 0;
   const perTenant: Array<Record<string, unknown>> = [];
 
-  for (const t of tenants) {
-    const tenantId = t.id as string;
-    const tenantName = (t.name as string) || '';
-    const ownerPhone = (t.owner_phone as string) || (t.phone as string) || '';
-    const phoneNumberId = t.wa_phone_number_id as string | null;
+  // Paralelizar por chunks con cap de 5. Serial era O(tenants x ~3s por LLM)
+  // y bloqueaba maxDuration=300s a >100 tenants. Cap evita saturar rate
+  // limits de OpenRouter.
+  const CONCURRENCY = 5;
+  for (let i = 0; i < tenants.length; i += CONCURRENCY) {
+    const chunk = tenants.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (t) => {
+        const tenantId = t.id as string;
+        const tenantName = (t.name as string) || '';
+        const ownerPhone = (t.owner_phone as string) || (t.phone as string) || '';
+        const phoneNumberId = t.wa_phone_number_id as string | null;
 
-    try {
-      // Idempotencia — no re-enviar si ya existe
-      const { data: existing } = await supabaseAdmin
-        .from('digest_history')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('week_start', weekStartDay)
-        .maybeSingle();
-      if (existing) {
-        perTenant.push({ tenant_id: tenantId, skipped: 'already_sent' });
-        processed++;
-        continue;
-      }
-
-      const metrics = await collectTenantMetrics(tenantId, weekStart, weekEnd);
-      const { text, cost } = await generateDigestText(tenantName, metrics);
-      totalCost += cost;
-
-      if (ownerPhone && phoneNumberId) {
         try {
-          await sendTextMessage(phoneNumberId, ownerPhone, text);
-          sent++;
-        } catch (sendErr) {
-          console.error(`[cron/weekly-digest] send failed for tenant ${tenantId}:`, sendErr);
+          const { data: existing } = await supabaseAdmin
+            .from('digest_history')
+            .select('id')
+            .eq('tenant_id', tenantId)
+            .eq('week_start', weekStartDay)
+            .maybeSingle();
+          if (existing) {
+            perTenant.push({ tenant_id: tenantId, skipped: 'already_sent' });
+            processed++;
+            return;
+          }
+
+          const metrics = await collectTenantMetrics(tenantId, weekStart, weekEnd);
+          const { text, cost } = await generateDigestText(tenantName, metrics);
+          totalCost += cost;
+
+          if (ownerPhone && phoneNumberId) {
+            try {
+              await sendTextMessage(phoneNumberId, ownerPhone, text);
+              sent++;
+            } catch (sendErr) {
+              console.error(`[cron/weekly-digest] send failed for tenant ${tenantId}:`, sendErr);
+            }
+          }
+
+          await supabaseAdmin.from('digest_history').insert({
+            tenant_id: tenantId,
+            week_start: weekStartDay,
+            digest_text: text,
+            cost_usd: cost,
+          });
+
+          perTenant.push({ tenant_id: tenantId, metrics, cost_usd: cost });
+          processed++;
+        } catch (err) {
+          console.error(`[cron/weekly-digest] tenant ${tenantId} failed:`, err);
+          failed++;
         }
-      }
-
-      await supabaseAdmin.from('digest_history').insert({
-        tenant_id: tenantId,
-        week_start: weekStartDay,
-        digest_text: text,
-        cost_usd: cost,
-      });
-
-      perTenant.push({ tenant_id: tenantId, metrics, cost_usd: cost });
-      processed++;
-    } catch (err) {
-      console.error(`[cron/weekly-digest] tenant ${tenantId} failed:`, err);
-      failed++;
-    }
+      }),
+    );
   }
 
   await logCronRun({

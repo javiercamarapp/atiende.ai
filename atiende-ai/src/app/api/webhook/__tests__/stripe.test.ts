@@ -6,14 +6,19 @@ const mockSelect = vi.fn(() => ({
     single: vi.fn(() => Promise.resolve({ data: { id: 'tenant-1' }, error: null })),
   })),
 }));
+// AUDIT R19 #9: processed_stripe_events insert para dedup — default: evento nuevo.
+const mockInsert = vi.fn(() => Promise.resolve({ data: null, error: null }));
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
     from: vi.fn((table: string) => {
+      if (table === 'processed_stripe_events') {
+        return { insert: mockInsert };
+      }
       if (table === 'tenants') {
         return { update: mockUpdate, select: mockSelect };
       }
-      return { update: mockUpdate, select: mockSelect };
+      return { update: mockUpdate, select: mockSelect, insert: mockInsert };
     }),
   },
 }));

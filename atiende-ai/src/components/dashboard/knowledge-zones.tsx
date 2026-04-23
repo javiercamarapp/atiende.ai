@@ -1,0 +1,97 @@
+'use client';
+
+import { useMemo } from 'react';
+import Link from 'next/link';
+import { Sparkles } from 'lucide-react';
+import type { Question } from '@/lib/onboarding/questions';
+import {
+  getVisibleZones,
+  computeZoneCompletion,
+  computeOverallCompletion,
+} from '@/lib/knowledge/zone-map';
+import { KnowledgeZoneTile } from '@/components/dashboard/knowledge-zone-tile';
+
+const DELAY_CLASSES = [
+  'animate-delay-100', 'animate-delay-200', 'animate-delay-300', 'animate-delay-400',
+  'animate-delay-500', 'animate-delay-600', 'animate-delay-700', 'animate-delay-800',
+  'animate-delay-900', 'animate-delay-1000',
+];
+
+export interface KnowledgeZonesProps {
+  verticalQuestions: Question[];
+  initialResponses: Record<string, unknown>;
+}
+
+export function KnowledgeZones({ verticalQuestions, initialResponses }: KnowledgeZonesProps) {
+  const visibleZones = useMemo(() => getVisibleZones(verticalQuestions), [verticalQuestions]);
+
+  const answeredKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const [key, value] of Object.entries(initialResponses)) {
+      if (value === null || value === undefined) continue;
+      if (typeof value === 'string' && value.trim() === '') continue;
+      if (Array.isArray(value) && value.length === 0) continue;
+      set.add(key);
+    }
+    return set;
+  }, [initialResponses]);
+
+  const overall = useMemo(
+    () => computeOverallCompletion(verticalQuestions, answeredKeys),
+    [verticalQuestions, answeredKeys],
+  );
+
+  const HERO_CIRC = 100;
+  const heroOffset = HERO_CIRC - (overall.percent / 100) * HERO_CIRC;
+
+  return (
+    <section className="rounded-2xl bg-white/80 backdrop-blur-xl border border-zinc-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden animate-element animate-delay-100">
+      {/* Compact hero bar */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100/80">
+        <div className="relative w-9 h-9 shrink-0" aria-hidden="true">
+          <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+            <circle cx="18" cy="18" r="15.9155" fill="none" className="stroke-zinc-100" strokeWidth="3" />
+            <circle
+              cx="18" cy="18" r="15.9155" fill="none"
+              className="stroke-[hsl(var(--brand-blue))] transition-[stroke-dashoffset] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              strokeWidth="3" strokeLinecap="round"
+              strokeDasharray={HERO_CIRC} strokeDashoffset={heroOffset}
+            />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-zinc-900 tabular-nums">
+            {overall.percent}%
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-[hsl(var(--brand-blue))]" strokeWidth={1.75} />
+            <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--brand-blue))] font-semibold">
+              Conocimiento
+            </span>
+          </div>
+          <p className="text-[13px] font-medium text-zinc-700 leading-tight">
+            {overall.answered === overall.total
+              ? 'Tu agente ya sabe todo'
+              : `${overall.answered} de ${overall.total} respuestas`}
+          </p>
+        </div>
+      </div>
+
+      {/* Zone grid — tiles link to /knowledge/[zoneId] */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-px bg-zinc-100/60">
+        {visibleZones.map((zone, i) => {
+          const completion = computeZoneCompletion(zone.id, verticalQuestions, answeredKeys);
+          return (
+            <Link key={zone.id} href={`/knowledge/${zone.id}`} className="contents">
+              <KnowledgeZoneTile
+                zone={zone}
+                completion={completion}
+                delayClass={DELAY_CLASSES[i % DELAY_CLASSES.length]}
+              />
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}

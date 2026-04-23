@@ -4,6 +4,8 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
+import pLimit from 'p-limit';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { runOrchestrator } from '@/lib/llm/orchestrator';
 import { getToolSchemas } from '@/lib/llm/tool-executor';
@@ -11,14 +13,20 @@ import { AGENT_REGISTRY, buildTenantContext, getSystemPrompt } from '@/lib/agent
 import type { AgentName } from '@/lib/agents/types';
 
 /**
- * Verifica el header `Authorization: Bearer ${CRON_SECRET}`.
- * Vercel cron lo añade automáticamente. Retorna NextResponse con 401 si falla;
- * retorna `null` si todo OK (caller continúa).
+ * Verifica el header `Authorization: Bearer ${CRON_SECRET}` usando comparación
+ * constant-time (timingSafeEqual). Vercel cron añade el header automáticamente.
+ * Antes usaba `!==` (vulnerable a timing attacks).
  */
 export function requireCronAuth(req: NextRequest): NextResponse | null {
   const auth = req.headers.get('authorization');
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
-  if (!process.env.CRON_SECRET || auth !== expected) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || !auth) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const expected = `Bearer ${secret}`;
+  const authBuf = Buffer.from(auth);
+  const expectedBuf = Buffer.from(expected);
+  if (authBuf.length !== expectedBuf.length || !timingSafeEqual(authBuf, expectedBuf)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   return null;
@@ -42,7 +50,10 @@ export async function listEligibleTenants(opts: {
   return (tenants as Array<Record<string, unknown>>).filter((t) => {
     const features = (t.features as Record<string, unknown>) || {};
     if (requireToolCalling && features.tool_calling !== true) return false;
-    if (opts.requireFeature && features[opts.requireFeature] === false) return false;
+    // requireFeature debe ser opt-in explícito (=== true), no opt-out
+    // (!== false). Antes: un tenant sin la flag definida pasaba el filtro
+    // y recibía crons que no había activado.
+    if (opts.requireFeature && features[opts.requireFeature] !== true) return false;
     return true;
   });
 }
@@ -195,18 +206,24 @@ export async function runAgentWorkerForAllTenants(opts: {
 }> {
   const start = Date.now();
   const tenants = await listEligibleTenants({ requireFeature: opts.requireFeature });
-  const results: WorkerRunResult[] = [];
 
-  for (const tenant of tenants) {
-    const ctx = buildTenantContext(tenant);
-    const trigger = opts.triggerMessage({
-      tenantId: ctx.tenantId,
-      tomorrowDate: ctx.tomorrowDate,
-      currentDatetime: ctx.currentDatetime,
-    });
-    const r = await runAgentWorker({ tenant, agentName: opts.agentName, triggerMessage: trigger });
-    results.push(r);
-  }
+  // Antes era serial (`for ... await`). Con 100 tenants x 5-10s de LLM el
+  // cron se cortaba por maxDuration=300s dejando el 60% sin procesar.
+  // Concurrencia 5 balancea latencia vs rate-limit de OpenRouter/WhatsApp.
+  const limit = pLimit(5);
+  const results: WorkerRunResult[] = await Promise.all(
+    tenants.map((tenant) =>
+      limit(async () => {
+        const ctx = buildTenantContext(tenant);
+        const trigger = opts.triggerMessage({
+          tenantId: ctx.tenantId,
+          tomorrowDate: ctx.tomorrowDate,
+          currentDatetime: ctx.currentDatetime,
+        });
+        return runAgentWorker({ tenant, agentName: opts.agentName, triggerMessage: trigger });
+      }),
+    ),
+  );
 
   const succeeded = results.filter((r) => r.success).length;
   const failed = results.length - succeeded;

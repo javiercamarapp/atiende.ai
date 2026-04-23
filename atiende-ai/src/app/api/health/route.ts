@@ -1,13 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getMetrics, pingRedis } from '@/lib/monitoring';
 
 export const dynamic = 'force-dynamic';
 
-// PUBLIC ENDPOINT — Intentionally unauthenticated
-// Used by Vercel, load balancers, and uptime monitors
-// Does NOT expose any sensitive data
-export async function GET() {
+// PUBLIC ENDPOINT — Used by Vercel, load balancers, and uptime monitors
+// Returns minimal status for unauthenticated requests
+// Returns full operational metrics only with valid CRON_SECRET bearer token
+export async function GET(req: NextRequest) {
+  // Minimal public health check
+  const authHeader = req.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
+  const isAuthed = cronSecret && authHeader === `Bearer ${cronSecret}`;
+
+  if (!isAuthed) {
+    return NextResponse.json({ status: 'ok', timestamp: new Date().toISOString() });
+  }
+
   const start = Date.now();
 
   // ─── Database (Supabase) ──────────────────────────────────────────────

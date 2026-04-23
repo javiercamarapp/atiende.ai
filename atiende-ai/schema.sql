@@ -36,7 +36,7 @@ google_place_id TEXT, website TEXT,
 wa_phone_number_id TEXT,
 wa_waba_id TEXT,
 wa_display_phone TEXT,
-wa_token TEXT, -- encrypted business token
+wa_token TEXT, -- plaintext; reserved for future per-tenant WA tokens. Current code uses global WA_SYSTEM_TOKEN env var. Encryption tracked in roadmap.
 has_chat_agent BOOLEAN DEFAULT false,
 has_voice_agent BOOLEAN DEFAULT false,
 -- Prompts
@@ -46,7 +46,7 @@ welcome_message TEXT DEFAULT 'Hola! Bienvenido(a). Soy su asistente virtual. En 
 -- LLM config
 llm_primary TEXT DEFAULT 'google/gemini-2.5-flash-lite',
 llm_sensitive TEXT DEFAULT 'anthropic/claude-sonnet-4-6',
-llm_classifier TEXT DEFAULT 'openai/gpt-5-nano',
+llm_classifier TEXT DEFAULT 'openai/gpt-4o-mini',
 temperature DECIMAL(2,1) DEFAULT 0.5,
 -- Branding
 bot_name TEXT DEFAULT 'Asistente',
@@ -400,9 +400,19 @@ ORDER BY kc.embedding <=> p_query
 LIMIT p_limit;
 $$;
 
+-- Helper usado por todas las políticas RLS. SECURITY DEFINER + search_path
+-- bloqueado es requerido por el linter de Supabase (anti-patrón
+-- `function_search_path_mutable`). El cuerpo es una sola SELECT acotada al
+-- caller, por lo que la elevación está limitada a devolver SU propio
+-- tenant_id; no concede privilegios cross-tenant.
 CREATE OR REPLACE FUNCTION get_user_tenant_id()
-RETURNS UUID LANGUAGE sql STABLE AS $$
-SELECT id FROM tenants
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+SELECT id FROM public.tenants
 WHERE user_id = auth.uid()
 LIMIT 1;
 $$;
@@ -424,10 +434,10 @@ ALTER TABLE daily_analytics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE onboarding_responses ENABLE ROW LEVEL SECURITY;
 
--- AUDIT R18: WITH CHECK explícito en todas las policies tenant-scoped. En
--- Postgres `FOR ALL USING ...` sí aplica la expresión a INSERT/UPDATE
--- (new-rows) por default, pero ser explícito elimina ambigüedad y cumple
--- con recomendación oficial de Supabase para auditorías.
+-- WITH CHECK explícito en todas las policies tenant-scoped. En Postgres
+-- `FOR ALL USING ...` sí aplica la expresión a INSERT/UPDATE (new-rows)
+-- por default, pero ser explícito elimina ambigüedad y cumple con
+-- recomendación oficial de Supabase.
 CREATE POLICY "tenant_own" ON tenants FOR ALL
 USING (user_id = auth.uid())
 WITH CHECK (user_id = auth.uid());
@@ -520,7 +530,8 @@ CREATE INDEX idx_wh_logs_tenant ON webhook_logs(tenant_id, created_at DESC);
 CREATE INDEX idx_wh_logs_provider ON webhook_logs(provider, created_at DESC);
 ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "tenant_data" ON webhook_logs FOR ALL
-USING (tenant_id = get_user_tenant_id());
+USING (tenant_id = get_user_tenant_id())
+WITH CHECK (tenant_id = get_user_tenant_id());
 
 -- ═══════════════════════════════════════════════════════════
 -- 21. AGENT VERSIONING (replaces webhook_logs abuse)

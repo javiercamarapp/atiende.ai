@@ -115,8 +115,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * AUDIT-R7 ALTO: AbortController para cancelar la petición HTTP real al
- * provider cuando nuestro timeout se dispara.
+ * AbortController para cancelar la peticion HTTP real al provider cuando
+ * nuestro timeout se dispara.
  *
  * Antes, si el modelo primario tardaba 11s y se lanzaba
  * OrchestratorTimeoutError, la llamada HTTP SEGUÍA corriendo en el fondo
@@ -150,10 +150,10 @@ function withTimeoutAbort<T>(
  * que recibe (name, args) y resuelve a un ToolExecutionResult. Aquí lo
  * componemos cerrando sobre el `ToolContext` extraído del orchestrator ctx.
  *
- * AUDIT R18: el cache de mutations exitosas se comparte entre primary y
- * fallback (ambos construyen ToolContext pasando la MISMA Map) para
- * defender contra doble-ejecución aún si el fallback LLM intenta repetir
- * una mutación ya hecha.
+ * El cache de mutations exitosas se comparte entre primary y fallback
+ * (ambos construyen ToolContext pasando la MISMA Map) para defender contra
+ * doble-ejecución aún si el fallback LLM intenta repetir una mutación ya
+ * hecha.
  */
 function buildToolExecutor(
   ctx: OrchestratorContext,
@@ -177,7 +177,7 @@ function buildToolExecutor(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * AUDIT P2 item 5 — GLOBAL wall-clock timeout sobre primary+fallback+tools.
+ * Global wall-clock timeout sobre primary+fallback+tools.
  * Antes cada modelo tenía su propio timeout (10s + 10s = 20s peor caso),
  * más tool execution en el medio (4s × N rondas). En serverless edge eso
  * puede llegar a 25-30s y chocar con el timeout de la función o el retry
@@ -213,17 +213,17 @@ async function runOrchestratorInner(
   ctx: OrchestratorContext,
   globalSignal: AbortSignal,
 ): Promise<OrchestratorResult> {
-  // AUDIT R18: cache compartido entre primary y fallback para defense-in-depth
-  // contra ghost mutations. Vive solo en este closure del turn (no global) →
-  // nunca leak de state entre invocaciones del orquestador.
+  // Cache compartido entre primary y fallback para defense-in-depth contra
+  // ghost mutations. Vive solo en este closure del turn (no global) → nunca
+  // leak de state entre invocaciones del orquestador.
   const sharedSuccessCache = new Map<string, ToolExecutionResult>();
   const toolExecutor = buildToolExecutor(ctx, sharedSuccessCache);
   const agentUsed = ctx.agentName || DEFAULT_AGENT_NAME;
 
-  // AUDIT P2 item 7: circuit breaker. Si OpenRouter está caído (5+ fallas
-  // consecutivas en 60s), bloqueamos nuevos requests por 30s. El caller
-  // (processor.ts) atrapa CircuitOpenError y responde mensaje corto al
-  // paciente sin quemar 20s de timeouts primary+fallback.
+  // Circuit breaker. Si OpenRouter está caído (5+ fallas consecutivas en
+  // 60s), bloqueamos nuevos requests por 30s. El caller (processor.ts)
+  // atrapa CircuitOpenError y responde mensaje corto al paciente sin quemar
+  // 20s de timeouts primary+fallback.
   await checkCircuit();
 
   // Rate limit gate — lanza RateLimitError si se excede presupuesto OpenRouter
@@ -245,7 +245,7 @@ async function runOrchestratorInner(
         tools: ctx.tools,
         toolExecutor,
         tool_choice: 'auto',
-        // BUG 7 FIX: tool-calling requiere espacio para que el modelo emita
+        // Tool-calling requiere espacio para que el modelo emita
         // el JSON del tool_call + razonamiento intermedio + respuesta final.
         maxTokens: ctx.tools.length > 0 ? 2000 : 800,
         temperature: 0.5,
@@ -256,7 +256,7 @@ async function runOrchestratorInner(
       PRIMARY_TIMEOUT_MS,
     );
 
-    // AUDIT P2 item 7: éxito primary → resetear contador del breaker.
+    // Primary OK → resetear contador del breaker.
     // Best-effort (no await crítico; si Redis falla seguimos).
     void reportBreakerSuccess();
 
@@ -274,15 +274,15 @@ async function runOrchestratorInner(
     const errName = primaryErr instanceof Error ? primaryErr.name : 'unknown';
     const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
 
-    // AUDIT P2 item 7: reportar falla al breaker. Si supera threshold,
-    // el breaker se abrirá y subsequent requests se rechazan inmediato.
+    // Reportar falla al breaker. Si supera threshold, el breaker se abrirá
+    // y subsequent requests se rechazan inmediato.
     void reportBreakerFailure(`primary:${errName}`);
     console.warn(
       `[orchestrator] primary model (${MODELS.ORCHESTRATOR}) failed → ${errName}: ${errMsg}. Trying fallback.`,
     );
 
-    // AUDIT-R8 CRÍT: rescatar tools ya ejecutados por el primario antes del crash.
-    // Sin esto, el fallback re-ejecutaba mutaciones (book_appointment, etc)
+    // Rescatar tools ya ejecutados por el primario antes del crash. Sin
+    // esto, el fallback re-ejecutaba mutaciones (book_appointment, etc)
     // causando doble reserva.
     let primaryPartialCalls: ToolCallRecord[] = [];
     let primaryTokensIn = 0;
@@ -295,20 +295,18 @@ async function runOrchestratorInner(
       primaryModel = primaryErr.partialModel;
     }
 
-    // Detectar mutaciones ya ejecutadas exitosamente.
-    // AUDIT-R9 self-fix: además de !tc.error (no throw), filtramos por
-    // result.success !== false. Una tool puede retornar {success:false,
-    // error_code:'SLOT_TAKEN'} sin throw — eso NO es mutación exitosa, fue
-    // rechazada antes del INSERT. Si lo tratáramos como mutación, el
-    // fallback creería que ya se hizo y no reintentaría.
+    // Detectar mutaciones ya ejecutadas exitosamente. Además de !tc.error
+    // (no throw), filtramos por result.success !== false. Una tool puede
+    // retornar {success:false, error_code:'SLOT_TAKEN'} sin throw — eso NO
+    // es mutación exitosa, fue rechazada antes del INSERT. Si lo tratáramos
+    // como mutación, el fallback creería que ya se hizo y no reintentaría.
     //
-    // AUDIT R14 BUG-010: antes usábamos `MUTATION_PREFIXES.some(...startsWith)`
-    // para detectar mutaciones — frágil a renames. Ahora cada tool declara
-    // `isMutation: true` en su `registerTool(...)` y consultamos ese flag
-    // directamente al registry. Si una tool no está registrada en este
-    // proceso (edge case), `isMutationTool` devuelve false y permitimos que
-    // el fallback la re-ejecute — comportamiento conservador pero correcto
-    // (tool read-only se puede reintentar sin daño).
+    // Cada tool declara `isMutation: true` en su `registerTool(...)` y
+    // consultamos ese flag directamente al registry. Si una tool no está
+    // registrada en este proceso (edge case), `isMutationTool` devuelve
+    // false y permitimos que el fallback la re-ejecute — comportamiento
+    // conservador pero correcto (tool read-only se puede reintentar sin
+    // daño).
     const successfulMutations = primaryPartialCalls.filter((tc) => {
       if (tc.error) return false; // tool throw
       if (!isMutationTool(tc.toolName)) return false; // read-only: fallback puede reintentar
@@ -353,6 +351,18 @@ async function runOrchestratorInner(
         ).join('\n')
       : ctx.systemPrompt;
 
+    // Filter out mutation tools that already succeeded — keep read-only tools
+    const mutationToolNames = new Set(successfulMutations.map((tc) => tc.toolName));
+    const remainingTools = successfulMutations.length > 0
+      ? ctx.tools.filter((t) => {
+          const name = 'function' in t ? t.function.name : '';
+          return !mutationToolNames.has(name);
+        })
+      : ctx.tools;
+    // Only pass tools if there are any remaining; undefined if all were mutations
+    const fallbackTools = remainingTools.length > 0 ? remainingTools : undefined;
+    const fallbackToolChoice = remainingTools.length > 0 ? 'auto' : 'none';
+
     // Si el timeout global se dispara durante el fallback, abortar también.
     const fallbackController = new AbortController();
     const onGlobalAbortFb = () => fallbackController.abort();
@@ -363,15 +373,14 @@ async function runOrchestratorInner(
           model: MODELS.ORCHESTRATOR_FALLBACK,
           system: fallbackSystemPrompt,
           messages: ctx.messages,
-          // AUDIT-R10 CRÍT: si pasamos `[]` algunos providers (OpenAI 400
-          // "tools array too short"). OpenRouter se comporta distinto según
-          // el modelo destino. Safest: omitir la propiedad via `undefined`.
-          // openrouter.ts:491 también normaliza `[]` → undefined pero mejor
-          // aquí por claridad y porque tools:undefined + tool_choice:'none'
-          // deja al SDK completamente sin noción de tools.
-          tools: successfulMutations.length > 0 ? undefined : ctx.tools,
+          // Si pasamos `[]` algunos providers dan error (OpenAI 400
+          // "tools array too short"). Safest: omitir la propiedad via
+          // `undefined`. openrouter.ts tambien normaliza `[]` → undefined
+          // pero mejor aquí por claridad y porque tools:undefined +
+          // tool_choice:'none' deja al SDK sin noción de tools.
+          tools: fallbackTools,
           toolExecutor,
-          tool_choice: successfulMutations.length > 0 ? 'none' : 'auto',
+          tool_choice: fallbackToolChoice,
           maxTokens: ctx.tools.length > 0 ? 2000 : 800,
           temperature: 0.5,
           maxToolRounds: 5,
@@ -381,9 +390,9 @@ async function runOrchestratorInner(
         FALLBACK_TIMEOUT_MS,
       );
 
-      // AUDIT P2 item 7: fallback succeeded → medio reset. Contamos esto
-      // como "hay upstream sano" → resetear contador para no abrir breaker
-      // innecesariamente si solo el primario está flaky.
+      // Fallback succeeded → medio reset. Contamos esto como "hay upstream
+      // sano" → resetear contador para no abrir breaker innecesariamente si
+      // solo el primario está flaky.
       void reportBreakerSuccess();
 
       // Mergeamos toolCalls del primario + del fallback para auditoría completa
@@ -405,11 +414,11 @@ async function runOrchestratorInner(
       const fbName = fallbackErr instanceof Error ? fallbackErr.name : 'unknown';
       const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
 
-      // AUDIT P2 item 7: ambos modelos fallaron → cuenta como doble falla
-      // (ambos upstream del mismo provider rotos).
+      // Ambos modelos fallaron → cuenta como doble falla (ambos upstream
+      // del mismo provider rotos).
       void reportBreakerFailure(`fallback:${fbName}`);
-      // AUDIT-VC R11: capturar error crítico en Sentry + Supabase para
-      // observabilidad en producción (no queda solo en console).
+      // Capturar error crítico en Sentry + Supabase para observabilidad
+      // en producción (no queda solo en console).
       try {
         const { captureError } = await import('@/lib/observability/error-tracker');
         await captureError(
@@ -423,7 +432,9 @@ async function runOrchestratorInner(
           },
           'fatal',
         );
-      } catch { /* no-op */ }
+      } catch (err) {
+        console.error('[orchestrator] captureError failed on both-failed path:', err instanceof Error ? err.message : err);
+      }
       throw new OrchestratorBothFailedError(
         `Primary (${errName}: ${errMsg}); Fallback (${fbName}: ${fbMsg})`,
         primaryErr,

@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- TENANTS WA PHONE UNIQUE — aislamiento multi-tenant blindado (AUDIT R12)
+-- TENANTS WA PHONE UNIQUE — aislamiento multi-tenant blindado
 --
 -- Problema:
 --   El pipeline de webhooks usa supabaseAdmin (service_role, bypass RLS) y

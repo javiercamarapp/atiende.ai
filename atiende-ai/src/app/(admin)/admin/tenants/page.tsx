@@ -49,7 +49,7 @@ async function handleAction(formData: FormData) {
   if (action === 'pause') updates.status = 'paused';
   if (action === 'activate') updates.status = 'active';
   if (action === 'cancel') updates.status = 'cancelled';
-  if (['starter', 'professional', 'business', 'enterprise', 'trial'].includes(action)) {
+  if (['starter', 'professional', 'business', 'enterprise', 'free_trial'].includes(action)) {
     updates.plan = action;
   }
 
@@ -84,7 +84,7 @@ export default async function TenantsPage({
         />
         <select name="plan" defaultValue={params.plan || ''} className="px-3 py-2 border border-zinc-300 rounded-md text-sm">
           <option value="">All plans</option>
-          <option value="trial">Trial</option>
+          <option value="free_trial">Trial</option>
           <option value="starter">Starter</option>
           <option value="professional">Professional</option>
           <option value="business">Business</option>
@@ -182,7 +182,7 @@ export default async function TenantsPage({
 
 function PlanBadge({ plan }: { plan: string }) {
   const colors: Record<string, string> = {
-    trial: 'bg-amber-100 text-amber-700',
+    free_trial: 'bg-amber-100 text-amber-700',
     starter: 'bg-blue-100 text-blue-700',
     professional: 'bg-purple-100 text-purple-700',
     business: 'bg-emerald-100 text-emerald-700',

@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- ATOMIC INBOUND UPSERT — BUG-001 (AUDIT R14)
+-- ATOMIC INBOUND UPSERT — fix race condition on concurrent webhooks
 --
 -- Problema: processor.ts hace 3 INSERTs secuenciales (contact, conversation,
 -- message) sin transacción. Si falla a la mitad (DB flap, RLS mal, timeout

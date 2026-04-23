@@ -1,6 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
 -- HYBRID SEARCH — pgvector (semantic) + tsvector (lexical BM25-like)
--- (AUDIT R13 — rubro AI/ML 9 → 10/10)
 --
 -- Problema: threshold 0.35 de coseno puro sufre con queries cortas en español.
 -- "cita muela" vs chunk "extracción dental" → similarity baja, chunk descartado.

@@ -50,21 +50,47 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const now = new Date();
   const nowIso = now.toISOString();
 
-  // Filter: status pending + scheduled_at llegó + (next_retry_at NULL o ya pasó)
-  const { data: due, error } = await supabaseAdmin
+  // Claim atómico para prevenir doble envío cuando dos cron instances
+  // arrancan concurrentes. Patrón: SELECT candidatos + UPDATE con
+  // status guard y re-chequeo de next_retry_at, usando `next_retry_at` como
+  // lock de 5 min. Otro cron concurrente ve next_retry_at en el futuro y salta
+  // la fila. Si este run crashea, el lock expira y el siguiente cron la
+  // reprocesa naturalmente — sin migración de schema.
+  const { data: candidates, error: selErr } = await supabaseAdmin
     .from('scheduled_messages')
-    .select('id, tenant_id, patient_phone, message_content, message_type, retry_count, metadata')
+    .select('id')
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
     .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
     .order('scheduled_at', { ascending: true })
     .limit(MAX_BATCH);
 
-  if (error) {
-    return NextResponse.json({ error: 'Query failed', message: error.message }, { status: 500 });
+  if (selErr) {
+    return NextResponse.json({ error: 'Query failed', message: selErr.message }, { status: 500 });
   }
 
-  const batch = (due as ScheduledRow[] | null) || [];
+  const candidateIds = (candidates || []).map((c) => c.id as string);
+  if (candidateIds.length === 0) {
+    return NextResponse.json({ processed: 0, duration_ms: Date.now() - start });
+  }
+
+  // Lock de 5 minutos sobre `next_retry_at`. Supera el maxDuration=300s del
+  // cron con margen. El guard `.or(next_retry_at.is.null,lte)` descarta filas
+  // que otro cron ya claim-eó entre el SELECT y este UPDATE.
+  const lockUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const { data: claimed, error: claimErr } = await supabaseAdmin
+    .from('scheduled_messages')
+    .update({ next_retry_at: lockUntil })
+    .in('id', candidateIds)
+    .eq('status', 'pending')
+    .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
+    .select('id, tenant_id, patient_phone, message_content, message_type, retry_count, metadata');
+
+  if (claimErr) {
+    return NextResponse.json({ error: 'Claim failed', message: claimErr.message }, { status: 500 });
+  }
+
+  const batch = (claimed as ScheduledRow[] | null) || [];
   if (batch.length === 0) {
     return NextResponse.json({ processed: 0, duration_ms: Date.now() - start });
   }
@@ -88,6 +114,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let failed = 0;
   let deferred = 0;
   const failureSamples: Array<{ id: string; tenant: string; error: string }> = [];
+  // Rastrear tenants con cualquier fallo definitivo. El cálculo previo
+  // `tenantIds.length - (failed > 0 ? 1 : 0)` contaba máximo 1 tenant
+  // fallido aunque N tenants tuvieran mensajes fallidos — corrompe SLA metrics.
+  const failedTenantIds = new Set<string>();
 
   for (const msg of batch) {
     const tInfo = tenantMap.get(msg.tenant_id);
@@ -103,6 +133,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         })
         .eq('id', msg.id);
       failed++;
+      failedTenantIds.add(msg.tenant_id);
       continue;
     }
 
@@ -149,6 +180,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           })
           .eq('id', msg.id);
         failed++;
+        failedTenantIds.add(msg.tenant_id);
         failureSamples.push({ id: msg.id, tenant: tInfo?.name || msg.tenant_id, error: errMsg });
 
         // notifyOwner del tenant (best effort)
@@ -184,8 +216,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     jobName: 'scheduled-messages',
     startedAt: new Date(start),
     tenantsProcessed: tenantIds.length,
-    tenantsSucceeded: tenantIds.length - (failed > 0 ? 1 : 0),
-    tenantsFailed: failed > 0 ? 1 : 0,
+    tenantsSucceeded: tenantIds.length - failedTenantIds.size,
+    tenantsFailed: failedTenantIds.size,
     details: { total_messages: batch.length, sent, failed, deferred, failure_samples: failureSamples.slice(0, 5) },
   });
 

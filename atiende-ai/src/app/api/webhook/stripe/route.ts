@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStripe } from '@/lib/billing/stripe';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
+import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
-  // AUDIT R17 BUG-002: guard de tamaño ANTES de bufferear.
+  // Guard de tamaño ANTES de bufferear.
   const sizeCheck = enforceWebhookSize(req, WEBHOOK_MAX_BYTES, 'stripe', startTime);
   if (!sizeCheck.ok) return sizeCheck.response;
 
@@ -28,6 +29,28 @@ export async function POST(req: NextRequest) {
   const tenantId = obj?.metadata
     ? (obj.metadata as Record<string, string>)?.tenant_id
     : undefined;
+
+  // Idempotency check contra processed_stripe_events.
+  // Stripe reintenta el mismo event.id con semántica at-least-once.
+  const { error: dedupError } = await supabaseAdmin
+    .from('processed_stripe_events')
+    .insert({ event_id: event.id, event_type: event.type });
+  if (dedupError) {
+    // Código 23505 = unique_violation → evento ya procesado. Ack con 200.
+    if (dedupError.code === '23505') {
+      logWebhook({
+        tenantId,
+        provider: 'stripe',
+        eventType: 'duplicate_skip',
+        statusCode: 200,
+        payload: { event_id: event.id, type: event.type },
+        durationMs: Date.now() - startTime,
+      });
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+    // Error real de DB — log y continuar (fail-open para no bloquear Stripe).
+    logger.error('[stripe-webhook] idempotency insert failed', undefined, {  err: dedupError.message, eventId: event.id  });
+  }
 
   logWebhook({
     tenantId,
@@ -56,9 +79,7 @@ export async function POST(req: NextRequest) {
         .eq('id', tid)
         .single();
       if (existing?.stripe_customer_id && existing.stripe_customer_id !== stripeCustomer) {
-        console.warn(
-          `[stripe-webhook] customer mismatch for tenant ${tid}: existing=${existing.stripe_customer_id}, event=${stripeCustomer}`,
-        );
+        logger.warn('[stripe-webhook] customer mismatch — rejecting metadata replay', {  tenantId: tid, existing: existing.stripe_customer_id, event: stripeCustomer  });
         return NextResponse.json({ received: true });
       }
       // Auto-populate voice fields para plan premium.
@@ -81,13 +102,11 @@ export async function POST(req: NextRequest) {
               stripe_subscription_item_voice_id: meteredItem?.id ?? null,
             };
             if (!meteredItem) {
-              console.warn(
-                `[stripe-webhook] tenant ${tid} subscribed to premium but no metered item found. Overage billing requires manual SQL update.`,
-              );
+              logger.warn('[stripe-webhook] premium subscription lacks metered item — overage billing requires manual SQL update', {  tenantId: tid  });
             }
           }
         } catch (err) {
-          console.error('[stripe-webhook] failed to fetch subscription items:', err instanceof Error ? err.message : err);
+          logger.error('[stripe-webhook] failed to fetch subscription items', undefined, {  err: err instanceof Error ? err.message : err, tenantId: tid  });
         }
       }
 
@@ -110,6 +129,84 @@ export async function POST(req: NextRequest) {
         voice_minutes_included: 0,
         stripe_subscription_item_voice_id: null,
       }).eq('id', t.id);
+    }
+  }
+
+  // Payment failure: pausar tenant hasta que el pago se resuelva. Sin este
+  // handler el tenant seguía activo post-tarjeta-declinada y nos sangraba
+  // en LLM+WhatsApp+infra.
+  if (event.type === 'invoice.payment_failed') {
+    const inv = event.data.object as unknown as Record<string, unknown>;
+    const customerId = inv.customer as string | undefined;
+    if (customerId) {
+      await supabaseAdmin
+        .from('tenants')
+        .update({ status: 'past_due' })
+        .eq('stripe_customer_id', customerId);
+    }
+  }
+
+  // Payment recovery. Si un tenant estaba en past_due y paga tarde (invoice
+  // retry exitoso), Stripe dispara invoice.payment_succeeded pero NO un
+  // customer.subscription.updated consistente. Sin este handler el tenant
+  // queda permanentemente past_due aunque ya esté al corriente = revenue
+  // leak + tenant bloqueado en producción aun pagando.
+  if (event.type === 'invoice.payment_succeeded') {
+    const inv = event.data.object as unknown as {
+      customer?: string;
+      billing_reason?: string;
+    };
+    const customerId = inv.customer;
+    if (customerId) {
+      // Solo re-activamos si la razón indica recuperación de pago recurrente.
+      // Otros billing_reason (subscription_create, manual) ya los maneja
+      // customer.subscription.created/updated para setear plan correcto.
+      const isRecovery =
+        inv.billing_reason === 'subscription_cycle' ||
+        inv.billing_reason === 'subscription_update';
+      if (isRecovery) {
+        await supabaseAdmin
+          .from('tenants')
+          .update({ status: 'active' })
+          .eq('stripe_customer_id', customerId)
+          .eq('status', 'past_due'); // no-op si ya está active
+      }
+    }
+  }
+
+  // Subscription updates (upgrade/downgrade desde el portal de Stripe). Sin
+  // este handler la app quedaba desincronizada con el plan real pagado. Se
+  // detecta el plan por el product.metadata.plan o por el precio — aquí
+  // priorizamos el metered voice item para detectar premium.
+  if (event.type === 'customer.subscription.updated') {
+    const sub = event.data.object as unknown as {
+      customer?: string;
+      status?: string;
+      items?: { data?: Array<{ id?: string; price?: { recurring?: { usage_type?: string }; metadata?: Record<string, string> } }> };
+      cancel_at_period_end?: boolean;
+    };
+    const customerId = sub.customer;
+    if (customerId) {
+      const meteredItem = sub.items?.data?.find(
+        (it) => it.price?.recurring?.usage_type === 'metered',
+      );
+      const isPremium = Boolean(meteredItem);
+      const patch: Record<string, unknown> = {
+        status: sub.status === 'active' ? 'active' : 'past_due',
+      };
+      if (isPremium) {
+        patch.plan = 'premium';
+        patch.voice_minutes_included = 300;
+        patch.stripe_subscription_item_voice_id = meteredItem?.id ?? null;
+      } else {
+        // Downgrade desde premium: el metered item desapareció.
+        patch.voice_minutes_included = 0;
+        patch.stripe_subscription_item_voice_id = null;
+      }
+      await supabaseAdmin
+        .from('tenants')
+        .update(patch)
+        .eq('stripe_customer_id', customerId);
     }
   }
 

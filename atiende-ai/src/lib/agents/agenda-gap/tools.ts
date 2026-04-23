@@ -202,7 +202,7 @@ registerTool('send_gap_fill_message', {
     const text = `Hola ${args.patient_name}, hoy tenemos disponibilidad para ${args.last_service || 'su próxima consulta'} a las ${slotList}. Si le interesa, responda *AGENDA* y le confirmamos 📅`;
 
     try {
-      // FIX 3 (audit Round 2): valida ventana 24h
+      // Valida ventana 24h
       const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };

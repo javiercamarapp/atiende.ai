@@ -1,9 +1,9 @@
 // Valida que la respuesta del LLM no invente informacion
 // Se ejecuta DESPUES de cada generacion, ANTES de enviar al cliente
 
-// FIX 4 (audit R4): helpers de normalización para comparar precios del
-// LLM contra el contexto RAG eliminando variaciones de formato
-// ($800 vs $800.00 vs 800 vs $ 800 vs 800.0).
+// Helpers de normalización para comparar precios del LLM contra el contexto
+// RAG eliminando variaciones de formato ($800 vs $800.00 vs 800 vs $ 800
+// vs 800.0).
 function canonicalizePrice(raw: string): string | null {
   const digits = raw.replace(/[^\d.]/g, '');
   if (!digits) return null;
@@ -25,7 +25,7 @@ function normalizePrices(ctx: string): string {
 }
 
 /**
- * AUDIT R12 BUG-005: refuerzo anti-alucinación de precios.
+ * Refuerzo anti-alucinación de precios.
  *
  * Extrae TODOS los precios del RAG + calcula sumas válidas de hasta 3 ítems.
  * El LLM puede legítimamente sumar precios (ej. "Limpieza $500 + Extracción $300 = $800")
@@ -75,16 +75,16 @@ export function validateResponse(
   let text = response;
 
   // ═══ CAPA 1: Verificar precios mencionados ═══
-  // FIX 4 (audit R4): normaliza AMBOS lados antes de comparar para evitar
-  // falsos positivos por formato. "$800.00" debe match "$800"; "$1,200"
-  // debe match "1200"; símbolos de moneda, comas, ceros decimales
-  // innecesarios y espacios se eliminan. Capa 1 sigue siendo conservadora:
-  // si el número entero no existe en el RAG (ni en texto ni normalizado),
-  // la respuesta se reemplaza.
+  // Normaliza AMBOS lados antes de comparar para evitar falsos positivos
+  // por formato. "$800.00" debe match "$800"; "$1,200" debe match "1200";
+  // símbolos de moneda, comas, ceros decimales innecesarios y espacios se
+  // eliminan. Capa 1 sigue siendo conservadora: si el número entero no
+  // existe en el RAG (ni en texto ni normalizado), la respuesta se
+  // reemplaza.
   const normalizedContext = normalizePrices(ragContext);
-  // AUDIT R12 BUG-005: además de lookup literal, calculamos sumas válidas
-  // (2-3 ítems) del catálogo para que "Limpieza $500 + Extracción $300 = $800"
-  // no se marque como alucinación si esos 2 precios están en el RAG.
+  // Además de lookup literal, calculamos sumas válidas (2-3 ítems) del
+  // catálogo para que "Limpieza $500 + Extracción $300 = $800" no se marque
+  // como alucinación si esos 2 precios están en el RAG.
   const validPriceSet = extractAllValidPrices(ragContext);
   const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
   for (const match of priceMatches) {
@@ -113,21 +113,30 @@ export function validateResponse(
   }
 
   // ═══ CAPA 2: Guardrails medicos ═══
+  // Forbidden list is stored WITHOUT accents; we normalize the LLM response
+  // before matching so "diagnóstico" (the natural LLM output in Spanish) gets
+  // caught the same as "diagnostico". Previously accents let the output slip
+  // through entirely.
   const healthTypes = [
     'dental', 'medical', 'nutritionist', 'psychologist',
     'dermatologist', 'gynecologist', 'pediatrician',
-    'ophthalmologist'
+    'ophthalmologist', 'veterinary', 'optics'
   ];
   if (healthTypes.includes(tenant.business_type)) {
     const forbidden = [
       'diagnostico', 'le recomiendo tomar', 'probablemente tiene',
       'mg de', 'es normal que', 'deberia usar', 'apliquese',
       'inyectese', 'no se preocupe', 'seguramente es',
-      'parece ser', 'podria ser un caso de'
+      'parece ser', 'podria ser un caso de',
+      // Extra coverage added after R21 audit. Keep lowercase + no accents;
+      // normalizeForMedicalCheck() handles the match.
+      'tomese', 'tome usted', 'aumente la dosis', 'reduzca la dosis',
+      'suspenda el medicamento', 'cambie el tratamiento',
+      'seguro es', 'seguramente tiene',
     ];
-    const lower = text.toLowerCase();
+    const normalized = normalizeForMedicalCheck(text);
     for (const word of forbidden) {
-      if (lower.includes(word)) {
+      if (normalized.includes(word)) {
         return {
           valid: false,
           text: 'Esa consulta la resolvera mejor nuestro equipo ' +
@@ -137,16 +146,23 @@ export function validateResponse(
     }
   }
 
-  // ═══ CAPA 3: Protocolo de crisis (psicologia/medico) ═══
-  const crisisTypes = ['psychologist', 'medical'];
-  if (crisisTypes.includes(tenant.business_type)) {
+  // ═══ CAPA 3: Protocolo de crisis ═══
+  // Extended from [psychologist, medical] to ALL health specialties.
+  // A suicidal patient writing to a dentist/dermatologist/etc. still deserves
+  // the crisis response — the line and the 911 referral don't depend on the
+  // specialty, and failing to respond is an ethical/legal liability.
+  if (healthTypes.includes(tenant.business_type)) {
     const crisisWords = [
-      'quiero morirme', 'no quiero vivir', 'suicidarme',
-      'me quiero matar', 'no le veo sentido', 'me corto',
-      'me lastimo', 'hacerme dano', 'estarian mejor sin mi'
+      // All stored normalized (no accents). Input is normalized before match.
+      'quiero morirme', 'no quiero vivir', 'suicidarme', 'suicidio',
+      'me quiero matar', 'matarme', 'no le veo sentido',
+      'me corto', 'me lastimo', 'hacerme dano', 'me hago dano',
+      'quiero hacerme dano', 'estarian mejor sin mi',
+      'ya no puedo mas', 'ya no aguanto', 'pensando en morir',
+      'terminar con todo', 'acabar con mi vida',
     ];
-    const inputLower = (customerMessage || '').toLowerCase();
-    const hasCrisis = crisisWords.some(w => inputLower.includes(w));
+    const normInput = normalizeForMedicalCheck(customerMessage || '');
+    const hasCrisis = crisisWords.some((w) => normInput.includes(w));
     if (hasCrisis) {
       return { valid: true, text: CRISIS_MESSAGE };
     }
@@ -168,27 +184,57 @@ export function validateResponse(
 // paciente (no en el output del LLM).
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Normalizamos acentos y lowercase antes del match. La lista previa fallaba
+// en "Creo Que Tengo" (capitalización) y en usuarios que omiten acentos
+// ("sintomas", "sintomas de"). También ampliamos cobertura a expresiones
+// comunes en México que la lista anterior no capturaba.
+function normalizeForMedicalCheck(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, ''); // strip combining accents
+}
+
 const MEDICAL_QUERY_PATTERNS = [
-  /creo que tengo/i,
-  /podr[íi]a ser/i,
-  /s[íi]ntomas? de/i,
-  /parece que es/i,
-  /qu[ée] medicina/i,
-  /qu[ée] pastilla/i,
-  /qu[ée] dosis/i,
-  /me duele (el|la|los|las|un|una)/i,
-  /tengo (fiebre|dolor|infecci[óo]n|inflamaci[óo]n)/i,
-  /es (grave|serio|peligroso)/i,
+  /creo que tengo/,
+  /podria ser/,
+  /sintomas? de/,
+  /parece que (es|tengo|sea)/,
+  /que (medicina|medicamento|pastilla|antibi[oó]tico|dosis|tratamiento)/,
+  /me duele (el |la |los |las |un |una |mi |mucho|bastante)/,
+  /me arde/,
+  /me pica/,
+  /siento (un|una|mucho|mucha|que)/,
+  /tengo (fiebre|dolor|infeccion|inflamacion|mareo|nauseas|vomito|diarrea|tos|gripa|gripe)/,
+  /es (grave|serio|peligroso|malo|normal)/,
+  /se me (hincho|inflamo|durmio|entumio)/,
+  /puedo tomar/,
+  /deberia (tomar|usar|aplicar)/,
 ];
 
 const MEDICAL_DISCLAIMER =
   '\n\nPara cualquier consulta médica, le recomendamos agendar una cita ' +
   'con el doctor para una evaluación profesional.';
 
+// La idempotencia previa dependía de que el agente usara EXACTAMENTE la frase
+// "evaluación profesional". Si la respuesta del LLM mencionaba "valoración
+// profesional" o "cita con el médico", duplicábamos disclaimer. Ahora
+// detectamos múltiples variantes normalizadas.
+const EXISTING_DISCLAIMER_MARKERS = [
+  'evaluacion profesional',
+  'valoracion profesional',
+  'consulta profesional',
+  'evaluacion medica',
+  'valoracion medica',
+  'cita con el doctor',
+  'cita con el medico',
+  'agendar una cita',
+];
+
 /**
  * Si el mensaje del paciente contiene patrones de auto-diagnóstico o consulta
  * médica directa, agrega un disclaimer al final de la respuesta del agente.
- * Idempotente: si el agente ya incluyó "evaluación profesional", no duplica.
+ * Idempotente: detecta múltiples variantes del disclaimer en la respuesta.
  */
 export function appendMedicalDisclaimer(
   userMessage: string,
@@ -196,11 +242,13 @@ export function appendMedicalDisclaimer(
 ): string {
   if (!userMessage || !agentResponse) return agentResponse;
 
-  const hasMedicalQuery = MEDICAL_QUERY_PATTERNS.some((p) => p.test(userMessage));
+  const normUser = normalizeForMedicalCheck(userMessage);
+  const hasMedicalQuery = MEDICAL_QUERY_PATTERNS.some((p) => p.test(normUser));
   if (!hasMedicalQuery) return agentResponse;
 
-  if (agentResponse.includes('evaluación profesional')) {
-    return agentResponse; // ya tiene el disclaimer
+  const normResp = normalizeForMedicalCheck(agentResponse);
+  if (EXISTING_DISCLAIMER_MARKERS.some((m) => normResp.includes(m))) {
+    return agentResponse;
   }
 
   return agentResponse + MEDICAL_DISCLAIMER;

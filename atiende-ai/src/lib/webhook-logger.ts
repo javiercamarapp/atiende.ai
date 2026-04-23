@@ -29,7 +29,7 @@ function redactPII(obj: unknown): unknown {
 
 export async function logWebhook(params: {
   tenantId?: string;
-  provider: 'whatsapp' | 'stripe' | 'delivery';
+  provider: 'whatsapp' | 'stripe' | 'delivery' | 'retell';
   eventType?: string;
   direction?: 'inbound' | 'outbound';
   statusCode?: number;
@@ -58,7 +58,7 @@ export async function logWebhook(params: {
 }
 
 /**
- * AUDIT R17 BUG-002: guardia de tamaño ANTES de bufferear el payload.
+ * Guardia de tamaño ANTES de bufferear el payload.
  *
  * Antes: cada route webhook hacía `await req.arrayBuffer()` sin límite. Un
  * atacante con payload de varios MB podía tumbar el worker por OOM antes de
@@ -75,7 +75,7 @@ export async function logWebhook(params: {
 export function enforceWebhookSize(
   req: Request,
   maxBytes: number,
-  provider: 'whatsapp' | 'stripe' | 'delivery',
+  provider: 'whatsapp' | 'stripe' | 'delivery' | 'retell',
   startTime: number,
 ): { ok: true } | { ok: false; response: Response } {
   const contentLength = Number(req.headers.get('content-length') || '0');
@@ -103,7 +103,7 @@ export function enforceWebhookSize(
 export function enforceWebhookSizePostRead(
   byteLength: number,
   maxBytes: number,
-  provider: 'whatsapp' | 'stripe' | 'delivery',
+  provider: 'whatsapp' | 'stripe' | 'delivery' | 'retell',
   startTime: number,
 ): { ok: true } | { ok: false; response: Response } {
   if (byteLength > maxBytes) {

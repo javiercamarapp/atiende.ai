@@ -4,10 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── Mock Supabase ───────────────────────────────────────────
 // AUDIT R15: state-machine ahora usa `metadata` JSONB (no `tags[]`).
 
-const mockSingle = vi.fn();
-const mockUpdateEq = vi.fn(() => Promise.resolve({ error: null }));
-const mockSelect = vi.fn(() => ({ eq: vi.fn(() => ({ single: mockSingle })) }));
-const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
+const { mockSingle, mockSelect, mockRpc } = vi.hoisted(() => {
+  const mockSingle = vi.fn();
+  const mockSelect = vi.fn(() => ({ eq: vi.fn(() => ({ single: mockSingle })) }));
+  const mockRpc = vi.fn(() => Promise.resolve({ error: null }));
+  return { mockSingle, mockSelect, mockRpc };
+});
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
@@ -15,11 +17,11 @@ vi.mock('@/lib/supabase/admin', () => ({
       if (table === 'conversations') {
         return {
           select: mockSelect,
-          update: mockUpdate,
         };
       }
       return {};
     }),
+    rpc: mockRpc,
   },
 }));
 
@@ -102,71 +104,35 @@ describe('getConversationState', () => {
 describe('setConversationState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSingle.mockResolvedValue({ data: { metadata: { other_key: 'preserved' } } });
   });
 
-  it('writes conversation_state into metadata merging existing keys', async () => {
+  it('calls the set_conversation_state RPC with state and default context', async () => {
     await setConversationState('conv-1', 'awaiting_appointment_date');
 
-    expect(mockUpdate).toHaveBeenCalledWith({
-      metadata: {
-        other_key: 'preserved',
-        conversation_state: {
-          state: 'awaiting_appointment_date',
-          context: {},
-        },
-      },
+    expect(mockRpc).toHaveBeenCalledWith('set_conversation_state', {
+      p_conversation_id: 'conv-1',
+      p_state: 'awaiting_appointment_date',
+      p_context: {},
     });
   });
 
-  it('includes context when provided', async () => {
-    mockSingle.mockResolvedValue({ data: { metadata: {} } });
-
+  it('passes context when provided', async () => {
     await setConversationState('conv-1', 'awaiting_modify_date', { appointmentId: 'apt-1' });
 
-    expect(mockUpdate).toHaveBeenCalledWith({
-      metadata: {
-        conversation_state: {
-          state: 'awaiting_modify_date',
-          context: { appointmentId: 'apt-1' },
-        },
-      },
+    expect(mockRpc).toHaveBeenCalledWith('set_conversation_state', {
+      p_conversation_id: 'conv-1',
+      p_state: 'awaiting_modify_date',
+      p_context: { appointmentId: 'apt-1' },
     });
   });
 
-  it('deletes conversation_state from metadata when state is null', async () => {
-    mockSingle.mockResolvedValue({
-      data: {
-        metadata: {
-          other_key: 'preserved',
-          conversation_state: { state: 'awaiting_appointment_date', context: { a: 1 } },
-        },
-      },
-    });
-
+  it('passes null state to the RPC when clearing', async () => {
     await setConversationState('conv-1', null);
 
-    expect(mockUpdate).toHaveBeenCalledWith({
-      metadata: { other_key: 'preserved' },
-    });
-  });
-
-  it('preserves other metadata keys when setting state', async () => {
-    mockSingle.mockResolvedValue({
-      data: { metadata: { vip: true, source: 'referral' } },
-    });
-
-    await setConversationState('conv-1', 'awaiting_reservation_details');
-
-    expect(mockUpdate).toHaveBeenCalledWith({
-      metadata: {
-        vip: true,
-        source: 'referral',
-        conversation_state: {
-          state: 'awaiting_reservation_details',
-          context: {},
-        },
-      },
+    expect(mockRpc).toHaveBeenCalledWith('set_conversation_state', {
+      p_conversation_id: 'conv-1',
+      p_state: null,
+      p_context: {},
     });
   });
 });
@@ -174,20 +140,16 @@ describe('setConversationState', () => {
 describe('clearConversationState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSingle.mockResolvedValue({
-      data: {
-        metadata: {
-          vip: true,
-          conversation_state: { state: 'awaiting_appointment_date', context: { x: 1 } },
-        },
-      },
-    });
   });
 
-  it('removes conversation_state from metadata, preserves other keys', async () => {
+  it('delegates to setConversationState with null state via RPC', async () => {
     await clearConversationState('conv-1');
 
-    expect(mockUpdate).toHaveBeenCalledWith({ metadata: { vip: true } });
+    expect(mockRpc).toHaveBeenCalledWith('set_conversation_state', {
+      p_conversation_id: 'conv-1',
+      p_state: null,
+      p_context: {},
+    });
   });
 });
 

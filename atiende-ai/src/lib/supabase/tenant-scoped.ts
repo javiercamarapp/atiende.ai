@@ -1,13 +1,13 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// TENANT-SCOPED SUPABASE WRAPPER (AUDIT R13 — rubro 1 → 10/10)
+// TENANT-SCOPED SUPABASE WRAPPER
 //
 // Motivación:
-//   supabaseAdmin usa service_role = bypass total de RLS. El auditor VC
-//   señaló que si un tenant.id se resuelve mal (bug de lookup por
-//   wa_phone_number_id), mensajes pueden terminar cross-tenant.
+//   supabaseAdmin usa service_role = bypass total de RLS. Si un tenant.id se
+//   resuelve mal (bug de lookup por wa_phone_number_id), mensajes pueden
+//   terminar cross-tenant.
 //
 // Ya cerramos la puerta de entrada con:
-//   - UNIQUE(wa_phone_number_id) en tenants (R12)
+//   - UNIQUE(wa_phone_number_id) en tenants
 //   - PGRST116 handler explícito en processor.ts
 //   - RLS en todas las tablas con tenant_id
 //

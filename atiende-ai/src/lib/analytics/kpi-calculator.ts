@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
+import { PLAN_PRICES_MXN } from '@/lib/config';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -118,9 +119,8 @@ const SERVICE_VALUES: Record<string, number> = {
   accountant: 2000, florist: 500, optics: 1200, other: 500,
 };
 
-const PLAN_PRICES: Record<string, number> = {
-  free_trial: 0, basic: 499, pro: 999, premium: 1499,
-};
+// Re-export from central config — prevents drift between billing and analytics.
+const PLAN_PRICES = PLAN_PRICES_MXN;
 
 // ---------------------------------------------------------------------------
 // calculateKPIs
@@ -440,7 +440,7 @@ export async function calculateROI(
   );
   const noShowSav = noShows * svcVal;
 
-  const cost = PLAN_PRICES[tenant.plan] || 499;
+  const cost = PLAN_PRICES[tenant.plan] ?? PLAN_PRICES.basic;
   const total = staffSav + afterRev + noShowSav;
   const roi = cost > 0 ? ((total - cost) / cost) * 100 : 0;
 

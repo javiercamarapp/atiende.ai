@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- APPOINTMENTS OWNER NOTIFY — retry-able notification tracking (FIX 5 audit R4)
+-- APPOINTMENTS OWNER NOTIFY — retry-able notification tracking
 --
 -- Antes: notifyOwner() fallaba en silencio con try/catch vacío. Si Resend /
 -- Twilio / WhatsApp del dueño tenían downtime momentáneo, el consultorio

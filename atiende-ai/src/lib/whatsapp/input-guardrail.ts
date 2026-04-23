@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// INPUT GUARDRAIL — Block-mode (FIX 2 audit Round 2)
+// INPUT GUARDRAIL — Block-mode
 //
 // Variante BLOCK para usar en processor.ts ANTES del LLM. Si detecta
 // intento de prompt injection, retorna `true` y el caller responde con un
@@ -42,4 +42,14 @@ export function sanitizeUserInput(content: string): string {
   clean = clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   // Truncar a MAX_USER_INPUT_CHARS_GUARDED máximo
   return clean.substring(0, MAX_USER_INPUT_CHARS_GUARDED);
+}
+
+const RAG_CONTEXT_MAX_CHARS = 12_000;
+
+export function sanitizeRagContext(context: string): string {
+  if (!context) return '';
+  let clean = context.replace(/<[^>]*>/g, '');
+  // eslint-disable-next-line no-control-regex
+  clean = clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  return clean.substring(0, RAG_CONTEXT_MAX_CHARS);
 }
