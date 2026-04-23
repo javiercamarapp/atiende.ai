@@ -1,15 +1,18 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
 import {
   Sparkles, Database, FileText, Send, Plus, Search, Clock,
   BarChart3, Users, TrendingUp, Calendar, Mail, Megaphone,
-  MessageSquare, Image as ImageIcon, Hash, LayoutGrid,
+  MessageSquare, Image as ImageIcon, Hash, LayoutGrid, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
+
+const GATED_PLANS = new Set(['free_trial', 'starter']);
 
 type Mode = 'datos' | 'contenido';
 
@@ -57,8 +60,26 @@ export default function ChatDataPage() {
   const [loading, setLoading] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
+  const [plan, setPlan] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/tenant/plan');
+        const data = await r.json().catch(() => ({}));
+        if (!cancelled) setPlan(typeof data.plan === 'string' ? data.plan : 'free_trial');
+      } catch {
+        if (!cancelled) setPlan('free_trial');
+      } finally {
+        if (!cancelled) setPlanLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -120,6 +141,43 @@ export default function ChatDataPage() {
       e.preventDefault();
       ask(input);
     }
+  }
+
+  if (planLoading) {
+    return (
+      <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:150ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:300ms]" />
+        </div>
+      </div>
+    );
+  }
+
+  if (plan && GATED_PLANS.has(plan)) {
+    return (
+      <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4">
+        <div className="max-w-md w-full text-center animate-element">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-lg shadow-[hsl(var(--brand-blue))]/20">
+            <Lock className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="mt-6 text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
+            Personal AI
+          </h1>
+          <p className="mt-3 text-sm md:text-[15px] text-zinc-500 leading-relaxed">
+            Pregúntale a tu negocio en lenguaje natural y genera contenido al instante. Disponible desde el plan Profesional.
+          </p>
+          <Link
+            href="/settings"
+            className="mt-7 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-full bg-[hsl(var(--brand-blue))] text-white text-sm font-medium hover:opacity-90 transition shadow-md shadow-[hsl(var(--brand-blue))]/20"
+          >
+            <Sparkles className="w-4 h-4" />
+            Ver planes
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
