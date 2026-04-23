@@ -72,7 +72,7 @@ interface Plan {
 const PLANS: Plan[] = [
   {
     key: 'basic',
-    name: 'Básico',
+    name: 'Esencial',
     price: 599,
     msgLimit: 500,
     tagline: 'Ideal para empezar',
@@ -102,7 +102,7 @@ const PLANS: Plan[] = [
     tagline: 'Para consultorios que ya escalaron',
     tierIcon: Sparkles,
     features: [
-      { icon: Check, text: 'Todo lo del plan Básico' },
+      { icon: Check, text: 'Todo lo del plan Esencial' },
       { icon: Sun, text: 'Briefing diario a las 8am con tu agenda' },
       { icon: Mic, text: 'Voice notes a acciones: dicta y la IA ejecuta' },
       { icon: PenTool, text: 'Contenido para Instagram, Facebook y blog' },
