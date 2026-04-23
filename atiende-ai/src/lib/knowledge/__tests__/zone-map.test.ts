@@ -8,6 +8,8 @@ import {
   SHARED_SERVICES_QUESTIONS,
   SHARED_TEAM_QUESTIONS,
   SHARED_LOCATION_QUESTIONS,
+  SHARED_PAYMENTS_QUESTIONS,
+  SHARED_POLICIES_QUESTIONS,
   SHARED_BRAND_QUESTIONS,
   zoneForQuestionKey,
   computeZoneCompletion,
@@ -136,6 +138,8 @@ describe('zone-map', () => {
       for (const q of SHARED_SERVICES_QUESTIONS) overallKeys.add(q.key);
       for (const q of SHARED_TEAM_QUESTIONS) overallKeys.add(q.key);
       for (const q of SHARED_LOCATION_QUESTIONS) overallKeys.add(q.key);
+      for (const q of SHARED_PAYMENTS_QUESTIONS) overallKeys.add(q.key);
+      for (const q of SHARED_POLICIES_QUESTIONS) overallKeys.add(q.key);
       for (const q of SHARED_BRAND_QUESTIONS) overallKeys.add(q.key);
       const overall = computeOverallCompletion(dentalQs, overallKeys);
       expect(overall.percent).toBe(100);

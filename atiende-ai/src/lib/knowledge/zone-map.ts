@@ -222,6 +222,85 @@ export const SHARED_LOCATION_QUESTIONS: Question[] = [
     placeholder: 'Plaza Altabrisa, planta baja, local 15' },
 ];
 
+export const SHARED_PAYMENTS_QUESTIONS: Question[] = [
+  { key: 'pay_cards', type: 'text', required: true,
+    label: '¿Qué tarjetas aceptan?',
+    placeholder: 'Visa, Mastercard, Amex, débito' },
+  { key: 'pay_digital', type: 'text', required: false,
+    label: '¿Aceptan pagos digitales? (transferencia, SPEI, CoDi, PayPal, etc.)',
+    placeholder: 'Transferencia, SPEI, Mercado Pago' },
+  { key: 'pay_checks', type: 'text', required: false,
+    label: '¿Aceptan cheques?',
+    placeholder: 'No / Sí, solo cheques certificados' },
+  { key: 'pay_online', type: 'text', required: false,
+    label: '¿Se puede pagar en línea o solo en sucursal?',
+    placeholder: 'Ambos — link de pago por WhatsApp o en consultorio' },
+  { key: 'pay_card_fee', type: 'text', required: false,
+    label: '¿Hay comisión extra por pago con tarjeta?',
+    placeholder: 'No, mismo precio en efectivo y tarjeta' },
+  { key: 'pay_cfdi', type: 'text', required: false,
+    label: '¿Emiten facturas (CFDI)?',
+    placeholder: 'Sí, al momento o hasta 72 horas después' },
+  { key: 'pay_cfdi_deadline', type: 'text', required: false,
+    label: '¿Hasta cuándo pueden facturar después del pago?',
+    placeholder: 'Dentro del mes en curso' },
+  { key: 'pay_cfdi_data', type: 'text', required: false,
+    label: '¿Qué datos necesitan para la factura?',
+    placeholder: 'RFC, razón social, dirección fiscal, uso de CFDI, correo' },
+  { key: 'pay_cfdi_type', type: 'text', required: false,
+    label: '¿Facturan a persona física y moral?',
+    placeholder: 'Sí, ambas' },
+  { key: 'pay_deposit_required', type: 'text', required: false,
+    label: '¿Se requiere anticipo para reservar cita?',
+    placeholder: 'Sí, 50% para tratamientos mayores a $3,000' },
+  { key: 'pay_deposit_percent', type: 'text', required: false,
+    label: '¿Qué porcentaje se pide de anticipo?',
+    placeholder: '30% del costo total' },
+  { key: 'pay_deposit_cancel', type: 'text', required: false,
+    label: '¿Qué pasa con el depósito si el cliente cancela?',
+    placeholder: 'Se reembolsa si cancela con 24h de anticipación' },
+  { key: 'pay_when', type: 'text', required: false,
+    label: '¿Cuándo se realiza el pago — antes, durante o después del servicio?',
+    placeholder: 'Al finalizar la consulta' },
+  { key: 'pay_partial', type: 'text', required: false,
+    label: '¿Aceptan pagos parciales o meses sin intereses?',
+    placeholder: 'Sí, 3, 6 y 12 MSI con tarjetas participantes' },
+  { key: 'pay_cash_discount', type: 'text', required: false,
+    label: '¿Tienen precio especial para pago en efectivo?',
+    placeholder: '5% de descuento pagando en efectivo' },
+];
+
+export const SHARED_POLICIES_QUESTIONS: Question[] = [
+  { key: 'pol_companions', type: 'text', required: false,
+    label: '¿Pueden entrar acompañantes durante el servicio?',
+    placeholder: 'Sí, 1 acompañante en sala de espera. En consulta solo el paciente' },
+  { key: 'pol_minors', type: 'text', required: false,
+    label: '¿Los menores necesitan ir con un adulto?',
+    placeholder: 'Sí, menores de 18 años deben ir acompañados por padre o tutor' },
+  { key: 'pol_pets', type: 'text', required: false,
+    label: '¿Se permiten mascotas en el establecimiento?',
+    placeholder: 'No, excepto perros guía' },
+  { key: 'pol_late_arrival', type: 'text', required: false,
+    label: '¿Qué pasa si el cliente llega tarde?',
+    placeholder: 'Hasta 15 min de tolerancia. Después se reduce el tiempo o se reagenda' },
+  { key: 'pol_photos', type: 'text', required: false,
+    label: '¿Se pueden tomar fotos dentro del establecimiento?',
+    placeholder: 'En áreas comunes sí, en consultorios no' },
+  { key: 'pol_complaints', type: 'textarea', required: false,
+    label: '¿Cómo puede el cliente reportar una queja o problema?',
+    placeholder: 'Por WhatsApp, correo quejas@miclinica.com, o buzón en recepción. Respuesta en 24-48h',
+    help: 'El bot puede orientar al paciente si tiene una queja' },
+  { key: 'pol_cancellation', type: 'text', required: false,
+    label: '¿Cuál es la política de cancelación?',
+    placeholder: 'Cancelar con 24h de anticipación sin cargo. Menos de 24h se cobra 50%' },
+  { key: 'pol_confidentiality', type: 'text', required: false,
+    label: '¿Tienen política de confidencialidad o privacidad?',
+    placeholder: 'Sí, apegados a la Ley Federal de Protección de Datos Personales' },
+  { key: 'pol_warranty', type: 'text', required: false,
+    label: '¿Ofrecen garantía en sus servicios?',
+    placeholder: 'Sí, garantía de 6 meses en tratamientos restaurativos' },
+];
+
 export const SHARED_BRAND_QUESTIONS: Question[] = [
   { key: 'tone', type: 'text', required: true,
     label: '¿Qué tono debe usar tu bot?',
@@ -250,9 +329,9 @@ export const ZONE_QUESTION_KEYS: Record<ZoneId, string[]> = {
 
   location: ['loc_address', 'loc_references', 'loc_maps_link', 'loc_directions', 'loc_parking_details', 'loc_valet', 'loc_bike_moto', 'loc_public_transit', 'loc_accessibility', 'loc_branches', 'loc_branch_services', 'loc_zone_context', 'parking', 'zones', 'airport_transfer', 'rooms', 'facilities', 'wifi'],
 
-  payments: ['payment_methods', 'financing', 'tuition', 'cfdi_support', 'gift_cards', 'loyalty', 'memberships', 'free_trial'],
+  payments: ['pay_cards', 'pay_digital', 'pay_checks', 'pay_online', 'pay_card_fee', 'pay_cfdi', 'pay_cfdi_deadline', 'pay_cfdi_data', 'pay_cfdi_type', 'pay_deposit_required', 'pay_deposit_percent', 'pay_deposit_cancel', 'pay_when', 'pay_partial', 'pay_cash_discount', 'payment_methods', 'financing', 'tuition', 'cfdi_support', 'gift_cards', 'loyalty', 'memberships', 'free_trial'],
 
-  policies: ['cancellation', 'confidentiality', 'warranty', 'turnaround', 'min_age', 'age_range'],
+  policies: ['pol_companions', 'pol_minors', 'pol_pets', 'pol_late_arrival', 'pol_photos', 'pol_complaints', 'pol_cancellation', 'pol_confidentiality', 'pol_warranty', 'cancellation', 'confidentiality', 'warranty', 'turnaround', 'min_age', 'age_range'],
 
   special: ['insurances', 'insurance', 'allergens', 'vegetarian', 'kids_menu', 'pets', 'emergency', 'emergency_protocol', 'online', 'online_sessions', 'online_service', 'telemedicine', 'couples', 'happy_hour', 'events', 'hospitalization', 'ultrasound', 'prenatal_care', 'bridal', 'scholarships', 'extracurriculars'],
 
@@ -302,6 +381,18 @@ function questionKeysForZone(zoneId: ZoneId, verticalQuestions: Question[]): str
       .map((q) => q.key)
       .filter((k) => ZONE_QUESTION_KEYS.location.includes(k));
     return [...SHARED_LOCATION_QUESTIONS.map((q) => q.key), ...verticalLocKeys];
+  }
+  if (zoneId === 'payments') {
+    const verticalPayKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.payments.includes(k));
+    return [...SHARED_PAYMENTS_QUESTIONS.map((q) => q.key), ...verticalPayKeys];
+  }
+  if (zoneId === 'policies') {
+    const verticalPolKeys = verticalQuestions
+      .map((q) => q.key)
+      .filter((k) => ZONE_QUESTION_KEYS.policies.includes(k));
+    return [...SHARED_POLICIES_QUESTIONS.map((q) => q.key), ...verticalPolKeys];
   }
   if (zoneId === 'brand') {
     // Brand zone always shows the shared brand questions plus any
@@ -375,6 +466,18 @@ export function getQuestionsForZone(
       ZONE_QUESTION_KEYS.location.includes(q.key)
     );
     return [...SHARED_LOCATION_QUESTIONS, ...verticalLoc];
+  }
+  if (zoneId === 'payments') {
+    const verticalPay = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.payments.includes(q.key)
+    );
+    return [...SHARED_PAYMENTS_QUESTIONS, ...verticalPay];
+  }
+  if (zoneId === 'policies') {
+    const verticalPol = verticalQuestions.filter((q) =>
+      ZONE_QUESTION_KEYS.policies.includes(q.key)
+    );
+    return [...SHARED_POLICIES_QUESTIONS, ...verticalPol];
   }
   if (zoneId === 'brand') {
     const verticalBrand = verticalQuestions.filter((q) =>
