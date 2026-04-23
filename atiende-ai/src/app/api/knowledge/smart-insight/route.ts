@@ -6,7 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { checkApiRateLimit } from '@/lib/api-rate-limit';
 import { logger } from '@/lib/logger';
 import { generateStructured, MODELS } from '@/lib/llm/openrouter';
-import { ZONES, zoneForQuestionKey } from '@/lib/knowledge/zone-map';
+import { ZONES, zoneForQuestionKey, type ZoneId } from '@/lib/knowledge/zone-map';
 
 export const maxDuration = 30;
 
@@ -25,6 +25,7 @@ const InsightSchema = z.object({
     zoneId: z.enum([
       'schedule', 'services', 'team', 'location', 'payments',
       'policies', 'special', 'experience', 'brand', 'logistics',
+      'docs-menu', 'docs-general',
     ]).optional(),
   }).optional(),
 });
@@ -48,7 +49,7 @@ function fallbackInsight(questionKey: string): Insight {
     validation: 'Gracias. El bot ya puede responder con este dato.',
     benchmark: 'Seguiremos enriqueciendo tu perfil con benchmarks del sector conforme respondas más preguntas.',
     nextAction: zone
-      ? { label: `Completar ${zone.title.toLowerCase()}`, zoneId }
+      ? { label: `Completar ${zone.title.toLowerCase()}`, zoneId: zoneId as ZoneId }
       : undefined,
   };
 }
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
 
 3. nextAction (opcional): si detectas un siguiente paso natural, devuelve { label: "Verbo + sustantivo corto", zoneId: una de las 10 zonas }.
 
-Las 10 zonas disponibles: schedule, services, team, location, payments, policies, special, experience, brand, logistics.
+Las zonas disponibles: schedule, services, team, location, payments, policies, special, experience, brand, logistics, docs-menu, docs-general.
 
 NO inventes precios exactos si no los conoces. NO des consejos fiscales/legales específicos. Nada de emojis. Máximo 280 caracteres por campo.`;
 

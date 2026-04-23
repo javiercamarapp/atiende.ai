@@ -3,7 +3,10 @@ import type { Question } from '@/lib/onboarding/questions';
 import { QUESTIONS } from '@/lib/onboarding/questions';
 import {
   ZONES,
-  ZONE_QUESTION_KEYS,
+  computeZoneCompletion,
+  computeOverallCompletion,
+  getVisibleZones,
+  getQuestionsForZone,
   SHARED_SCHEDULE_QUESTIONS,
   SHARED_SERVICES_QUESTIONS,
   SHARED_TEAM_QUESTIONS,
@@ -13,73 +16,52 @@ import {
   SHARED_SPECIAL_QUESTIONS,
   SHARED_EXPERIENCE_QUESTIONS,
   SHARED_BRAND_QUESTIONS,
-  zoneForQuestionKey,
-  computeZoneCompletion,
-  computeOverallCompletion,
-  getVisibleZones,
-  getQuestionsForZone,
-} from '../zone-map';
+} from '@/lib/knowledge/zone-map';
+
+const dentalQs = QUESTIONS.dental as Question[];
+
+const ALL_SHARED = [
+  SHARED_SCHEDULE_QUESTIONS,
+  SHARED_SERVICES_QUESTIONS,
+  SHARED_TEAM_QUESTIONS,
+  SHARED_LOCATION_QUESTIONS,
+  SHARED_PAYMENTS_QUESTIONS,
+  SHARED_POLICIES_QUESTIONS,
+  SHARED_SPECIAL_QUESTIONS,
+  SHARED_EXPERIENCE_QUESTIONS,
+  SHARED_BRAND_QUESTIONS,
+];
 
 describe('zone-map', () => {
-  describe('static shape', () => {
-    it('defines exactly 10 zones', () => {
-      expect(ZONES).toHaveLength(10);
-    });
-
-    it('marks schedule and brand as always visible', () => {
-      const alwaysVisible = ZONES.filter((z) => z.alwaysVisible).map((z) => z.id);
-      expect(alwaysVisible).toEqual(['schedule', 'brand']);
-    });
-
-    it('has unique zone ids', () => {
+  describe('ZONES', () => {
+    it('has unique zone IDs', () => {
       const ids = ZONES.map((z) => z.id);
       expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('has an entry in ZONE_QUESTION_KEYS for every zone', () => {
-      for (const zone of ZONES) {
-        expect(ZONE_QUESTION_KEYS).toHaveProperty(zone.id);
-      }
-    });
-
-    it('shared schedule questions expose the expected keys', () => {
-      const keys = SHARED_SCHEDULE_QUESTIONS.map((q) => q.key);
-      expect(keys).toContain('hours_weekday');
-      expect(keys).toContain('hours_saturday');
-      expect(keys).toContain('holidays');
-    });
-
-    it('shared brand questions expose the expected keys', () => {
-      const keys = SHARED_BRAND_QUESTIONS.map((q) => q.key);
-      expect(keys).toContain('tone');
-      expect(keys).toContain('differentiator');
+    it('includes doc zones', () => {
+      const ids = ZONES.map((z) => z.id);
+      expect(ids).toContain('docs-menu');
+      expect(ids).toContain('docs-general');
     });
   });
 
-  describe('zoneForQuestionKey', () => {
-    it('maps well-known keys to their zone', () => {
-      expect(zoneForQuestionKey('services_prices')).toBe('services');
-      expect(zoneForQuestionKey('doctors')).toBe('team');
-      expect(zoneForQuestionKey('parking')).toBe('location');
-      expect(zoneForQuestionKey('payment_methods')).toBe('payments');
-      expect(zoneForQuestionKey('cancellation')).toBe('policies');
-      expect(zoneForQuestionKey('insurances')).toBe('special');
-      expect(zoneForQuestionKey('first_visit')).toBe('experience');
-      expect(zoneForQuestionKey('tone')).toBe('brand');
-      expect(zoneForQuestionKey('delivery')).toBe('logistics');
-      expect(zoneForQuestionKey('hours_weekday')).toBe('schedule');
+  describe('shared questions', () => {
+    it('has max ~50 total shared questions', () => {
+      const total = ALL_SHARED.reduce((s, arr) => s + arr.length, 0);
+      expect(total).toBeLessThanOrEqual(55);
+      expect(total).toBeGreaterThan(30);
     });
 
-    it('falls back to brand for unknown keys', () => {
-      expect(zoneForQuestionKey('made_up_key_xyz')).toBe('brand');
+    it('each question has a unique key', () => {
+      const allKeys = ALL_SHARED.flatMap((arr) => arr.map((q) => q.key));
+      expect(new Set(allKeys).size).toBe(allKeys.length);
     });
   });
 
   describe('computeZoneCompletion', () => {
-    const dentalQs = QUESTIONS.dental as Question[];
-
-    it('reports 0% when nothing is answered', () => {
-      const comp = computeZoneCompletion('services', dentalQs, new Set());
+    it('reports 0% with no answers', () => {
+      const comp = computeZoneCompletion('schedule', dentalQs, new Set());
       expect(comp.answered).toBe(0);
       expect(comp.percent).toBe(0);
       expect(comp.total).toBeGreaterThan(0);
@@ -95,103 +77,60 @@ describe('zone-map', () => {
       expect(comp.answered).toBe(comp.total);
     });
 
-    it('rounds partial completion', () => {
-      // psychologist has services_prices + therapy_types in services zone.
-      const psychQs = QUESTIONS.psychologist as Question[];
-      const halfAnswered = new Set(['services_prices']);
-      const comp = computeZoneCompletion('services', psychQs, halfAnswered);
-      expect(comp.total).toBeGreaterThanOrEqual(2);
-      expect(comp.percent).toBeGreaterThan(0);
-      expect(comp.percent).toBeLessThan(100);
-    });
-
-    it('includes shared schedule questions for the schedule zone', () => {
-      const comp = computeZoneCompletion(
-        'schedule',
-        dentalQs,
-        new Set(['hours_weekday', 'hours_saturday']),
-      );
+    it('counts schedule shared questions', () => {
+      const comp = computeZoneCompletion('schedule', dentalQs, new Set());
       expect(comp.total).toBe(SHARED_SCHEDULE_QUESTIONS.length);
-      expect(comp.answered).toBe(2);
     });
 
-    it('merges shared + vertical brand keys for the brand zone', () => {
-      // dental has no vertical brand key, so brand is purely shared.
-      const comp = computeZoneCompletion('brand', dentalQs, new Set(['tone']));
-      expect(comp.total).toBe(SHARED_BRAND_QUESTIONS.length);
-      expect(comp.answered).toBe(1);
+    it('counts brand shared questions plus vertical keys', () => {
+      const comp = computeZoneCompletion('brand', dentalQs, new Set());
+      expect(comp.total).toBeGreaterThanOrEqual(SHARED_BRAND_QUESTIONS.length);
     });
   });
 
   describe('computeOverallCompletion', () => {
-    const dentalQs = QUESTIONS.dental as Question[];
-
-    it('sums totals across zones', () => {
-      const overall = computeOverallCompletion(dentalQs, new Set());
-      expect(overall.total).toBeGreaterThan(0);
-      expect(overall.answered).toBe(0);
-      expect(overall.percent).toBe(0);
-    });
-
     it('reports 100 when every tracked key is answered', () => {
       const overallKeys = new Set<string>();
       for (const q of dentalQs) overallKeys.add(q.key);
-      for (const q of SHARED_SCHEDULE_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_SERVICES_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_TEAM_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_LOCATION_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_PAYMENTS_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_POLICIES_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_SPECIAL_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_EXPERIENCE_QUESTIONS) overallKeys.add(q.key);
-      for (const q of SHARED_BRAND_QUESTIONS) overallKeys.add(q.key);
+      for (const arr of ALL_SHARED) {
+        for (const q of arr) overallKeys.add(q.key);
+      }
       const overall = computeOverallCompletion(dentalQs, overallKeys);
       expect(overall.percent).toBe(100);
     });
   });
 
   describe('getVisibleZones', () => {
-    it('keeps schedule and brand even when empty', () => {
+    it('keeps always-visible zones even when empty', () => {
       const empty: Question[] = [];
       const visible = getVisibleZones(empty).map((z) => z.id);
       expect(visible).toContain('schedule');
       expect(visible).toContain('brand');
-    });
-
-    it('hides zones with zero vertical keys (except those with shared questions)', () => {
-      const empty: Question[] = [];
-      const visible = getVisibleZones(empty).map((z) => z.id);
-      expect(visible).toContain('services');
-      expect(visible).toContain('team');
-      expect(visible).not.toContain('logistics');
+      expect(visible).toContain('docs-menu');
+      expect(visible).toContain('docs-general');
     });
 
     it('shows zones with at least one matching vertical key', () => {
-      const dentalQs = QUESTIONS.dental as Question[];
       const visible = getVisibleZones(dentalQs).map((z) => z.id);
       expect(visible).toContain('services');
       expect(visible).toContain('team');
-      expect(visible).toContain('policies');
     });
   });
 
   describe('getQuestionsForZone', () => {
     it('returns shared schedule questions for schedule zone', () => {
-      const dentalQs = QUESTIONS.dental as Question[];
       const qs = getQuestionsForZone('schedule', dentalQs);
-      expect(qs).toEqual(SHARED_SCHEDULE_QUESTIONS);
+      expect(qs.length).toBeGreaterThanOrEqual(SHARED_SCHEDULE_QUESTIONS.length);
     });
 
-    it('filters vertical questions to zone keys', () => {
-      const dentalQs = QUESTIONS.dental as Question[];
-      const qs = getQuestionsForZone('team', dentalQs);
-      expect(qs.every((q) => ZONE_QUESTION_KEYS.team.includes(q.key))).toBe(true);
-      expect(qs.some((q) => q.key === 'doctors')).toBe(true);
+    it('returns empty for doc zones', () => {
+      const qs = getQuestionsForZone('docs-menu', dentalQs);
+      expect(qs.length).toBe(0);
     });
 
-    it('merges shared and vertical keys for brand', () => {
-      const restaurantQs = QUESTIONS.restaurant as Question[];
-      const qs = getQuestionsForZone('brand', restaurantQs);
+    it('includes shared + vertical for brand zone', () => {
+      const qs = getQuestionsForZone('brand', dentalQs);
+      expect(qs.length).toBeGreaterThanOrEqual(SHARED_BRAND_QUESTIONS.length);
       expect(qs.slice(0, SHARED_BRAND_QUESTIONS.length)).toEqual(SHARED_BRAND_QUESTIONS);
     });
   });

@@ -14,7 +14,7 @@ import {
 import type { Question } from '@/lib/onboarding/questions';
 import { logger } from '@/lib/logger';
 
-const SHARED_BY_ZONE: Record<string, Question[]> = {
+const SHARED_BY_ZONE: Partial<Record<string, Question[]>> = {
   schedule: SHARED_SCHEDULE_QUESTIONS,
   services: SHARED_SERVICES_QUESTIONS,
   team: SHARED_TEAM_QUESTIONS,
@@ -60,11 +60,10 @@ export function buildPromptFromResponses(
     }
   }
 
-  const tone = answerText(responses.tone) || 'profesional y amigable';
-  const botIntro = answerText(responses.brand_bot_intro);
-  const forbidden = answerText(responses.brand_forbidden_words);
-  const preferred = answerText(responses.brand_preferred_words);
-  const complaints = answerText(responses.brand_complaint_handling);
+  const tone = answerText(responses.brand_tone) || answerText(responses.tone) || 'profesional y amigable';
+  const botIntro = answerText(responses.brand_greeting) || answerText(responses.brand_bot_intro);
+  const forbidden = answerText(responses.brand_forbidden) || answerText(responses.brand_forbidden_words);
+  const complaints = answerText(responses.pol_complaints) || answerText(responses.brand_complaint_handling);
 
   let prompt = `Eres el asistente virtual de ${tenantName}.
 Hablas espanol mexicano natural. Siempre tratas de "usted" al cliente.
@@ -73,7 +72,6 @@ Tu tono es: ${tone}.
 
   if (botIntro) prompt += `Al iniciar una conversacion, presentate asi: "${botIntro}"\n`;
   if (forbidden) prompt += `NUNCA uses estas palabras o frases: ${forbidden}\n`;
-  if (preferred) prompt += `Usa frecuentemente estas expresiones: ${preferred}\n`;
   if (complaints) prompt += `Si el cliente se queja: ${complaints}\n`;
 
   prompt += `
