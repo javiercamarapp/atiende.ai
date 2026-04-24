@@ -26,13 +26,15 @@ interface ServiceOption {
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; year?: string; calendar?: string }>;
+  searchParams: Promise<{ month?: string; year?: string; calendar?: string; calendar_error?: string; detail?: string }>;
 }) {
   const params = await searchParams;
   const now = new Date();
   const month = params.month ? parseInt(params.month, 10) - 1 : now.getMonth();
   const year = params.year ? parseInt(params.year, 10) : now.getFullYear();
   const justConnected = params.calendar === 'connected';
+  const connectError = params.calendar_error || null;
+  const connectErrorDetail = params.detail || null;
 
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month + 2, 1);
@@ -62,6 +64,32 @@ export default async function CalendarPage({
     return (
       <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4 py-8">
         <div className="max-w-xl w-full">
+          {connectError && (
+            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 animate-element">
+              <p className="text-[13px] font-semibold text-amber-900">
+                No pudimos completar la conexión con Google Calendar
+              </p>
+              <p className="text-[12px] text-amber-800 mt-1">
+                Motivo: <code className="font-mono">{connectError}</code>
+                {connectErrorDetail && (
+                  <>
+                    {' — '}
+                    <span>{connectErrorDetail}</span>
+                  </>
+                )}
+              </p>
+              <p className="text-[11.5px] text-amber-700 mt-2">
+                {connectError === 'no_refresh_token' &&
+                  'Revoca el acceso en Google (myaccount.google.com/permissions), vuelve aquí y conecta otra vez.'}
+                {connectError === 'unauthorized' && 'Tu sesión expiró durante el flujo. Vuelve a iniciar sesión y conecta de nuevo.'}
+                {connectError === 'invalid_state' && 'Hubo un problema con los cookies. Desactiva el bloqueo de cookies de terceros para app.useatiende.ai y reintenta.'}
+                {connectError === 'env_missing' && 'Faltan variables de entorno en Vercel. Contacta a soporte.'}
+                {(connectError === 'db_update_failed' || connectError === 'db_insert_failed') && 'Error guardando la conexión en DB. Contacta a soporte con el detalle de arriba.'}
+                {connectError === 'calendar_failed' && 'Error inesperado. Reintenta o contacta soporte con el detalle de arriba.'}
+              </p>
+            </div>
+          )}
+
           {/* Hero */}
           <div className="relative text-center animate-element">
             <div aria-hidden className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
