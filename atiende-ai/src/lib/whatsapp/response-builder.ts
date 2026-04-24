@@ -1,5 +1,5 @@
 import { generateResponse, selectModel } from '@/lib/llm/openrouter';
-import { validateResponse } from '@/lib/guardrails/validate';
+import { validateResponse, pickFallback } from '@/lib/guardrails/validate';
 import { RESPONSE_GENERATION_TIMEOUT_MS } from '@/lib/config';
 
 interface TenantRecord {
@@ -46,30 +46,69 @@ export async function generateAndValidateResponse(opts: {
 
   const startTime = Date.now();
 
-  const result = await Promise.race([
-    generateResponse({
+  let result: { text: string; model: string; tokensIn: number; tokensOut: number; cost: number };
+  try {
+    result = await Promise.race([
+      generateResponse({
+        model,
+        system: systemPrompt,
+        messages: history
+          .filter((m) => m.content)
+          .map((m) => ({
+            role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
+            content: m.content!,
+          })),
+        maxTokens: 400,
+        temperature: tenant.temperature || 0.5,
+      }),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error(`LLM response timeout after ${RESPONSE_GENERATION_TIMEOUT_MS}ms`)), RESPONSE_GENERATION_TIMEOUT_MS),
+      ),
+    ]);
+  } catch (err) {
+    // LLM timeout, provider error, o network fail. No tiramos el error arriba
+    // porque eso deja al usuario sin respuesta. Devolvemos fallback contextual
+    // (loggeado para observabilidad) con welcome_message del tenant si es
+    // GREETING y lo tiene configurado.
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[response-builder] LLM generation failed — falling back', {
+      intent, model, errMsg,
+    });
+    const fallbackText = intent === 'GREETING' && tenant.welcome_message
+      ? tenant.welcome_message
+      : pickFallback(intent);
+    return {
+      text: fallbackText,
       model,
-      system: systemPrompt,
-      messages: history
-        .filter((m) => m.content)
-        .map((m) => ({
-          role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
-          content: m.content!,
-        })),
-      maxTokens: 400,
-      temperature: tenant.temperature || 0.5,
-    }),
-    new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error(`LLM response timeout after ${RESPONSE_GENERATION_TIMEOUT_MS}ms`)), RESPONSE_GENERATION_TIMEOUT_MS),
-    ),
-  ]);
+      tokensIn: 0,
+      tokensOut: 0,
+      cost: 0,
+      responseTimeMs: Date.now() - startTime,
+      confidence: 0.1,
+    };
+  }
 
   const responseTimeMs = Date.now() - startTime;
 
-  const validation = validateResponse(result.text, { business_type: String(tenant.business_type || 'other'), name: String(tenant.name || '') }, ragContext, content);
+  const validation = validateResponse(
+    result.text,
+    { business_type: String(tenant.business_type || 'other'), name: String(tenant.name || '') },
+    ragContext,
+    content,
+    intent,
+  );
+
+  // Defensa en profundidad: si por cualquier razón validation.text queda
+  // vacío, usamos welcome_message del tenant para GREETING o fallback por
+  // intent. Evita que el caller reciba "" y termine enviando "Hola" pelado.
+  const finalText = validation.text && validation.text.trim()
+    ? validation.text
+    : (intent === 'GREETING' && tenant.welcome_message
+      ? tenant.welcome_message
+      : pickFallback(intent));
 
   return {
-    text: validation.text,
+    text: finalText,
     model: result.model,
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,

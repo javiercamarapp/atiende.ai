@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateResponse } from '../validate';
+import { validateResponse, pickFallback } from '../validate';
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -304,5 +304,97 @@ describe('validateResponse — layer priority', () => {
     );
     expect(result.valid).toBe(false);
     expect(result.text).toContain('equipo');
+  });
+});
+
+// ── Intent-aware behavior ───────────────────────────────────
+
+describe('validateResponse — empty response fallback', () => {
+  it('returns GREETING fallback when response is empty string', () => {
+    const result = validateResponse('', makeTenant('restaurant'), '', undefined, 'GREETING');
+    expect(result.valid).toBe(false);
+    expect(result.text.toLowerCase()).toContain('hola');
+  });
+
+  it('returns APPOINTMENT fallback when response is whitespace only', () => {
+    const result = validateResponse('   \n  ', makeTenant('dental'), '', undefined, 'APPOINTMENT_NEW');
+    expect(result.valid).toBe(false);
+    expect(result.text.toLowerCase()).toContain('cita');
+  });
+
+  it('returns generic fallback when no intent provided and response is empty', () => {
+    const result = validateResponse('', makeTenant('restaurant'), '');
+    expect(result.valid).toBe(false);
+    expect(result.text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('validateResponse — intent-aware price validation', () => {
+  it('skips price validation for GREETING (numbers are noise)', () => {
+    // "somos 3 doctoras, turnos de 30 minutos" en un saludo — antes el 30
+    // podía dispararse como "precio alucinado". Con intent=GREETING, skip.
+    const result = validateResponse(
+      'Hola, somos 3 doctoras con turnos de 30 minutos.',
+      makeTenant('dental'),
+      '', // ragContext vacío
+      undefined,
+      'GREETING',
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it('skips price validation for FAREWELL', () => {
+    const result = validateResponse(
+      'Hasta luego, nos vemos el 15 a las 300 pm.',
+      makeTenant('restaurant'),
+      '',
+      undefined,
+      'FAREWELL',
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it('still validates prices when intent is PRICE', () => {
+    const result = validateResponse(
+      'El servicio cuesta $9999.',
+      makeTenant('dental'),
+      'Limpieza $500',
+      undefined,
+      'PRICE',
+    );
+    expect(result.valid).toBe(false);
+    expect(result.text).toContain('precios exactos');
+  });
+
+  it('backward-compat: no intent param still runs price validation', () => {
+    const result = validateResponse(
+      'El servicio cuesta $9999.',
+      makeTenant('dental'),
+      'Limpieza $500',
+    );
+    expect(result.valid).toBe(false);
+  });
+});
+
+describe('pickFallback', () => {
+  it('returns GREETING-specific fallback', () => {
+    const text = pickFallback('GREETING');
+    expect(text.toLowerCase()).toContain('hola');
+  });
+
+  it('returns APPOINTMENT_NEW-specific fallback', () => {
+    const text = pickFallback('APPOINTMENT_NEW');
+    expect(text.toLowerCase()).toContain('cita');
+  });
+
+  it('returns default fallback for unknown intent', () => {
+    const text = pickFallback('UNKNOWN_INTENT_XYZ');
+    expect(text.length).toBeGreaterThan(0);
+    expect(text.toLowerCase()).toContain('verificar');
+  });
+
+  it('returns default fallback when intent is undefined', () => {
+    const text = pickFallback(undefined);
+    expect(text.length).toBeGreaterThan(0);
   });
 });

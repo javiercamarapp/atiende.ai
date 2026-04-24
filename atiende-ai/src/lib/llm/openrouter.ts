@@ -250,8 +250,25 @@ export async function generateResponse(opts: {
     temperature: opts.temperature || 0.5,
   });
 
+  const rawContent = response.choices[0]?.message?.content;
+  const text = (rawContent ?? '').trim();
+
+  // Observabilidad: si el LLM devolvió null/empty (política de seguridad,
+  // respuesta malformada, filtro del proveedor) lo loggeamos para que el
+  // caller decida qué hacer. No lanzamos para mantener backward-compat con
+  // callers que no envuelven en try/catch.
+  if (!text) {
+    console.warn('[openrouter] LLM returned empty content', {
+      model: opts.model,
+      rawIsNull: rawContent === null,
+      rawIsUndefined: rawContent === undefined,
+      finishReason: response.choices[0]?.finish_reason,
+      tokensOut: response.usage?.completion_tokens || 0,
+    });
+  }
+
   return {
-    text: response.choices[0].message.content || '',
+    text,
     model: response.model || opts.model,
     tokensIn: response.usage?.prompt_tokens || 0,
     tokensOut: response.usage?.completion_tokens || 0,

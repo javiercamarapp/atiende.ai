@@ -1,4 +1,5 @@
 import { sendTextMessage, sendButtonMessage, sendListMessage, sendLocation } from '@/lib/whatsapp/send';
+import { pickFallback } from '@/lib/guardrails/validate';
 
 // ═══════════════════════════════════════════════════════════
 // SMART RESPONSE ENGINE
@@ -96,10 +97,14 @@ const PREFERRED_SPLIT_LENGTH = 1500; // Split long messages for readability
  * WhatsApp's character limit and is readable on its own.
  */
 export function splitMessage(text: string, maxLength = PREFERRED_SPLIT_LENGTH): string[] {
-  if (text.length <= maxLength) return [text];
+  // Input vacío / whitespace → sin chunks. Caller debe manejar el caso (usar
+  // fallback en vez de enviar string vacío a WhatsApp API, que lo rechaza).
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxLength) return [trimmed];
 
   const chunks: string[] = [];
-  let remaining = text;
+  let remaining = trimmed;
 
   while (remaining.length > 0) {
     if (remaining.length <= maxLength) {
@@ -368,7 +373,12 @@ export function suggestRichMedia(
  * Long messages are split at sentence boundaries to avoid mid-word breaks.
  */
 export async function sendSmartResponse(opts: SmartResponseOpts) {
-  const { phoneNumberId, to, text, intent, tenant, customerMessage } = opts;
+  const { phoneNumberId, to, intent, tenant, customerMessage } = opts;
+
+  // Defense-in-depth: si text llega vacío desde response-builder (no debería,
+  // tiene fallback interno), usamos fallback por intent acá también. Evita
+  // que WhatsApp reciba body vacío y rechace con Meta error 100.
+  const text = (opts.text ?? '').trim() || pickFallback(intent);
 
   // Detect customer language
   const language = detectLanguage(customerMessage || '');
@@ -457,16 +467,23 @@ async function sendWithSplitAndButtons(
   text: string,
   buttons: string[],
 ): Promise<void> {
+  const chunks = splitMessage(text);
+
+  // Safety net: si el caller nos pasó text vacío (splitMessage devuelve [])
+  // emitimos warning y no enviamos nada. No deberíamos llegar acá porque
+  // sendSmartResponse ya aplica fallback, pero defense-in-depth.
+  if (chunks.length === 0) {
+    console.warn('[sendWithSplitAndButtons] text vacío tras split — skip send');
+    return;
+  }
+
   if (buttons.length === 0) {
     // No buttons - just send as split text
-    const chunks = splitMessage(text);
     for (const chunk of chunks) {
       await sendTextMessage(phoneNumberId, to, chunk);
     }
     return;
   }
-
-  const chunks = splitMessage(text);
 
   if (chunks.length === 1) {
     // Single message with buttons
