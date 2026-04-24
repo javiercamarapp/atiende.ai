@@ -68,9 +68,16 @@ registerTool('send_intake_form', {
 });
 
 // ─── Tool 2: save_intake_data ────────────────────────────────────────────────
+// Campos demográficos (patient_name, age, gender) + datos médicos básicos.
+// El LLM puede guardarlos parcialmente en múltiples turnos; la tool hace
+// upsert por `tenant_id + phone` preservando lo que ya había guardado
+// antes (merge via jsonb concat para intake_data).
 const SaveIntakeArgs = z
   .object({
     patient_phone: z.string().min(6).max(20),
+    patient_name: z.string().min(1).max(200).optional(),
+    age: z.number().int().min(0).max(120).optional(),
+    gender: z.enum(['femenino', 'masculino', 'otro', 'prefiero_no_decir']).optional(),
     birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     allergies: z.string().max(1000).optional(),
     chronic_conditions: z.string().max(1000).optional(),
@@ -86,11 +93,18 @@ registerTool('save_intake_data', {
     type: 'function',
     function: {
       name: 'save_intake_data',
-      description: 'Guarda los datos de admisión que el paciente respondió. Sobrescribe si ya existían.',
+      description: 'Guarda los datos de admisión del paciente (nombre, edad, género, historia médica). Puede llamarse varias veces — siempre hace merge con lo previamente guardado, no sobrescribe.',
       parameters: {
         type: 'object',
         properties: {
           patient_phone: { type: 'string' },
+          patient_name: { type: 'string', description: 'Nombre completo. Se persiste al contacto — úsalo apenas el paciente lo diga.' },
+          age: { type: 'number', description: 'Edad en años (0–120). Si el paciente dice "30 años" pasa 30.' },
+          gender: {
+            type: 'string',
+            enum: ['femenino', 'masculino', 'otro', 'prefiero_no_decir'],
+            description: 'Género. Normaliza: "mujer"→femenino, "hombre"→masculino.',
+          },
           birth_date: { type: 'string', description: 'YYYY-MM-DD' },
           allergies: { type: 'string' },
           chronic_conditions: { type: 'string' },
@@ -106,20 +120,43 @@ registerTool('save_intake_data', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = SaveIntakeArgs.parse(rawArgs);
 
-    const intake_data: Record<string, string | undefined> = {
+    // Traemos el intake_data existente para hacer merge (no queremos perder
+    // alergias guardadas en turno N al volver a llamar la tool en turno N+1
+    // solo con el medicamento).
+    const { data: existing } = await supabaseAdmin
+      .from('contacts')
+      .select('intake_data')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('phone', args.patient_phone)
+      .maybeSingle();
+
+    const previousIntake = (existing?.intake_data as Record<string, unknown> | null) || {};
+
+    const newIntakeFields: Record<string, unknown> = {
+      age: args.age,
+      gender: args.gender,
       allergies: args.allergies,
       chronic_conditions: args.chronic_conditions,
       current_medications: args.current_medications,
       emergency_contact_name: args.emergency_contact_name,
       emergency_contact_phone: args.emergency_contact_phone,
     };
-    // Strip undefined keys
-    for (const k of Object.keys(intake_data)) {
-      if (intake_data[k] === undefined) delete intake_data[k];
+    // Strip undefined para no sobrescribir con null.
+    for (const k of Object.keys(newIntakeFields)) {
+      if (newIntakeFields[k] === undefined) delete newIntakeFields[k];
     }
+
+    const intake_data = { ...previousIntake, ...newIntakeFields };
 
     const update: Record<string, unknown> = { intake_data };
     if (args.birth_date) update.birth_date = args.birth_date;
+    if (args.patient_name) {
+      // patient_name va al campo `name` del contacto (no dentro de JSONB) para
+      // que la UI de /contacts y /conversations lo lea sin desempacar el
+      // JSONB. encryptPII lo aplicamos acá mismo.
+      const { encryptPII } = await import('@/lib/utils/crypto');
+      update.name = encryptPII(args.patient_name.trim()) ?? args.patient_name.trim();
+    }
 
     const { error } = await supabaseAdmin
       .from('contacts')
@@ -128,7 +165,11 @@ registerTool('save_intake_data', {
       .eq('phone', args.patient_phone);
 
     if (error) return { saved: false, error: error.message };
-    return { saved: true, fields_count: Object.keys(intake_data).length };
+    return {
+      saved: true,
+      fields_saved_this_turn: Object.keys(newIntakeFields).length + (args.patient_name ? 1 : 0),
+      name_updated: Boolean(args.patient_name),
+    };
   },
 });
 
