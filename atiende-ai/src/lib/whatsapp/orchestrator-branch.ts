@@ -326,7 +326,28 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     { role: 'user' as const, content: safeMsg.content },
   ];
 
-  const agentName = 'agenda' as const;
+  // Routing dinámico agenda vs intake — si el contacto todavía no tiene
+  // perfil completo (sin name o sin intake_completed) lo mandamos al
+  // agente de admisión antes de poder agendar. El agente intake recolecta
+  // nombre/edad/género + datos médicos, marca intake_completed y en el
+  // siguiente turno este código rutea a agenda.
+  //
+  // Query light-weight (solo 2 campos). Si el contacto no existe todavía
+  // o la query falla, default a intake — mejor pedir datos dos veces que
+  // crear una cita fantasma sin nombre.
+  const { data: contactRow } = contactId
+    ? await supabaseAdmin
+        .from('contacts')
+        .select('name, intake_completed')
+        .eq('id', contactId)
+        .maybeSingle()
+    : { data: null };
+
+  const hasName = Boolean(contactRow?.name && String(contactRow.name).trim());
+  const intakeDone = contactRow?.intake_completed === true;
+  const needsIntake = !hasName || !intakeDone;
+
+  const agentName = needsIntake ? ('intake' as const) : ('agenda' as const);
   const agentConfig = AGENT_REGISTRY[agentName];
   const tools = getToolSchemas(agentConfig.tools);
   const baseSystemPrompt = getSystemPrompt(agentName, tenantCtx);
