@@ -21,7 +21,9 @@ export type AgentName =
   | 'pharmacovigilance'
   | 'administrative'
   | 'doctor-profile'
-  | 'payment-resolution';
+  | 'payment-resolution'
+  // Phase 3 — diferenciadores
+  | 'treatment-coach';
 
 export type AgentConfig = {
   name: AgentName;

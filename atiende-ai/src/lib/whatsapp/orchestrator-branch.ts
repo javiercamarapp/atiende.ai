@@ -369,7 +369,7 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   const msgNorm = content.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   type AgentName = 'encuesta' | 'no-show' | 'intake' | 'agenda'
     | 'quoting' | 'pharmacovigilance' | 'administrative'
-    | 'doctor-profile' | 'payment-resolution';
+    | 'doctor-profile' | 'payment-resolution' | 'treatment-coach';
 
   function detectTopicAgent(): AgentName | null {
     // Pharmacovigilance — PRIORIDAD ALTA: cualquier reporte de reacción es
@@ -401,6 +401,18 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
       /\b(quien atiende|experiencia del doctor|que estudios|curriculum|cv del|biograf|es especialist|es ortodoncist|es endodoncist|tiene experiencia con|tiene casos de)\b/i.test(msgNorm)
     ) {
       return 'doctor-profile';
+    }
+
+    // Treatment coach — paciente en tratamiento multi-sesión (orto, fisio,
+    // implante, rehab) quiere gestionar su plan o próxima sesión. Se matchea
+    // ANTES de quoting/agenda porque el contexto del plan cambia la respuesta
+    // esperada (cadence clínico, sesiones restantes) y el agente de
+    // treatment-coach invoca get_patient_treatment_plan para confirmar que
+    // realmente hay plan activo antes de continuar.
+    if (
+      /\b(mi tratamiento|mi ortodonci|mi brackets?|mis brackets?|mi fisio|mi terapia|mi rehab|mi rehabilitaci|mi endodonci|mi implante|mi plan de tratamiento|proxima sesion|próxima sesión|siguiente sesion|siguiente sesión|cuantas sesiones|cuántas sesiones|sesion(es)? que me faltan|sesiones restantes|ajuste de brackets|darme de baja del tratamiento|ya no voy a seguir con el tratamiento|pausar (mi )?tratamiento)\b/i.test(msgNorm)
+    ) {
+      return 'treatment-coach';
     }
 
     // Quoting — pregunta precio SIN intent inmediato de agendar.

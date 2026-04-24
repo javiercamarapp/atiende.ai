@@ -72,6 +72,8 @@ const AGENT_BRIEFS: Record<AgentName, string> = {
     'Responde preguntas sobre experiencia del doctor. Usa bio/certificaciones/procedures del staff + testimonials reales. Nunca inventa experiencia. Cierra con CTA de booking.',
   'payment-resolution':
     'Disputas de cobro, facturas CFDI, historial de pagos. Tono empático; nunca promete reembolsos — solo registra la disputa y notifica al dueño.',
+  'treatment-coach':
+    'Acompaña pacientes en tratamientos multi-sesión (orto, fisio, rehab). Respeta el cadence clínico al reagendar. Nunca crea planes en inbound — solo bajo orden del doctor tras diagnóstico.',
 };
 
 const TONE_GUIDE: Record<TenantOnboardingInput['tone'], string> = {

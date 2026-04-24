@@ -234,6 +234,30 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
     systemPromptKey: 'payment-resolution',
   },
 
+  // ── Phase 3 — diferenciadores ────────────────────────────────────────────
+  'treatment-coach': {
+    name: 'treatment-coach',
+    model: MODELS.ORCHESTRATOR,
+    description: 'Acompaña pacientes en tratamientos multi-sesión (orto, fisio, rehab)',
+    tools: [
+      'get_patient_treatment_plan',
+      'create_treatment_plan',
+      'mark_session_completed',
+      'pause_or_abandon_plan',
+      // Reagendar la próxima sesión del plan
+      'check_availability',
+      'book_appointment',
+      'get_my_appointments',
+      'modify_appointment',
+      'cancel_appointment',
+      // Pagos por sesión / abono del paquete
+      'send_payment_link',
+      // Multi-location (paciente puede cambiar de sede entre sesiones)
+      'list_locations',
+    ],
+    systemPromptKey: 'treatment-coach',
+  },
+
   // ── Phase 3 placeholders restantes ───────────────────────────────────────
   triaje: triajeConfig,
 };
