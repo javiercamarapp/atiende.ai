@@ -1203,7 +1203,7 @@ export function CalendarView({
 
       {/* ─── CANCEL DIALOG ─── */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white">
           <DialogHeader>
             <DialogTitle>Cancelar cita</DialogTitle>
             <DialogDescription>
@@ -1284,7 +1284,7 @@ export function CalendarView({
 
       {/* ─── RESCHEDULE DIALOG ─── */}
       <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white">
           <DialogHeader>
             <DialogTitle>Reagendar cita</DialogTitle>
             <DialogDescription>
@@ -1455,7 +1455,7 @@ export function CalendarView({
 
       {/* ─── EDIT APPOINTMENT DIALOG ─── */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white">
           <DialogHeader>
             <DialogTitle>Editar detalles</DialogTitle>
             <DialogDescription>
@@ -1545,7 +1545,7 @@ export function CalendarView({
 
       {/* ─── BLOCK TIME DIALOG ─── */}
       <Dialog open={blockOpen} onOpenChange={setBlockOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white">
           <DialogHeader>
             <DialogTitle>Bloquear tiempo</DialogTitle>
             <DialogDescription>
@@ -1599,7 +1599,7 @@ export function CalendarView({
 
       {/* ─── BULK CANCEL DIALOG ─── */}
       <Dialog open={bulkCancelOpen} onOpenChange={setBulkCancelOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white">
           <DialogHeader>
             <DialogTitle>Cancelar día completo</DialogTitle>
             <DialogDescription>
