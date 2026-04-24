@@ -153,6 +153,59 @@ export async function getFreeBusySlots(opts: {
   }));
 }
 
+/**
+ * Start a push-notification channel on a staff's primary calendar. Google will
+ * POST to `address` every time an event changes. Channels expire after ~1 week
+ * max; renew via cron before expiration.
+ */
+export async function startCalendarWatch(opts: {
+  staffId: string;
+  calendarId: string;
+  channelId: string;
+  address: string;
+  token?: string;
+  ttlSeconds?: number;
+}): Promise<{ resourceId: string; expiration: number }> {
+  const calendar = await getCalendarApi(opts.staffId);
+  const params: {
+    id: string;
+    type: 'web_hook';
+    address: string;
+    token?: string;
+    expiration?: string;
+  } = {
+    id: opts.channelId,
+    type: 'web_hook',
+    address: opts.address,
+  };
+  if (opts.token) params.token = opts.token;
+  if (opts.ttlSeconds) params.expiration = String(Date.now() + opts.ttlSeconds * 1000);
+
+  const res = await calendar.events.watch({
+    calendarId: opts.calendarId,
+    requestBody: params,
+  });
+
+  return {
+    resourceId: res.data.resourceId!,
+    expiration: Number(res.data.expiration || Date.now() + 7 * 24 * 60 * 60 * 1000),
+  };
+}
+
+export async function stopCalendarWatch(opts: {
+  staffId: string;
+  channelId: string;
+  resourceId: string;
+}): Promise<void> {
+  const calendar = await getCalendarApi(opts.staffId);
+  await calendar.channels.stop({
+    requestBody: {
+      id: opts.channelId,
+      resourceId: opts.resourceId,
+    },
+  });
+}
+
 export interface GoogleCalendarEventLite {
   id: string;
   summary: string;

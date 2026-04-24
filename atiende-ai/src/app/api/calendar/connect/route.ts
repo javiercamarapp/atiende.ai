@@ -194,6 +194,7 @@ export async function GET(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
+    let resolvedStaffId: string | null = null;
     if (existingStaff?.id) {
       const { error: updateErr } = await supabaseAdmin
         .from('staff')
@@ -203,17 +204,53 @@ export async function GET(req: NextRequest) {
         console.error('[calendar-connect] staff update failed', updateErr);
         return errRedirect('db_update_failed', updateErr.message);
       }
+      resolvedStaffId = existingStaff.id as string;
     } else {
-      const { error: insertErr } = await supabaseAdmin
+      const { data: inserted, error: insertErr } = await supabaseAdmin
         .from('staff')
         .insert({
           tenant_id: tenant.id,
           name: (tenant.name as string) || 'Titular',
           ...updates,
-        });
+        })
+        .select('id')
+        .single();
       if (insertErr) {
         console.error('[calendar-connect] staff insert failed', insertErr);
         return errRedirect('db_insert_failed', insertErr.message);
+      }
+      resolvedStaffId = (inserted?.id as string) || null;
+    }
+
+    // Register a Google push-notification channel so event changes are
+    // mirrored into Atiende in near real-time (no 60s revalidate gap).
+    // Best effort: if it fails we still have the 60s polling fallback.
+    if (resolvedStaffId && process.env.NEXT_PUBLIC_APP_URL) {
+      try {
+        const { startCalendarWatch } = await import('@/lib/calendar/google');
+        const channelId = crypto.randomBytes(16).toString('hex');
+        const token = crypto.randomBytes(24).toString('hex');
+        const result = await startCalendarWatch({
+          staffId: resolvedStaffId,
+          calendarId,
+          channelId,
+          address: `${process.env.NEXT_PUBLIC_APP_URL}/api/calendar/webhook`,
+          token,
+          ttlSeconds: 7 * 24 * 60 * 60,
+        });
+        await supabaseAdmin
+          .from('google_calendar_watch_channels')
+          .insert({
+            tenant_id: tenant.id,
+            staff_id: resolvedStaffId,
+            channel_id: channelId,
+            resource_id: result.resourceId,
+            calendar_id: calendarId,
+            token,
+            expiration_at: new Date(result.expiration).toISOString(),
+          });
+      } catch (err) {
+        console.warn('[calendar-connect] watch registration failed (sync falls back to polling)', err instanceof Error ? err.message : err);
       }
     }
 

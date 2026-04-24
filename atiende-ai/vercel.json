@@ -25,6 +25,7 @@
     { "path": "/api/cron/notify-retry", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/billing-overage", "schedule": "0 8 1 * *" },
     { "path": "/api/cron/refresh-model-prices", "schedule": "0 3 1 * *" },
-    { "path": "/api/cron/review-candidate-sweep", "schedule": "0 7 * * 1" }
+    { "path": "/api/cron/review-candidate-sweep", "schedule": "0 7 * * 1" },
+    { "path": "/api/cron/renew-calendar-watches", "schedule": "0 */6 * * *" }
   ]
 }
