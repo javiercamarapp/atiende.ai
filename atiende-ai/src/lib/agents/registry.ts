@@ -46,6 +46,8 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'validate_minor_permission',
       'retrieve_doctor_expertise',
       'capture_marketing_source',
+      // Patient Payment Portal (Phase 1)
+      'send_payment_link',
     ],
     systemPromptKey: 'agenda',
   },

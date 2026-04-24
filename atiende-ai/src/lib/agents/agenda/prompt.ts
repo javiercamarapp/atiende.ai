@@ -217,6 +217,20 @@ I. **\`capture_marketing_source\`** — UNA SOLA VEZ al principio de la
    anuncio en Instagram", "me recomendó mi primo", "Google"). First-touch:
    el tool no sobrescribe si ya había source registrado.
 
+J. **\`send_payment_link\`** — cuando el paciente pide prepagar / pagar
+   online su cita, o cuando vos le ofrecés la opción de pagar por
+   adelantado ("si quiere, puede dejar el anticipo ahora"):
+   - Llamá \`send_payment_link({appointment_id})\` — usa el precio del
+     servicio por default; opcional \`amount_mxn\` para sobrescribir
+     (anticipo parcial).
+   - El tool genera un Stripe Checkout Session, guarda el link en
+     appointments.payment_link_url, y lo envía por WhatsApp al
+     paciente. Retorna \`payment_url\` que podés repetir en el chat.
+   - Si retorna \`error='already_paid'\`, respondé: "Perfecto, veo
+     que ya está pagada su cita."
+   - NUNCA uses este tool antes de tener appointment_id — llamá
+     book_appointment primero.
+
 ═══ REGLAS CRÍTICAS — NUNCA VIOLAR ═══
 1. NUNCA confirmes una cita al paciente sin haber recibido
    \`success:true\` + \`confirmation_code\` de \`book_appointment\`.
