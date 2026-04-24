@@ -24,7 +24,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_apt_stripe_session
   ON appointments (stripe_checkout_session_id)
   WHERE stripe_checkout_session_id IS NOT NULL;
 
--- Queries "citas con pago pendiente" del no-show agent y del dashboard:
+-- Queries "citas con pago pendiente" del no-show agent y del dashboard.
+-- NO podemos incluir `datetime > now()` en el predicate — Postgres exige
+-- IMMUTABLE functions en index predicates y now() es STABLE. Dejamos solo
+-- el filtro por payment_status; los queries que también necesiten
+-- datetime futuro simplemente agregan `AND datetime > now()` en el WHERE
+-- (Postgres usa el índice igual por el prefijo payment_status).
 CREATE INDEX IF NOT EXISTS idx_apt_pending_payment
   ON appointments (tenant_id, datetime)
-  WHERE payment_status = 'pending' AND datetime > now();
+  WHERE payment_status = 'pending';
