@@ -10,6 +10,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 // Side effects: registran tools en el toolRegistry global.
+import './shared';  // tools compartidos: update_patient_profile, save_patient_document, etc.
 import './agenda';
 import './no-show';
 import './post-consulta';
@@ -215,6 +216,12 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'mark_confirmed',
     'mark_no_show',
     'notify_risk',
+    // shared profile enrichment tools (usados por agenda + intake)
+    'update_patient_profile',
+    'save_patient_document',
+    'escalate_urgency',
+    'create_referred_contact',
+    'save_patient_preferences',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {
