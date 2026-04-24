@@ -1876,10 +1876,12 @@ registerTool('send_telemed_link', {
       return { sent: false, error: 'no_room' };
     }
 
-    const { buildTelemedUrl } = await import('@/lib/telemedicine/providers');
-    const provider = (ctx.tenant.telemedicine_provider as 'jitsi' | 'daily' | 'custom_url') || 'jitsi';
-    const customBase = (ctx.tenant.telemedicine_custom_url as string | undefined) ?? null;
-    const url = buildTelemedUrl(provider, apt.telemed_room as string, customBase);
+    // Landing page propio con branding (valida el room + guía permisos)
+    // antes de redirigir al provider (Jitsi / Daily / custom). Ver
+    // src/app/telemed/[room]/page.tsx. El ?t=<appointment_id> agrega defensa
+    // extra contra room-guessing.
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+    const url = `${baseUrl}/telemed/${apt.telemed_room}?t=${apt.id}`;
 
     const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
     if (phoneNumberId) {
