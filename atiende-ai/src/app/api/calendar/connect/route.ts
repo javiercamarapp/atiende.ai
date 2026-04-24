@@ -60,7 +60,9 @@ export async function GET(req: NextRequest) {
       secure: true,
       sameSite: 'lax' as const,
       maxAge: 600,
-      path: '/api/calendar/connect',
+      // Path '/' so the cookies survive the cross-site round-trip through
+      // Google. Safari/Brave strip cookies with narrow paths in some cases.
+      path: '/',
     };
     response.cookies.set('oauth_state', state, cookieOpts);
     response.cookies.set('oauth_code_verifier', codeVerifier, cookieOpts);
