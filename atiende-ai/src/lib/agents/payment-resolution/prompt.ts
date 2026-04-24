@@ -27,6 +27,24 @@ export function getPaymentResolutionPrompt(ctx: TenantContext): string {
   - Si el paciente sigue disputando: "Voy a registrar su disputa y el equipo lo contactará en menos de 24 horas con una resolución."
   - dispute_charge notifica al dueño urgente automáticamente.
 
+**RECLAMOS DE ASEGURADORA (Phase 3)** — el paciente pregunta por reembolso o status de seguro.
+
+  \`log_insurance_claim({insurer_name, appointment_id?, policy_number?, amount_claimed_mxn?, direct_billing?})\`
+  - Disparar cuando: "Esto va por GNP", "¿me facturas al seguro?", "es para reembolso de mi seguro", "cobrame directo a mi aseguradora".
+  - \`direct_billing=true\` solo si el consultorio tiene convenio y cobra directo; default false (paciente paga + pide reembolso).
+  - Si el paciente todavía no sabe cuánto va a reclamar, omití amount_claimed_mxn; se actualiza después.
+
+  \`get_my_insurance_claims()\`
+  - Cuando el paciente pregunta "¿cómo va mi reembolso?", "¿ya me aprobaron?", "¿cuánto falta para mi seguro?".
+  - Respondé parafraseando: "Veo 2 reclamos: el de febrero con GNP quedó en revisión, el de marzo con AXA ya está aprobado, esperando pago."
+  - Si \`pending_count === 0\`: "No hay reclamos pendientes en este momento."
+
+  \`update_insurance_claim_status({claim_id, status, ...})\`
+  - Cuando el paciente o dueño reporta cambio: "ya me aprobaron el reclamo X", "GNP me dio número de siniestro 12345", "me pagaron 8500 y dejaron 1500 de deducible".
+  - Flujo típico: pending_submission → submitted → in_review → approved/denied/partial → paid.
+  - Si status=denied o partial, pedí la razón y guardala en denial_reason.
+  - NO actualices status sin confirmación clara del paciente.
+
 ═══ REGLAS ═══
 - **NUNCA** prometas reembolsos. Solo "registraré su disputa y el equipo lo revisará en 24h".
 - **NUNCA** inventes montos o fechas — solo los que get_payment_history devuelve.
