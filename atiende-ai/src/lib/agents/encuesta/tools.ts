@@ -63,6 +63,24 @@ registerTool('send_satisfaction_survey', {
     } catch (err) {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }
+
+    // Marcamos la conversación como "esperando respuesta a encuesta" para
+    // que el orchestrator-branch rutee el próximo mensaje inbound al
+    // agente `encuesta` (y no al default `agenda`). El save_survey_response
+    // limpia este state tras guardar. Si la conversación no existe (worker
+    // cron-only sin conversación previa), el upsert falla silencioso —
+    // no queremos bloquear el envío del survey por eso.
+    if (ctx.conversationId) {
+      try {
+        const { setConversationState, ConversationStateEnum } = await import('@/lib/actions/state-machine');
+        await setConversationState(ctx.conversationId, ConversationStateEnum.AWAITING_SURVEY_RESPONSE, {
+          appointment_id: args.appointment_id,
+          doctor_name: args.doctor_name,
+        });
+      } catch {
+        /* best effort */
+      }
+    }
     return { sent: true, appointment_id: args.appointment_id };
   },
 });
@@ -151,6 +169,17 @@ registerTool('save_survey_response', {
         metadata: { trigger: 'reputation_request', appointment_id: args.appointment_id },
       });
       reputation_scheduled = true;
+    }
+
+    // Cerramos el state AWAITING_SURVEY_RESPONSE — el próximo mensaje del
+    // paciente ya no debe ir al agente encuesta sino al default (agenda).
+    if (ctx.conversationId) {
+      try {
+        const { clearConversationState } = await import('@/lib/actions/state-machine');
+        await clearConversationState(ctx.conversationId);
+      } catch {
+        /* best effort */
+      }
     }
 
     return { saved: true, escalated: isUnhappy, reputation_scheduled };

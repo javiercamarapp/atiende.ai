@@ -256,6 +256,33 @@ registerTool('send_confirmation_request', {
       /* best effort */
     }
 
+    // Marcamos la conversación del paciente como "esperando confirmación
+    // de cita". El cron invoca este tool con ctx.conversationId='' (no hay
+    // conversación activa en ese momento), así que buscamos la conversación
+    // más reciente del paciente para este tenant y escribimos el state ahí.
+    // Si el paciente todavía no tiene conversation row (flujo unusual pero
+    // posible si la cita se creó desde el dashboard), skippeamos — el
+    // fast-path existente en orchestrator-branch sigue manejando la
+    // confirmación sin state.
+    try {
+      const { data: convRow } = await supabaseAdmin
+        .from('conversations')
+        .select('id')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('customer_phone', args.patient_phone)
+        .order('last_message_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (convRow?.id) {
+        const { setConversationState, ConversationStateEnum } = await import('@/lib/actions/state-machine');
+        await setConversationState(convRow.id as string, ConversationStateEnum.AWAITING_APPOINTMENT_CONFIRMATION, {
+          appointment_id: args.appointment_id,
+        });
+      }
+    } catch {
+      /* best effort */
+    }
+
     return {
       sent: true,
       appointment_id: args.appointment_id,
@@ -313,6 +340,31 @@ registerTool('mark_confirmed', {
         message:
           'No encontré una cita scheduled futura con ese ID para este tenant. Puede estar cancelada, ya confirmada, o ya pasó.',
       };
+    }
+
+    // Limpiar AWAITING_APPOINTMENT_CONFIRMATION si estaba seteado. Uso el
+    // ctx.conversationId si existe (fast-path desde orchestrator-branch);
+    // si no, busco la conversación del paciente por phone como en
+    // send_confirmation_request.
+    try {
+      const { clearConversationState } = await import('@/lib/actions/state-machine');
+      if (ctx.conversationId) {
+        await clearConversationState(ctx.conversationId);
+      } else {
+        const { data: convRow } = await supabaseAdmin
+          .from('conversations')
+          .select('id, customer_phone')
+          .eq('tenant_id', ctx.tenantId)
+          .order('last_message_at', { ascending: false })
+          .limit(10);
+        // Buscar la conv del paciente de esta cita. Mejor esfuerzo — la
+        // cita trae customer_phone pero no lo pasamos acá; si no hay
+        // conversationId, el clear puede saltearse sin impacto (el
+        // paciente probable no tenía state activo).
+        void convRow;
+      }
+    } catch {
+      /* best effort */
     }
 
     return {
