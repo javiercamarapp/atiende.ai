@@ -1278,3 +1278,217 @@ registerTool('cancel_appointment', {
     };
   },
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A.6  CONFIRM_APPOINTMENT — paciente responde "sí" / "confirmo" a un
+//      recordatorio o propuesta de reagenda. Marca la cita como 'confirmed'.
+//      Scoped por tenantId + customer_phone (no IDOR).
+// ═══════════════════════════════════════════════════════════════════════════
+const ConfirmArgs = z
+  .object({
+    appointment_id: z.string().uuid().optional(),
+    patient_phone: z.string(),
+  })
+  .strict();
+
+registerTool('confirm_appointment', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'confirm_appointment',
+      description:
+        'Marca una cita futura del paciente como confirmada. Úsalo cuando el paciente responda afirmativamente a un recordatorio o propuesta de reagenda ("sí", "confirmo", "de acuerdo", "ahí estaré"). Si no pasas appointment_id, toma la próxima cita del paciente.',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'string', description: 'UUID de la cita. Opcional — si no, se usa la próxima.' },
+          patient_phone: { type: 'string' },
+        },
+        required: ['patient_phone'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = ConfirmArgs.parse(rawArgs);
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+
+    let q = supabaseAdmin
+      .from('appointments')
+      .select('id, datetime, status')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('customer_phone', ownerPhone)
+      .in('status', ['scheduled', 'confirmed'])
+      .gt('datetime', new Date().toISOString())
+      .order('datetime', { ascending: true })
+      .limit(1);
+    if (args.appointment_id) q = q.eq('id', args.appointment_id);
+
+    const { data: apt } = await q.maybeSingle();
+
+    if (!apt) {
+      return {
+        success: false,
+        error_code: 'NOT_FOUND',
+        message: 'No encontré una cita futura a su nombre para confirmar.',
+        next_step: 'Llama get_my_appointments para listar o book_appointment si quiere una nueva.',
+      };
+    }
+
+    if (apt.status === 'confirmed') {
+      const { dateFmt, timeFmt } = formatDateTimeMx(apt.datetime as string, timezone);
+      return {
+        success: true,
+        already_confirmed: true,
+        message: `Perfecto, su cita del ${dateFmt} a las ${timeFmt} ya está confirmada.`,
+      };
+    }
+
+    const { error } = await supabaseAdmin
+      .from('appointments')
+      .update({ status: 'confirmed' })
+      .eq('id', apt.id);
+
+    if (error) {
+      return {
+        success: false,
+        error_code: 'DB_UPDATE_FAILED',
+        message: 'No pude marcar la confirmación. Inténtelo en un momento.',
+      };
+    }
+
+    const { dateFmt, timeFmt } = formatDateTimeMx(apt.datetime as string, timezone);
+    return {
+      success: true,
+      confirmed: {
+        appointment_id: apt.id as string,
+        datetime_iso: apt.datetime as string,
+        datetime_formatted: `${dateFmt} a las ${timeFmt}`,
+      },
+      message: `Confirmada — lo esperamos el ${dateFmt} a las ${timeFmt}.`,
+    };
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A.7  LIST_DOCTOR_SCHEDULE — el agente consulta la agenda del doctor para
+//      un día específico y puede responder al paciente "hoy tengo 10 am y
+//      5 pm libres". También útil para detectar si un doctor está a capacidad.
+//      No expone datos personales de otros pacientes — solo agregados.
+// ═══════════════════════════════════════════════════════════════════════════
+const ListScheduleArgs = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    staff_name: z.string().optional(),
+  })
+  .strict();
+
+registerTool('list_doctor_schedule', {
+  schema: {
+    type: 'function',
+    function: {
+      name: 'list_doctor_schedule',
+      description:
+        'Devuelve cuántas citas tiene el doctor ese día y a qué horas. No retorna datos personales de los pacientes, solo los slots ocupados. Útil cuando el paciente pregunta "¿qué tan ocupado está el doctor tal día?".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'Fecha en formato YYYY-MM-DD' },
+          staff_name: { type: 'string', description: 'Opcional — nombre del staff/doctor' },
+        },
+        required: ['date'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = ListScheduleArgs.parse(rawArgs);
+    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const dayStart = buildLocalIso(args.date, '00:00', timezone);
+    const dayEnd = buildLocalIso(args.date, '23:59', timezone);
+
+    // Staff
+    const { data: staffAll } = await supabaseAdmin
+      .from('staff')
+      .select('id, name, default_duration, google_calendar_id')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+
+    const staffRows = (staffAll || []) as StaffRow[];
+    const staff = args.staff_name
+      ? findMatchingStaff(staffRows, args.staff_name)
+      : staffRows[0];
+
+    if (!staff) {
+      return {
+        success: false,
+        error_code: 'NO_STAFF',
+        message: 'No encuentro registro del doctor/staff.',
+      };
+    }
+
+    // Local appointments that day
+    const { data: apts } = await supabaseAdmin
+      .from('appointments')
+      .select('datetime, duration_minutes, status')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('staff_id', staff.id)
+      .gte('datetime', dayStart)
+      .lte('datetime', dayEnd)
+      .in('status', ['scheduled', 'confirmed']);
+
+    const busy: Array<{ start: string; end: string }> = ((apts || []) as Array<{ datetime: string; duration_minutes: number | null }>).map((a) => {
+      const s = new Date(a.datetime);
+      const e = new Date(s.getTime() + (a.duration_minutes || staff.default_duration || 30) * 60000);
+      return { start: s.toISOString(), end: e.toISOString() };
+    });
+
+    // Google events
+    if (staff.google_calendar_id) {
+      try {
+        const { listCalendarEvents } = await import('@/lib/calendar/google');
+        const evs = await listCalendarEvents({
+          staffId: staff.id,
+          calendarId: staff.google_calendar_id,
+          timeMin: dayStart,
+          timeMax: dayEnd,
+          timezone,
+        });
+        for (const e of evs) {
+          if (e.startTime && e.endTime && e.status !== 'cancelled') {
+            busy.push({ start: e.startTime, end: e.endTime });
+          }
+        }
+      } catch { /* best effort */ }
+    }
+
+    busy.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+    return {
+      success: true,
+      date: args.date,
+      staff_name: staff.name,
+      total_busy: busy.length,
+      busy_slots: busy.map((b) => ({
+        start: new Date(b.start).toLocaleTimeString('es-MX', {
+          timeZone: timezone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }),
+        end: new Date(b.end).toLocaleTimeString('es-MX', {
+          timeZone: timezone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }),
+      })),
+      message:
+        busy.length === 0
+          ? `${staff.name} tiene el día libre el ${args.date}.`
+          : `${staff.name} tiene ${busy.length} compromiso(s) el ${args.date}.`,
+    };
+  },
+});

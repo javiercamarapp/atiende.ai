@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check, CalendarClock } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check, CalendarClock, CheckCircle2, UserX, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { toast } from 'sonner';
@@ -114,6 +114,76 @@ export function CalendarView({
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [rescheduleNotify, setRescheduleNotify] = useState(true);
   const [rescheduling, setRescheduling] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
+  const [conflicts, setConflicts] = useState<Array<{ source: 'local' | 'google'; id: string; title: string; start: string; end: string; staffName: string | null }>>([]);
+  const [checkingConflicts, setCheckingConflicts] = useState(false);
+
+  async function handleUpdateStatus(nextStatus: 'confirmed' | 'completed' | 'no_show') {
+    if (!selected || statusUpdating) return;
+    setStatusUpdating(nextStatus);
+    try {
+      const res = await fetch(`/api/appointments/${selected.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo actualizar el estado');
+        return;
+      }
+      const labels: Record<string, string> = {
+        confirmed: 'Cita confirmada',
+        completed: 'Marcada como asistida',
+        no_show: 'Marcada como no asistida',
+      };
+      toast.success(labels[nextStatus] || 'Estado actualizado');
+      setSelected({ ...selected, status: nextStatus });
+      setTimeout(() => window.location.reload(), 300);
+    } catch {
+      toast.error('Error de red');
+    } finally {
+      setStatusUpdating(null);
+    }
+  }
+
+  // Check for conflicts when the reschedule date/time changes
+  useEffect(() => {
+    if (!rescheduleOpen || !selected || !rescheduleDate || !rescheduleTime) {
+      setConflicts([]);
+      return;
+    }
+    const newIso = `${rescheduleDate}T${rescheduleTime}:00`;
+    const startDt = new Date(newIso);
+    if (isNaN(startDt.getTime())) return;
+    const duration = 30;
+    const endDt = new Date(startDt.getTime() + duration * 60000);
+
+    let cancelled = false;
+    setCheckingConflicts(true);
+    (async () => {
+      try {
+        const res = await fetch('/api/appointments/check-conflicts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start: startDt.toISOString(),
+            end: endDt.toISOString(),
+            exclude_appointment_id: selected.id,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled) setConflicts(Array.isArray(data?.conflicts) ? data.conflicts : []);
+      } catch {
+        if (!cancelled) setConflicts([]);
+      } finally {
+        if (!cancelled) setCheckingConflicts(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rescheduleOpen, rescheduleDate, rescheduleTime, selected]);
 
   async function handleRescheduleAppt() {
     if (!selected || !rescheduleDate || !rescheduleTime || rescheduling) return;
@@ -850,6 +920,55 @@ export function CalendarView({
                 </div>
               ) : selected.status !== 'cancelled' && (
                 <div className="pt-3 space-y-2">
+                  {/* Quick status actions */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus('confirmed')}
+                      disabled={!!statusUpdating || selected.status === 'confirmed'}
+                      className={cn(
+                        'inline-flex flex-col items-center justify-center gap-0.5 h-14 rounded-xl text-[10.5px] font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
+                        selected.status === 'confirmed'
+                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                          : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-200',
+                      )}
+                      title="Marcar como confirmada"
+                    >
+                      {statusUpdating === 'confirmed' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      Confirmar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus('completed')}
+                      disabled={!!statusUpdating || selected.status === 'completed'}
+                      className={cn(
+                        'inline-flex flex-col items-center justify-center gap-0.5 h-14 rounded-xl text-[10.5px] font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
+                        selected.status === 'completed'
+                          ? 'bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] ring-1 ring-[hsl(var(--brand-blue))]/20'
+                          : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-[hsl(var(--brand-blue-soft))] hover:text-[hsl(var(--brand-blue))]',
+                      )}
+                      title="Marcar como asistida"
+                    >
+                      {statusUpdating === 'completed' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Asistió
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus('no_show')}
+                      disabled={!!statusUpdating || selected.status === 'no_show'}
+                      className={cn(
+                        'inline-flex flex-col items-center justify-center gap-0.5 h-14 rounded-xl text-[10.5px] font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
+                        selected.status === 'no_show'
+                          ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+                          : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-amber-50 hover:text-amber-700 hover:ring-amber-200',
+                      )}
+                      title="Marcar como no asistida"
+                    >
+                      {statusUpdating === 'no_show' ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserX className="w-4 h-4" />}
+                      No vino
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -1005,6 +1124,45 @@ export function CalendarView({
                 />
               </div>
             </div>
+
+            {/* Conflict warning */}
+            {checkingConflicts && (
+              <div className="flex items-center gap-2 text-[11.5px] text-zinc-500 px-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Revisando disponibilidad…
+              </div>
+            )}
+            {!checkingConflicts && conflicts.length > 0 && (
+              <div className="rounded-xl bg-amber-50 ring-1 ring-amber-200 p-3">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                  <p className="text-[12px] font-semibold text-amber-900">
+                    {conflicts.length === 1 ? 'Horario ocupado' : `${conflicts.length} choques en ese horario`}
+                  </p>
+                </div>
+                <ul className="space-y-1">
+                  {conflicts.slice(0, 3).map((c) => (
+                    <li key={`${c.source}-${c.id}`} className="flex items-start gap-2 text-[11.5px] text-amber-900">
+                      <span className="mt-1 w-1 h-1 rounded-full bg-amber-600 shrink-0" />
+                      <span className="truncate">
+                        <strong className="font-semibold">{c.title}</strong>
+                        <span className="opacity-70"> · {new Date(c.start).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {c.staffName && <span className="opacity-70"> · {c.staffName}</span>}
+                        {c.source === 'google' && <span className="opacity-70"> · Google</span>}
+                      </span>
+                    </li>
+                  ))}
+                  {conflicts.length > 3 && (
+                    <li className="text-[11px] text-amber-800 opacity-70">+{conflicts.length - 3} más</li>
+                  )}
+                </ul>
+                <p className="text-[10.5px] text-amber-800 mt-2">Puedes continuar de todas formas; Atiende no bloquea el doble-booking automáticamente.</p>
+              </div>
+            )}
+            {!checkingConflicts && conflicts.length === 0 && rescheduleDate && rescheduleTime && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 ring-1 ring-emerald-100 text-[11.5px] text-emerald-700">
+                <Check className="w-3 h-3" strokeWidth={3} /> Horario disponible
+              </div>
+            )}
 
             <div>
               <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">
