@@ -15,7 +15,13 @@ export type AgentName =
   | 'agenda-gap'
   | 'triaje'
   | 'cobranza'
-  | 'reputacion';
+  | 'reputacion'
+  // Phase 1 — 5 nuevos subagentes del audit
+  | 'quoting'
+  | 'pharmacovigilance'
+  | 'administrative'
+  | 'doctor-profile'
+  | 'payment-resolution';
 
 export type AgentConfig = {
   name: AgentName;

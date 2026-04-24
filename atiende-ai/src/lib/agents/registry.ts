@@ -162,6 +162,71 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
     systemPromptKey: 'cobranza',
   },
 
+  // ── Phase 1 — 5 subagentes del audit ─────────────────────────────────────
+  quoting: {
+    name: 'quoting',
+    model: MODELS.ORCHESTRATOR,
+    description: 'Cotizaciones de servicios y paquetes + follow-up si no agenda',
+    tools: [
+      'get_service_quote',           // shared — read-only
+      'save_quote_interest',
+      'schedule_quote_followup',
+      // Fallback a agenda si el paciente decide agendar en el mismo turno
+      'check_availability',
+      'book_appointment',
+    ],
+    systemPromptKey: 'quoting',
+  },
+  pharmacovigilance: {
+    name: 'pharmacovigilance',
+    model: MODELS.PREMIUM, // medical safety — usar el mejor modelo
+    description: 'Reacciones adversas a medicamentos. Critical (COFEPRIS NOM-220)',
+    tools: [
+      'save_adverse_event',
+      'get_doctor_guidance',
+      'escalate_urgency', // shared — para severe/life_threatening
+    ],
+    systemPromptKey: 'pharmacovigilance',
+  },
+  administrative: {
+    name: 'administrative',
+    model: MODELS.ORCHESTRATOR_FALLBACK,
+    description: 'Certificados médicos, expedientes, consentimientos no clínicos',
+    tools: [
+      'request_medical_certificate',
+      'request_record_export',
+      'request_parental_consent_form',
+      'validate_minor_permission', // shared
+      'escalate_urgency',          // shared — para casos urgentes
+    ],
+    systemPromptKey: 'administrative',
+  },
+  'doctor-profile': {
+    name: 'doctor-profile',
+    model: MODELS.ORCHESTRATOR,
+    description: 'Bio/experticia del doctor + testimonials + CTA de booking',
+    tools: [
+      'list_staff',
+      'get_doctor_testimonials',
+      'retrieve_doctor_expertise',  // shared
+      // Cierra con booking si el paciente convence
+      'check_availability',
+      'book_appointment',
+    ],
+    systemPromptKey: 'doctor-profile',
+  },
+  'payment-resolution': {
+    name: 'payment-resolution',
+    model: MODELS.ORCHESTRATOR,
+    description: 'Disputas de cobro, historial de pagos, facturación CFDI',
+    tools: [
+      'get_payment_history',
+      'request_invoice',
+      'dispute_charge',
+    ],
+    systemPromptKey: 'payment-resolution',
+  },
+
   // ── Phase 3 placeholders restantes ───────────────────────────────────────
   triaje: triajeConfig,
 };

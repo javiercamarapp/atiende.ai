@@ -21,6 +21,12 @@ import './retencion';
 import './agenda-gap';
 import './reputacion';
 import './cobranza';
+// Phase 1 — 5 nuevos subagentes del audit
+import './quoting';
+import './pharmacovigilance';
+import './administrative';
+import './doctor-profile';
+import './payment-resolution';
 
 import type { AgentName, TenantContext, FastRoute } from './types';
 import { AGENT_REGISTRY } from './registry';
@@ -35,6 +41,11 @@ import { getRetencionPrompt } from './retencion/prompt';
 import { getAgendaGapPrompt } from './agenda-gap/prompt';
 import { getReputacionPrompt } from './reputacion/prompt';
 import { getCobranzaPrompt } from './cobranza/prompt';
+import { getQuotingPrompt } from './quoting/prompt';
+import { getPharmacovigilancePrompt } from './pharmacovigilance/prompt';
+import { getAdministrativePrompt } from './administrative/prompt';
+import { getDoctorProfilePrompt } from './doctor-profile/prompt';
+import { getPaymentResolutionPrompt } from './payment-resolution/prompt';
 
 export type { AgentName, TenantContext, FastRoute, AgentConfig } from './types';
 export { AGENT_REGISTRY } from './registry';
@@ -129,6 +140,11 @@ export function getSystemPrompt(agentName: AgentName, ctx: TenantContext): strin
     case 'agenda-gap':   return getAgendaGapPrompt(ctx);
     case 'reputacion':   return getReputacionPrompt(ctx);
     case 'cobranza':     return getCobranzaPrompt(ctx);
+    case 'quoting':            return getQuotingPrompt(ctx);
+    case 'pharmacovigilance':  return getPharmacovigilancePrompt(ctx);
+    case 'administrative':     return getAdministrativePrompt(ctx);
+    case 'doctor-profile':     return getDoctorProfilePrompt(ctx);
+    case 'payment-resolution': return getPaymentResolutionPrompt(ctx);
     case 'faq':
       return '(FAQ no usa LLM — los handlers son funciones directas en src/lib/agents/faq/tools.ts)';
     case 'triaje':
@@ -228,6 +244,19 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'validate_minor_permission',
     'retrieve_doctor_expertise',
     'capture_marketing_source',
+    // 5 new subagents (Phase 1)
+    'save_quote_interest',
+    'schedule_quote_followup',
+    'save_adverse_event',
+    'get_doctor_guidance',
+    'request_medical_certificate',
+    'request_record_export',
+    'request_parental_consent_form',
+    'list_staff',
+    'get_doctor_testimonials',
+    'get_payment_history',
+    'request_invoice',
+    'dispute_charge',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {

@@ -62,6 +62,16 @@ const AGENT_BRIEFS: Record<AgentName, string> = {
   cobranza: '',
   encuesta: '',
   medicamento: '',
+  quoting:
+    'Responde cotizaciones: extrae keywords del servicio solicitado, usa get_service_quote para precio exacto (nunca inventa), y si el paciente no agenda en el turno programa un follow-up automático a 48h.',
+  pharmacovigilance:
+    'Reacciones adversas a medicamentos (NOM-220). Documenta en adverse_events, notifica al doctor, responde SOLO con guía pre-aprobada (nunca indicaciones propias).',
+  administrative:
+    'Certificados médicos, transferencia de expedientes, consentimientos para menores. Crea tickets — no emite documentos él mismo.',
+  'doctor-profile':
+    'Responde preguntas sobre experiencia del doctor. Usa bio/certificaciones/procedures del staff + testimonials reales. Nunca inventa experiencia. Cierra con CTA de booking.',
+  'payment-resolution':
+    'Disputas de cobro, facturas CFDI, historial de pagos. Tono empático; nunca promete reembolsos — solo registra la disputa y notifica al dueño.',
 };
 
 const TONE_GUIDE: Record<TenantOnboardingInput['tone'], string> = {
