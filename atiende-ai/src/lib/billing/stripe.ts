@@ -81,14 +81,6 @@ export async function createCheckoutSession(tenantId: string, email: string, pla
     lineItems.push({ price: VOICE_OVERAGE_PRICE_ID });
   }
 
-  // Trial de 30 días — SOLO aplica al plan Esencial (basic). Pro y Ultimate
-  // cobran desde el día 1. Decisión de producto para que el trial sea una
-  // rampa de entrada real (precio de entrada bajo) y no un beneficio de
-  // tiers caros. Si algún día se extiende a más planes, agregar el key al
-  // set de abajo.
-  const TRIAL_ELIGIBLE_PLANS = new Set(['basic']);
-  const includeTrial = TRIAL_ELIGIBLE_PLANS.has(plan);
-
   return getStripe().checkout.sessions.create({
     customer_email: email,
     mode: 'subscription',
@@ -98,22 +90,22 @@ export async function createCheckoutSession(tenantId: string, email: string, pla
     metadata: { tenant_id: tenantId, plan },
     currency: 'mxn',
     allow_promotion_codes: true,
-    subscription_data: includeTrial
-      ? {
-          trial_period_days: STRIPE_TRIAL_DAYS,
-          trial_settings: {
-            end_behavior: {
-              // Si el trial termina y la tarjeta falla: pausar (no cancelar),
-              // así el dueño puede actualizar método sin perder su cuenta.
-              missing_payment_method: 'pause',
-            },
-          },
-          metadata: { tenant_id: tenantId, plan, trial_days: String(STRIPE_TRIAL_DAYS) },
-        }
-      : {
-          metadata: { tenant_id: tenantId, plan },
+    // Trial universal — TODOS los planes (Esencial, Pro, Ultimate) pagan
+    // el primer mes gratis y Stripe cobra recién al mes siguiente del
+    // signup. Se solicita tarjeta siempre (payment_method_collection:
+    // 'always') para validar al usuario y automatizar el cobro en día 31.
+    // Si el trial termina y la tarjeta falla, Stripe pausa la suscripción
+    // en vez de cancelarla — el dueño puede actualizar su método sin
+    // perder la cuenta.
+    subscription_data: {
+      trial_period_days: STRIPE_TRIAL_DAYS,
+      trial_settings: {
+        end_behavior: {
+          missing_payment_method: 'pause',
         },
-    // Exigir tarjeta siempre (con o sin trial).
+      },
+      metadata: { tenant_id: tenantId, plan, trial_days: String(STRIPE_TRIAL_DAYS) },
+    },
     payment_method_collection: 'always',
   });
 }
