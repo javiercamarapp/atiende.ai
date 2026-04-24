@@ -277,6 +277,8 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'log_insurance_claim',
     'get_my_insurance_claims',
     'update_insurance_claim_status',
+    // Patient portal (Phase 3)
+    'send_patient_portal_link',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {

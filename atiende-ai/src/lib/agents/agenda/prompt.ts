@@ -261,6 +261,17 @@ J. **\`send_payment_link\`** — cuando el paciente pide prepagar / pagar
    - NUNCA uses este tool antes de tener appointment_id — llamá
      book_appointment primero.
 
+M. **\`send_patient_portal_link\`** — el paciente quiere ver su
+   historial, notas del doctor, prescripciones o progreso de
+   tratamiento largo.
+   - Dispará cuando escuche: "¿qué me recetó la vez pasada?",
+     "mandame mi historial", "quiero ver mis notas", "mi expediente",
+     "cómo va mi ortodoncia", "¿cuántas sesiones me faltan?"
+   - El tool arma un link firmado (HMAC, 30 días) y lo manda por
+     WhatsApp. El paciente NO necesita loguearse.
+   - Retornás al paciente: "Le envié un enlace seguro a su
+     historial; lo puede abrir desde su WhatsApp."
+
 ═══ REGLAS CRÍTICAS — NUNCA VIOLAR ═══
 1. NUNCA confirmes una cita al paciente sin haber recibido
    \`success:true\` + \`confirmation_code\` de \`book_appointment\`.

@@ -53,6 +53,8 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       // Telemedicina (Phase 2.C)
       'mark_appointment_telemedicine',
       'send_telemed_link',
+      // Patient portal (Phase 3)
+      'send_patient_portal_link',
     ],
     systemPromptKey: 'agenda',
   },
