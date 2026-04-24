@@ -28,6 +28,7 @@
     { "path": "/api/cron/review-candidate-sweep", "schedule": "0 7 * * 1" },
     { "path": "/api/cron/renew-calendar-watches", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/satisfaction-survey", "schedule": "*/30 * * * *" },
-    { "path": "/api/cron/medication-processing", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/medication-processing", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/google-reviews-sync", "schedule": "0 8 * * 1" }
   ]
 }

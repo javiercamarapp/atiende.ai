@@ -158,7 +158,7 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
     name: 'reputacion',
     model: MODELS.ORCHESTRATOR_FALLBACK,
     description: '24h post-encuesta excelente, solicita reseña Google',
-    tools: ['send_review_request', 'track_review_sent'],
+    tools: ['send_review_request', 'track_review_sent', 'check_existing_google_review'],
     systemPromptKey: 'reputacion',
   },
   cobranza: {
