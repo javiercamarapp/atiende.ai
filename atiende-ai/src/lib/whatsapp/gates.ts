@@ -73,19 +73,24 @@ export async function runGates(
     }
   }
 
-  // 4. Monthly cap — reserva ATÓMICA en Redis. INCR + DECR si excede;
-  // garantiza que concurrent webhooks NO pueden pasar el mismo count
-  // desfasado al LLM.
+  // 4. Monthly cap — todos los planes son ilimitados desde v4 (ver
+  // PLAN_MSG_LIMITS_MONTHLY). Si el cap es Infinity salteamos la reserva
+  // por completo — evita un round-trip a Redis y desactiva el mensaje
+  // "Hemos alcanzado el limite" que confundía cuando el producto no
+  // tiene cap real. Si algún día re-introducimos planes con cap, basta
+  // con poner un número finito en config y este bloque vuelve a operar.
   const monthlyLimit = PLAN_MSG_LIMITS[tenant.plan] ?? PLAN_MSG_LIMITS.free_trial;
-  const { reserveMonthlyMessage } = await import('@/lib/rate-limit-monthly');
-  const reservation = await reserveMonthlyMessage(tenant.id, monthlyLimit);
-  if (!reservation.allowed) {
-    await sendTextMessage(
-      phoneNumberId,
-      senderPhone,
-      'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.',
-    );
-    return false;
+  if (Number.isFinite(monthlyLimit)) {
+    const { reserveMonthlyMessage } = await import('@/lib/rate-limit-monthly');
+    const reservation = await reserveMonthlyMessage(tenant.id, monthlyLimit);
+    if (!reservation.allowed) {
+      await sendTextMessage(
+        phoneNumberId,
+        senderPhone,
+        'Hemos alcanzado el limite de mensajes de este mes para tu plan. Para continuar recibiendo respuestas automaticas, por favor actualiza tu plan. Disculpa las molestias.',
+      );
+      return false;
+    }
   }
 
   return true;

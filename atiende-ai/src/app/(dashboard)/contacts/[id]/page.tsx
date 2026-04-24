@@ -7,6 +7,8 @@ import {
 import { createServerSupabase } from '@/lib/supabase/server';
 import { BloodPressureChart } from '@/components/dashboard/kpi-charts';
 import { cn } from '@/lib/utils';
+import { decryptPII } from '@/lib/utils/crypto';
+import { displayPatientName, patientInitials } from '@/lib/utils/patient-display';
 
 interface ContactDetail {
   id: string;
@@ -35,11 +37,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function initials(name: string | null, phone: string): string {
-  if (name) {
-    const parts = name.trim().split(/\s+/);
-    return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
-  }
-  return phone.slice(-2);
+  return patientInitials(name, phone);
 }
 
 function fmtDate(iso: string | null): string {
@@ -79,6 +77,9 @@ export default async function PatientDetailPage({
     .single()) as { data: ContactDetail | null };
 
   if (!contact) notFound();
+
+  // Desencriptar el nombre antes de todas las referencias de render.
+  contact.name = decryptPII(contact.name);
 
   const { data: aptsData } = await supabase
     .from('appointments')
@@ -144,7 +145,7 @@ export default async function PatientDetailPage({
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
-                <h2 className="text-lg font-semibold text-zinc-900">{contact.name || contact.phone}</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">{displayPatientName(contact.name, contact.phone)}</h2>
                 <span className="text-[10px] font-medium bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] rounded-md px-2 py-0.5">
                   #{contact.id.slice(0, 8).toUpperCase()}
                 </span>

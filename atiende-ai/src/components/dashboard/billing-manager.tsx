@@ -329,38 +329,45 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
             )}
           </div>
 
-          {/* Usage meter */}
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
-                Uso este mes
-              </p>
-              <p className="text-[11px] text-zinc-500">
-                {usedCount.toLocaleString('es-MX')} / {limit.toLocaleString('es-MX')} mensajes
+          {/* Info del estado del plan. Ya no mostramos usage meter porque
+              todos los planes ahora son ilimitados (v4 — ver
+              PLAN_MSG_LIMITS_MONTHLY en config.ts). El card simplemente
+              describe el estado del trial o ratifica que los mensajes
+              están sin límite en el plan activo. */}
+          {isTrialing ? (
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                  Prueba gratuita
+                </p>
+                <p className="text-[11px] text-zinc-500">
+                  {trialDaysLeft !== null && trialDaysLeft > 0
+                    ? `${trialDaysLeft} día${trialDaysLeft !== 1 ? 's' : ''} restantes`
+                    : 'Activa cualquier plan'}
+                </p>
+              </div>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                Primer mes gratis. Al activar un plan te pedimos tu tarjeta:
+                no se cobra nada hasta el día 31. Podés cancelar cuando
+                quieras desde esta página.
               </p>
             </div>
-
-            <div className="relative h-2.5 w-full rounded-full bg-zinc-100 overflow-hidden">
-              <div
-                className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${usageColor} transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]`}
-                style={{ width: `${usagePercent}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] text-zinc-500">
-              <span>{remaining.toLocaleString('es-MX')} restantes</span>
-              <span className="font-medium text-zinc-700">{usagePercent}%</span>
-            </div>
-
-            {usagePercent >= 90 && (
-              <p className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-100 rounded-lg px-2.5 py-1.5">
-                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                {usagePercent >= 100
-                  ? 'Límite alcanzado. Mejora tu plan.'
-                  : 'Cerca del límite mensual.'}
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                  Tu plan
+                </p>
+                <p className="text-[11px] text-emerald-700 font-medium">
+                  Mensajes ilimitados
+                </p>
+              </div>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                Sin cap mensual ni costos por mensaje. Tu plan incluye todos
+                los mensajes que necesite tu consultorio.
               </p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -465,8 +472,13 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                   </span>
                 </div>
                 <p className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {plan.msgLimit.toLocaleString('es-MX')} mensajes incluidos
+                  Mensajes ilimitados
                 </p>
+                {isTrialing && !isCurrent && (
+                  <p className={`text-[11px] mt-1.5 font-medium ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                    ✨ Primer mes gratis — se requiere tarjeta, no se cobra hasta el día 31
+                  </p>
+                )}
               </div>
 
               {/* Features */}

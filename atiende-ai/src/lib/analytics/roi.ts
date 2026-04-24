@@ -66,10 +66,13 @@ export async function getMonthlyUsage(tenantId: string) {
   return count || 0;
 }
 
-// Plan message limits for ROI/usage dashboards. Falls back to the central
-// constant in config.ts; premium is treated as effectively unlimited for
-// dashboard visualisation purposes (real enforcement is in gates.ts).
+// Plan message limits for ROI/usage dashboards. Desde v4 todos los planes
+// tienen cap `Infinity` en config.ts (el producto ya no tiene cap real).
+// Para visualización devolvemos el sentinel 999_999 — los dashboards que
+// hacen division-by-limit siguen funcionando y el número aparece como
+// "efectivamente ilimitado" sin tener que manejar Infinity en la UI.
+const UNLIMITED_DISPLAY = 999_999;
 export function getPlanLimit(plan: string): number {
-  if (plan === 'premium') return 999999;
-  return PLAN_MSG_LIMITS_MONTHLY[plan] ?? PLAN_MSG_LIMITS_MONTHLY.free_trial;
+  const cap = PLAN_MSG_LIMITS_MONTHLY[plan] ?? PLAN_MSG_LIMITS_MONTHLY.free_trial;
+  return Number.isFinite(cap) ? cap : UNLIMITED_DISPLAY;
 }

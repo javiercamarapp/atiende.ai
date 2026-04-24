@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Search, Plus } from 'lucide-react';
 import { createServerSupabase } from '@/lib/supabase/server';
+import { decryptPII } from '@/lib/utils/crypto';
+import { displayPatientName, patientInitials } from '@/lib/utils/patient-display';
 
 type Msg = { content: string; direction: string; sender_type: string; created_at: string };
 
@@ -11,14 +13,6 @@ function fmtTime(iso: string): string {
   if (diffMs < 86_400_000) return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   if (diffMs < 2 * 86_400_000) return 'Ayer';
   return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
-}
-
-function initials(name: string | null, phone: string): string {
-  if (name) {
-    const parts = name.trim().split(/\s+/);
-    return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
-  }
-  return phone.slice(-2);
 }
 
 export default async function ConversationsPage({
@@ -86,7 +80,13 @@ export default async function ConversationsPage({
                 ? msgs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
                 : null;
               const unread = msgs.filter((m) => m.direction === 'inbound').length;
-              const name = c.customer_name || c.customer_phone;
+              // Tanto customer_name como message.content pueden estar
+              // cifrados (encryptPII al persistir). Desencriptamos acá y
+              // delegamos el fallback visual a displayPatientName.
+              const decryptedName = decryptPII(c.customer_name);
+              const decryptedLastContent = lastMsg?.content
+                ? decryptPII(lastMsg.content)
+                : null;
               return (
                 <li key={c.id}>
                   <Link
@@ -94,17 +94,17 @@ export default async function ConversationsPage({
                     className="flex items-start gap-3 px-3 md:px-5 py-3.5 border-b border-zinc-100 hover:bg-zinc-50/60 transition"
                   >
                     <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center text-sm font-semibold text-zinc-600 shrink-0">
-                      {initials(c.customer_name, c.customer_phone)}
+                      {patientInitials(decryptedName, c.customer_phone)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-zinc-900 truncate">{name}</p>
+                        <p className="text-sm font-semibold text-zinc-900 truncate">{displayPatientName(decryptedName, c.customer_phone)}</p>
                         <span className="text-[10px] text-zinc-400 tabular-nums shrink-0">
                           {c.last_message_at ? fmtTime(c.last_message_at) : ''}
                         </span>
                       </div>
                       <p className="text-xs text-zinc-500 truncate mt-0.5">
-                        {lastMsg?.content || 'Sin mensajes'}
+                        {decryptedLastContent || 'Sin mensajes'}
                       </p>
                     </div>
                     {unread > 0 && (
