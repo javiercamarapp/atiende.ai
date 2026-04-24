@@ -1,5 +1,6 @@
 import { sendTextMessage, sendButtonMessage, sendListMessage, sendLocation } from '@/lib/whatsapp/send';
 import { pickFallback } from '@/lib/guardrails/validate';
+import { trackFallback } from '@/lib/monitoring';
 
 // ═══════════════════════════════════════════════════════════
 // SMART RESPONSE ENGINE
@@ -378,7 +379,9 @@ export async function sendSmartResponse(opts: SmartResponseOpts) {
   // Defense-in-depth: si text llega vacío desde response-builder (no debería,
   // tiene fallback interno), usamos fallback por intent acá también. Evita
   // que WhatsApp reciba body vacío y rechace con Meta error 100.
-  const text = (opts.text ?? '').trim() || pickFallback(intent);
+  const trimmed = (opts.text ?? '').trim();
+  const text = trimmed || pickFallback(intent);
+  if (!trimmed) trackFallback('smart_response_empty');
 
   // Detect customer language
   const language = detectLanguage(customerMessage || '');

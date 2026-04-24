@@ -112,6 +112,9 @@ export function validateResponse(
   // intent antes de correr cualquier otra capa (ninguna tiene sentido
   // sobre string vacío y varias generan falsos positivos).
   if (!response || !response.trim()) {
+    // Import dinámico: validate.ts es puro (sin side-effects en import) y
+    // no queremos acoplar el guardrail al cliente Redis de monitoring.ts.
+    void import('@/lib/monitoring').then((m) => m.trackFallback('guardrail_empty_input')).catch(() => {});
     return { valid: false, text: pickFallback(intent) };
   }
 

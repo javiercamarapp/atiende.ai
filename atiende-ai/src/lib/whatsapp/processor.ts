@@ -27,6 +27,7 @@ try {
 void initializeAllAgents;
 // AGENT_REGISTRY moved to orchestrator-branch.ts
 import { appendMedicalDisclaimer, pickFallback } from '@/lib/guardrails/validate';
+import { trackFallback } from '@/lib/monitoring';
 import {
   acquireConversationLock,
   releaseConversationLock,
@@ -500,6 +501,7 @@ async function handleSingleMessageInner(
       tenantId: tenant.id,
       err: err instanceof Error ? err.message : String(err),
     });
+    trackFallback('processor_last_resort', tenant.id as string);
     const fallbackText = intent === 'GREETING' && tenant.welcome_message
       ? (tenant.welcome_message as string)
       : pickFallback(intent);
