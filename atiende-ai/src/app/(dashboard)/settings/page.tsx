@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
-  ChevronRight, Building2, Workflow,
+  ChevronRight, Building2, Workflow, Link2,
 } from 'lucide-react';
 
 export default async function SettingsHubPage() {
@@ -41,6 +41,13 @@ export default async function SettingsHubPage() {
       href: '/settings/billing',
       icon: CreditCard,
       tint: 'bg-emerald-50 text-emerald-600',
+    },
+    {
+      title: 'Página pública de reservas',
+      description: 'Link compartible para que nuevos pacientes agenden sin WhatsApp.',
+      href: '/settings/booking-links',
+      icon: Link2,
+      tint: 'bg-rose-50 text-rose-600',
     },
   ];
 
