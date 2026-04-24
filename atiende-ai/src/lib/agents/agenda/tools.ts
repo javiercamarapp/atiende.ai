@@ -371,6 +371,11 @@ const BookArgs = z
       .transform((s) => s.replace(/\s+/g, ' ').trim().slice(0, 120)),
     patient_phone: z.string().min(6).max(20),
     staff_id: z.string().uuid().optional(),
+    // Motivo de la cita. Campo separado de `notes` para facilitar analytics
+    // y mostrarlo como columna "Motivo" en el historial del paciente.
+    // Ejemplos: "limpieza dental", "dolor de muela superior derecho",
+    // "revisión de ortodoncia", "extracción de muela del juicio".
+    reason: z.string().min(1).max(300).optional(),
     notes: z.string().max(500).optional(),
   })
   .strict();
@@ -389,7 +394,7 @@ registerTool('book_appointment', {
     function: {
       name: 'book_appointment',
       description:
-        'Crea una cita confirmada en la base de datos. SOLO llamar después de: (1) check_availability confirmó disponibilidad, (2) el paciente confirmó TODOS los datos explícitamente. Nunca llamar sin confirmación del paciente.',
+        'Crea una cita confirmada en la base de datos. SOLO llamar después de: (1) check_availability confirmó disponibilidad, (2) el paciente confirmó TODOS los datos explícitamente incluyendo el motivo. Nunca llamar sin confirmación del paciente.',
       parameters: {
         type: 'object',
         properties: {
@@ -399,7 +404,12 @@ registerTool('book_appointment', {
           patient_name: { type: 'string' },
           patient_phone: { type: 'string' },
           staff_id: { type: 'string', description: 'UUID opcional — si se omite se elige un staff libre' },
-          notes: { type: 'string', description: 'Opcional — alergias, motivo, primera vez, etc.' },
+          reason: {
+            type: 'string',
+            description:
+              'Motivo de la cita en palabras del paciente, breve (5-30 palabras). Ejemplos: "limpieza dental de rutina", "dolor en muela superior derecha hace 3 días", "revisión de ortodoncia mensual", "extracción de muela del juicio inferior". Debe preguntarse ANTES de book_appointment; si el paciente no dice nada específico, pedir explícitamente ("¿cuál es el motivo de la visita?").',
+          },
+          notes: { type: 'string', description: 'Opcional — anotaciones internas adicionales (no del motivo). Ej. "primera vez", "llega con acompañante".' },
         },
         required: ['date', 'time', 'service_type', 'patient_name', 'patient_phone'],
         additionalProperties: false,
@@ -575,6 +585,7 @@ registerTool('book_appointment', {
         status: 'scheduled',
         source: 'orchestrator',
         confirmation_code: confirmationCode,
+        reason: args.reason?.trim() || null,
         notes: args.notes ?? null,
       })
       .select('id')
@@ -611,7 +622,7 @@ registerTool('book_appointment', {
           staffId: staffMember.id,
           calendarId: staffMember.google_calendar_id,
           summary: `${matchedService?.name || args.service_type} - ${args.patient_name}`,
-          description: `WhatsApp: ${args.patient_phone}${args.notes ? `\nNotas: ${args.notes}` : ''}\nCódigo: ${confirmationCode}`,
+          description: `WhatsApp: ${args.patient_phone}${args.reason ? `\nMotivo: ${args.reason}` : ''}${args.notes ? `\nNotas: ${args.notes}` : ''}\nCódigo: ${confirmationCode}`,
           startTime: datetime,
           endTime: endDt,
           attendeeEmail: undefined,
