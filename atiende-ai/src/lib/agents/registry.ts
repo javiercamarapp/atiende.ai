@@ -30,6 +30,15 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'get_my_appointments',
       'modify_appointment',
       'cancel_appointment',
+      // Shared profile tools — el agente agenda ve mensajes libres del
+      // paciente y debe poder guardar cualquier dato nuevo que aparezca
+      // en medio del flujo (alergia reciente, cambio de dirección,
+      // urgencia, referido, preferencias).
+      'update_patient_profile',
+      'save_patient_document',
+      'escalate_urgency',
+      'create_referred_contact',
+      'save_patient_preferences',
     ],
     systemPromptKey: 'agenda',
   },
@@ -92,7 +101,17 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
     name: 'intake',
     model: MODELS.ORCHESTRATOR_FALLBACK,
     description: 'Recopila historia médica básica del paciente nuevo',
-    tools: ['send_intake_form', 'save_intake_data', 'mark_intake_completed'],
+    tools: [
+      'send_intake_form',
+      'save_intake_data',
+      'mark_intake_completed',
+      // Durante el intake el paciente puede mencionar urgencia,
+      // preferencia o mandar una foto de INE. Los tools compartidos
+      // cubren esos casos sin romper el flow.
+      'escalate_urgency',
+      'save_patient_document',
+      'save_patient_preferences',
+    ],
     systemPromptKey: 'intake',
   },
 
