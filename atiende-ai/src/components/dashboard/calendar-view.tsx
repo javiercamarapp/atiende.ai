@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check, CalendarClock, CheckCircle2, UserX, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check, CalendarClock, CheckCircle2, UserX, AlertTriangle, Edit3, CalendarX, Ban } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { toast } from 'sonner';
@@ -117,6 +117,122 @@ export function CalendarView({
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Array<{ source: 'local' | 'google'; id: string; title: string; start: string; end: string; staffName: string | null }>>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
+
+  // Edit dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ customer_name: '', customer_phone: '', service_name: '', duration_minutes: 30, notes: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Block time dialog
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [blockStart, setBlockStart] = useState({ date: '', time: '' });
+  const [blockEnd, setBlockEnd] = useState({ date: '', time: '' });
+  const [blockLabel, setBlockLabel] = useState('');
+  const [blocking, setBlocking] = useState(false);
+
+  // Bulk cancel dialog
+  const [bulkCancelOpen, setBulkCancelOpen] = useState(false);
+  const [bulkCancelDate, setBulkCancelDate] = useState('');
+  const [bulkCancelReason, setBulkCancelReason] = useState('');
+  const [bulkCancelNotify, setBulkCancelNotify] = useState(true);
+  const [bulkCancelling, setBulkCancelling] = useState(false);
+
+  async function handleEditAppt() {
+    if (!selected || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/appointments/${selected.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: editForm.customer_name,
+          customer_phone: editForm.customer_phone,
+          service_name: editForm.service_name || undefined,
+          duration_minutes: editForm.duration_minutes,
+          notes: editForm.notes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo guardar');
+        return;
+      }
+      toast.success('Cita actualizada');
+      setEditOpen(false);
+      setSelected(null);
+      window.location.reload();
+    } catch {
+      toast.error('Error de red');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleBlockTime() {
+    if (!blockStart.date || !blockStart.time || !blockEnd.date || !blockEnd.time || blocking) return;
+    setBlocking(true);
+    try {
+      const startIso = `${blockStart.date}T${blockStart.time}:00`;
+      const endIso = `${blockEnd.date}T${blockEnd.time}:00`;
+      if (new Date(endIso) <= new Date(startIso)) {
+        toast.error('La hora final debe ser posterior a la inicial');
+        return;
+      }
+      const res = await fetch('/api/calendar/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: startIso, end: endIso, label: blockLabel.trim() || 'Bloqueo' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo bloquear');
+        return;
+      }
+      toast.success('Horario bloqueado en Google Calendar');
+      setBlockOpen(false);
+      setBlockLabel('');
+      setBlockStart({ date: '', time: '' });
+      setBlockEnd({ date: '', time: '' });
+      window.location.reload();
+    } catch {
+      toast.error('Error de red');
+    } finally {
+      setBlocking(false);
+    }
+  }
+
+  async function handleBulkCancelDay() {
+    if (!bulkCancelDate || bulkCancelling) return;
+    setBulkCancelling(true);
+    try {
+      const res = await fetch('/api/appointments/cancel-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: bulkCancelDate,
+          reason: bulkCancelReason.trim() || undefined,
+          notify_customers: bulkCancelNotify,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo cancelar el día');
+        return;
+      }
+      if (data.cancelled === 0) {
+        toast('Ese día no tenía citas agendadas', { icon: 'ℹ️' });
+      } else {
+        toast.success(`${data.cancelled} citas canceladas · ${data.notified} pacientes notificados`);
+      }
+      setBulkCancelOpen(false);
+      setBulkCancelReason('');
+      window.location.reload();
+    } catch {
+      toast.error('Error de red');
+    } finally {
+      setBulkCancelling(false);
+    }
+  }
 
   async function handleUpdateStatus(nextStatus: 'confirmed' | 'completed' | 'no_show') {
     if (!selected || statusUpdating) return;
@@ -660,6 +776,32 @@ export function CalendarView({
                   </button>
                 ))}
               </div>
+              {/* Block time */}
+              <button
+                type="button"
+                onClick={() => setBlockOpen(true)}
+                aria-label="Bloquear tiempo"
+                title="Bloquear tiempo"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white ring-1 ring-zinc-200 text-zinc-600 hover:text-zinc-900 hover:ring-zinc-300 transition"
+              >
+                <Ban className="w-3.5 h-3.5" />
+              </button>
+              {/* Bulk cancel day */}
+              <button
+                type="button"
+                onClick={() => {
+                  const d = new Date();
+                  setBulkCancelDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+                  setBulkCancelReason('');
+                  setBulkCancelNotify(true);
+                  setBulkCancelOpen(true);
+                }}
+                aria-label="Cancelar un día"
+                title="Cancelar todas las citas de un día"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white ring-1 ring-zinc-200 text-zinc-600 hover:text-rose-700 hover:ring-rose-200 transition"
+              >
+                <CalendarX className="w-3.5 h-3.5" />
+              </button>
               {/* New */}
               <button
                 type="button"
@@ -972,6 +1114,25 @@ export function CalendarView({
                   <button
                     type="button"
                     onClick={() => {
+                      setEditForm({
+                        customer_name: selected.customer_name || '',
+                        customer_phone: selected.customer_phone || '',
+                        service_name: selected.serviceName || '',
+                        duration_minutes: selected.end_datetime
+                          ? Math.round((new Date(selected.end_datetime).getTime() - new Date(selected.datetime).getTime()) / 60000)
+                          : 30,
+                        notes: selected.notes || '',
+                      });
+                      setEditOpen(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 h-9 rounded-full text-[13px] font-medium text-zinc-700 bg-white ring-1 ring-zinc-200 hover:bg-zinc-50 transition"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    Editar detalles
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       const d = new Date(selected.datetime);
                       const yyyy = d.getFullYear();
                       const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -1225,6 +1386,210 @@ export function CalendarView({
             >
               {rescheduling ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarClock className="w-4 h-4" />}
               {rescheduling ? 'Reagendando…' : 'Reagendar y avisar'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── EDIT APPOINTMENT DIALOG ─── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar detalles</DialogTitle>
+            <DialogDescription>
+              Cambia datos del paciente, servicio o duración. Para cambiar fecha/hora usa Reagendar.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Nombre del paciente</label>
+              <input
+                type="text"
+                value={editForm.customer_name}
+                onChange={(e) => setEditForm((f) => ({ ...f, customer_name: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Teléfono (WhatsApp)</label>
+              <input
+                type="tel"
+                value={editForm.customer_phone}
+                onChange={(e) => setEditForm((f) => ({ ...f, customer_phone: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Servicio</label>
+                <input
+                  type="text"
+                  list="edit-services-list"
+                  value={editForm.service_name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, service_name: e.target.value }))}
+                  placeholder="Ej. Limpieza"
+                  className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+                />
+                <datalist id="edit-services-list">
+                  {services.map((s) => (<option key={s.id} value={s.name} />))}
+                </datalist>
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Duración (min)</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={600}
+                  step={5}
+                  value={editForm.duration_minutes}
+                  onChange={(e) => setEditForm((f) => ({ ...f, duration_minutes: parseInt(e.target.value, 10) || 30 }))}
+                  className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Notas</label>
+              <textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="mt-5 gap-2 flex-col-reverse sm:flex-row">
+            <button
+              type="button"
+              onClick={() => setEditOpen(false)}
+              disabled={savingEdit}
+              className="inline-flex items-center justify-center h-10 px-4 rounded-full ring-1 ring-zinc-200 bg-white text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleEditAppt}
+              disabled={savingEdit}
+              className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[13px] font-medium hover:opacity-90 transition disabled:opacity-60"
+            >
+              {savingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {savingEdit ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── BLOCK TIME DIALOG ─── */}
+      <Dialog open={blockOpen} onOpenChange={setBlockOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bloquear tiempo</DialogTitle>
+            <DialogDescription>
+              Marca horas como no disponibles. Aparecerá como evento en tu Google Calendar y la IA evita agendar en ese rango.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Motivo</label>
+              <input
+                type="text"
+                value={blockLabel}
+                onChange={(e) => setBlockLabel(e.target.value)}
+                placeholder="Ej. Vacaciones, comida, cirugía…"
+                maxLength={200}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Desde fecha</label>
+                <input type="date" value={blockStart.date} onChange={(e) => setBlockStart((v) => ({ ...v, date: e.target.value }))} className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Hora</label>
+                <input type="time" value={blockStart.time} onChange={(e) => setBlockStart((v) => ({ ...v, time: e.target.value }))} className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Hasta fecha</label>
+                <input type="date" value={blockEnd.date} onChange={(e) => setBlockEnd((v) => ({ ...v, date: e.target.value }))} className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Hora</label>
+                <input type="time" value={blockEnd.time} onChange={(e) => setBlockEnd((v) => ({ ...v, time: e.target.value }))} className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]" />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-5 gap-2 flex-col-reverse sm:flex-row">
+            <button type="button" onClick={() => setBlockOpen(false)} disabled={blocking} className="inline-flex items-center justify-center h-10 px-4 rounded-full ring-1 ring-zinc-200 bg-white text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-50">Cancelar</button>
+            <button type="button" onClick={handleBlockTime} disabled={blocking || !blockStart.date || !blockStart.time || !blockEnd.date || !blockEnd.time} className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-zinc-900 text-white text-[13px] font-medium hover:bg-zinc-800 transition disabled:opacity-60">
+              {blocking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+              {blocking ? 'Bloqueando…' : 'Bloquear horario'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── BULK CANCEL DIALOG ─── */}
+      <Dialog open={bulkCancelOpen} onOpenChange={setBulkCancelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar día completo</DialogTitle>
+            <DialogDescription>
+              Cancela todas las citas activas de un día. Útil para emergencias, enfermedad o imprevistos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Fecha a cancelar</label>
+              <input
+                type="date"
+                value={bulkCancelDate}
+                onChange={(e) => setBulkCancelDate(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Motivo (opcional)</label>
+              <input
+                type="text"
+                value={bulkCancelReason}
+                onChange={(e) => setBulkCancelReason(e.target.value)}
+                placeholder="Ej. incapacidad médica, emergencia familiar…"
+                maxLength={300}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+              <p className="text-[10.5px] text-zinc-500 mt-1">Se incluye en el mensaje a cada paciente.</p>
+            </div>
+
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-zinc-50 ring-1 ring-zinc-100 cursor-pointer hover:bg-zinc-100/60 transition">
+              <div className={cn('mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition', bulkCancelNotify ? 'bg-[hsl(var(--brand-blue))] text-white' : 'bg-white ring-1 ring-zinc-300')}>
+                {bulkCancelNotify && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+              </div>
+              <input type="checkbox" checked={bulkCancelNotify} onChange={(e) => setBulkCancelNotify(e.target.checked)} className="sr-only" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                  <p className="text-[13px] font-semibold text-zinc-900">Avisar a todos los pacientes por WhatsApp</p>
+                </div>
+                <p className="text-[11.5px] text-zinc-500 mt-0.5 leading-snug">
+                  Cada paciente recibe un mensaje individual invitándolo a reagendar. Si responde, la IA busca nuevo hueco.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <DialogFooter className="mt-5 gap-2 flex-col-reverse sm:flex-row">
+            <button type="button" onClick={() => setBulkCancelOpen(false)} disabled={bulkCancelling} className="inline-flex items-center justify-center h-10 px-4 rounded-full ring-1 ring-zinc-200 bg-white text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-50">No cancelar</button>
+            <button type="button" onClick={handleBulkCancelDay} disabled={bulkCancelling || !bulkCancelDate} className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-rose-600 text-white text-[13px] font-medium hover:bg-rose-700 transition disabled:opacity-60">
+              {bulkCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarX className="w-4 h-4" />}
+              {bulkCancelling ? 'Cancelando…' : 'Cancelar todo el día'}
             </button>
           </DialogFooter>
         </DialogContent>
