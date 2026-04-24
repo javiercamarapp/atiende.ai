@@ -154,6 +154,14 @@ export async function sendButtonMessage(
   body: string, buttons: string[],
 ): Promise<SendResult> {
   to = toMetaRecipient(to);
+  // Meta requiere que el body NO esté vacío. Si body está vacío o es solo
+  // espacios, enviamos un mensaje de texto simple sin botones en vez de fallar.
+  const trimmedBody = body?.trim();
+  if (!trimmedBody || buttons.length === 0) {
+    console.warn('[sendButtonMessage] body vacío o sin botones — fallback a sendTextMessage');
+    return sendTextMessage(phoneNumberId, to, trimmedBody || 'Hola');
+  }
+
   try {
     await axios.post(
       `${WA_API}/${phoneNumberId}/messages`,
@@ -162,7 +170,7 @@ export async function sendButtonMessage(
         type: 'interactive',
         interactive: {
           type: 'button',
-          body: { text: body },
+          body: { text: trimmedBody },
           action: {
             buttons: buttons.slice(0, 3).map((btn, i) => ({
               type: 'reply',
