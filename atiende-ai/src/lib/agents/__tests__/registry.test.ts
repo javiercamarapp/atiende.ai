@@ -102,9 +102,12 @@ describe('buildTenantContext()', () => {
     expect(ctx.timezone).toBe('America/Merida');
   });
 
-  it('default timezone America/Merida si falta', () => {
+  it('default timezone es America/Mexico_City si tenant no lo tiene configurado', () => {
+    // Cambiado de America/Merida → America/Mexico_City en Phase 2
+    // (resolveTenantTimezone) porque el ~70% de tenants mexicanos están en
+    // CDMX y caer a Mérida les daba 1h de offset silencioso en citas.
     const ctx = buildTenantContext({ id: 't', name: 'n' });
-    expect(ctx.timezone).toBe('America/Merida');
+    expect(ctx.timezone).toBe('America/Mexico_City');
   });
 
   it('tomorrowDate siempre es futuro respecto a currentDatetime', () => {

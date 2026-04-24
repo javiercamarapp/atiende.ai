@@ -419,6 +419,26 @@ registerTool('book_appointment', {
     }
     const args = parse.data;
     args.patient_phone = normalizePhoneMx(args.patient_phone);
+
+    // Defensa contra LLM que pasa el teléfono como nombre. Si patient_name
+    // es solo dígitos / + / espacios / guiones (≥7 chars) asumimos que el
+    // LLM se confundió y uso el teléfono. Preferimos ctx.customerName
+    // (profile.name de WhatsApp) — si tampoco tenemos eso, caemos a
+    // "Paciente" + últimos 4 del teléfono para que el dueño pueda
+    // distinguir en su calendario sin exponer el número completo.
+    const looksLikePhone = /^[+\d\s\-()]{7,}$/.test(args.patient_name) && !/[a-záéíóúñ]/i.test(args.patient_name);
+    if (looksLikePhone) {
+      const digits = args.patient_phone.replace(/\D/g, '');
+      const last4 = digits.slice(-4) || '0000';
+      args.patient_name = (ctx.customerName && ctx.customerName.trim())
+        || `Paciente ${last4}`;
+      console.warn('[book_appointment] LLM passed phone-like patient_name — substituted', {
+        originalLooksLikePhone: true,
+        substituted: args.patient_name,
+        hasCustomerName: Boolean(ctx.customerName),
+      });
+    }
+
     const timezone = resolveTenantTimezone(ctx.tenant);
     const datetime = buildLocalIso(args.date, args.time, timezone);
 

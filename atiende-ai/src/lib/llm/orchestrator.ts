@@ -164,6 +164,7 @@ function buildToolExecutor(
     contactId: ctx.contactId,
     conversationId: ctx.conversationId,
     customerPhone: ctx.customerPhone,
+    customerName: ctx.customerName || undefined,
     tenant: ctx.tenant,
     successfulCallCache: sharedCache,
   };

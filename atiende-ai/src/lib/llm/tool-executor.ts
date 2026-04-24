@@ -72,6 +72,10 @@ export interface ToolContext {
   contactId: string;
   conversationId: string;
   customerPhone: string;
+  /** Nombre conocido del contacto (profile.name de WhatsApp o dato
+   *  acumulado en la conversación). Tools de booking lo usan como fallback
+   *  defensivo si el LLM intenta meter el teléfono como patient_name. */
+  customerName?: string;
   tenant: Record<string, unknown>;
   /**
    * Defense-in-depth contra ghost mutations.

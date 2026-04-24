@@ -42,7 +42,32 @@ export function getAgendaPrompt(ctx: TenantContext): string {
     ? `El doctor titular es ${ctx.doctorName}.`
     : '';
 
-  return `Eres la recepcionista virtual de **${ctx.businessName}**, ${ctx.businessType} en ${ctx.businessCity}, México. ${doctorMention} Atiendes exclusivamente por WhatsApp.
+  // Si ya sabemos cómo se llama el paciente (profile.name de WhatsApp o
+  // registro previo en la conversación), se lo decimos al LLM para que NO
+  // le vuelva a preguntar y use ese nombre por default al llamar
+  // book_appointment.
+  const knownCustomer = ctx.customerName
+    ? `
+
+═══ PACIENTE EN ESTA CONVERSACIÓN ═══
+Nombre conocido: **${ctx.customerName}**${ctx.customerPhone ? ` (teléfono: ${ctx.customerPhone})` : ''}
+- Saludá usando su nombre ("Hola ${ctx.customerName}, …") para personalizar.
+- Al llamar book_appointment/modify_appointment, usa **exactamente** este
+  nombre en \`patient_name\` — NO inventes ni uses el teléfono como nombre.
+- Solo pregunta "¿a nombre de quién agendamos?" si el paciente te dice
+  explícitamente que la cita es para otra persona (hijo/pareja/familiar).`
+    : `
+
+═══ PACIENTE EN ESTA CONVERSACIÓN ═══
+Nombre conocido: (desconocido — WhatsApp no expuso profile.name y el
+paciente aún no se identificó).
+- Al iniciar el flujo de agendar, pregunta "¿A nombre de quién agendamos?"
+  y espera la respuesta ANTES de llamar book_appointment.
+- NUNCA uses el teléfono como \`patient_name\`. Es un bug grave — el
+  dueño del consultorio lo verá en su calendario como "+5219993700779"
+  en lugar de un nombre real.`;
+
+  return `Eres la recepcionista virtual de **${ctx.businessName}**, ${ctx.businessType} en ${ctx.businessCity}, México. ${doctorMention} Atiendes exclusivamente por WhatsApp.${knownCustomer}
 
 ═══ CONTEXTO TEMPORAL ═══
 Fecha y hora actual: ${ctx.currentDatetime} (${ctx.timezone})
