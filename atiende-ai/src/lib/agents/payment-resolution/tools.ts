@@ -116,23 +116,102 @@ registerTool('request_invoice', {
       return { created: false, error: 'contact does not belong to tenant' };
     }
 
-    const { data, error } = await supabaseAdmin.from('contact_events').insert({
+    // Si el tenant tiene Facturapi configurado Y el paciente dio RFC,
+    // intentamos emitir el CFDI real. Sin RFC o sin API key, solo creamos
+    // el ticket y el dueño emite manual desde su contador.
+    const facturapiKey = ctx.tenant.facturapi_api_key as string | undefined;
+    const canAutoIssue = Boolean(facturapiKey && args.rfc);
+
+    // Traer detalles de la cita para monto + descripción
+    const { data: apt } = await supabaseAdmin
+      .from('appointments')
+      .select('id, datetime, customer_name, services:service_id(name, price), reason, payment_amount_mxn')
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .maybeSingle();
+
+    const svc = Array.isArray(apt?.services) ? apt?.services[0] : apt?.services;
+    const amountMxn = Number(apt?.payment_amount_mxn ?? svc?.price ?? 0);
+    const description = svc?.name
+      ? `${svc.name} — ${new Date(apt?.datetime as string).toLocaleDateString('es-MX')}`
+      : `Consulta ${new Date(apt?.datetime as string).toLocaleDateString('es-MX')}`;
+
+    // Insert de la invoice en status 'pending' (o 'generating' si vamos a emitir)
+    const { data: inv, error: invErr } = await supabaseAdmin.from('invoices').insert({
       tenant_id: ctx.tenantId,
+      appointment_id: args.appointment_id,
       contact_id: ctx.contactId,
-      event_type: 'invoice_requested',
-      details: {
-        appointment_id: args.appointment_id,
-        rfc: args.rfc ?? null,
-        business_name: args.business_name ?? null,
-        email: args.email ?? null,
-        cfdi_use: args.cfdi_use ?? 'G03',
-        patient_phone: ctx.customerPhone,
-        status: 'pending',
-      },
+      receiver_rfc: args.rfc || 'XAXX010101000', // publico en general si no dio RFC
+      receiver_name: args.business_name ?? null,
+      receiver_email: args.email ?? null,
+      cfdi_use: args.cfdi_use ?? 'G03',
+      amount_mxn: amountMxn,
+      description,
+      status: canAutoIssue ? 'generating' : 'pending',
     }).select('id').single();
 
-    if (error || !data) return { created: false, error: error?.message };
-    return { created: true, event_id: data.id as string };
+    if (invErr || !inv) {
+      return { created: false, error: invErr?.message || 'invoice_insert_failed' };
+    }
+
+    // Si podemos auto-emitir, llamamos Facturapi ahora (fire-and-await)
+    if (canAutoIssue && amountMxn > 0) {
+      try {
+        const { createCfdiInvoice } = await import('@/lib/billing/facturapi');
+        const result = await createCfdiInvoice({
+          apiKey: facturapiKey!,
+          receiverRfc: args.rfc!,
+          receiverName: args.business_name,
+          receiverEmail: args.email,
+          cfdiUse: args.cfdi_use ?? 'G03',
+          amountMxn,
+          description,
+          idempotencyKey: `apt-${args.appointment_id}-${inv.id}`,
+        });
+        if (result.ok) {
+          await supabaseAdmin.from('invoices').update({
+            provider: 'facturapi',
+            provider_invoice_id: result.invoice.id,
+            cfdi_uuid: result.invoice.uuid,
+            xml_url: result.invoice.xml,
+            pdf_url: result.invoice.pdf,
+            status: 'issued',
+            issued_at: new Date().toISOString(),
+          }).eq('id', inv.id);
+          return {
+            created: true,
+            auto_issued: true,
+            invoice_id: inv.id,
+            cfdi_uuid: result.invoice.uuid,
+            pdf_url: result.invoice.pdf,
+          };
+        }
+        await supabaseAdmin.from('invoices').update({
+          status: 'failed',
+          error_message: result.error.slice(0, 500),
+        }).eq('id', inv.id);
+        return {
+          created: true,
+          auto_issued: false,
+          invoice_id: inv.id,
+          error: `facturapi_failed: ${result.error}`,
+        };
+      } catch (err) {
+        await supabaseAdmin.from('invoices').update({
+          status: 'failed',
+          error_message: err instanceof Error ? err.message : String(err),
+        }).eq('id', inv.id);
+        return {
+          created: true,
+          auto_issued: false,
+          invoice_id: inv.id,
+          error: 'facturapi_exception',
+        };
+      }
+    }
+
+    // No auto-issue: queda pendiente para que el dueño la emita manual.
+    return { created: true, auto_issued: false, invoice_id: inv.id };
   },
 });
 
