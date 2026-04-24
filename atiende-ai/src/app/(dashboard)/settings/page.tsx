@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
-  ChevronRight, Building2, Workflow, Link2,
+  ChevronRight, Building2, Workflow, Link2, MapPin,
 } from 'lucide-react';
 
 export default async function SettingsHubPage() {
@@ -48,6 +48,13 @@ export default async function SettingsHubPage() {
       href: '/settings/booking-links',
       icon: Link2,
       tint: 'bg-rose-50 text-rose-600',
+    },
+    {
+      title: 'Sucursales',
+      description: 'Si atendés en más de una dirección. El agente pregunta al paciente en cuál agendar.',
+      href: '/settings/locations',
+      icon: MapPin,
+      tint: 'bg-teal-50 text-teal-600',
     },
   ];
 
