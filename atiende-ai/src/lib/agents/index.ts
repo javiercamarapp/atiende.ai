@@ -257,6 +257,8 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'get_payment_history',
     'request_invoice',
     'dispute_charge',
+    // Patient payment portal (Phase 1)
+    'send_payment_link',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {

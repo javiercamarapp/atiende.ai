@@ -118,6 +118,71 @@ export async function createPortalSession(customerId: string) {
 }
 
 /**
+ * Crea una Stripe Checkout Session one-time (mode='payment') para que un
+ * paciente pague online su cita. Distinto de createCheckoutSession() que
+ * es para suscripciones del tenant.
+ *
+ * El resultado incluye la URL hospedada por Stripe (válida ~24h). El
+ * webhook `checkout.session.completed` con kind='appointment_payment'
+ * dispara la actualización de appointments.payment_status='paid'.
+ *
+ * NO corre contra STRIPE_SECRET del tenant (atiende.ai no es payment
+ * facilitator por ahora) — usa la cuenta Stripe de la plataforma y luego
+ * el dueño concilia manualmente con Stripe Connect / payout split.
+ */
+export async function createAppointmentPaymentLink(opts: {
+  appointmentId: string;
+  tenantId: string;
+  amountMxn: number;
+  patientName: string;
+  patientPhone: string;
+  description: string;
+}): Promise<{ url: string; sessionId: string }> {
+  if (!opts.amountMxn || opts.amountMxn <= 0) {
+    throw new Error(`Invalid amount: ${opts.amountMxn}`);
+  }
+  // Stripe amounts en MXN se pasan en centavos. Redondeo para evitar
+  // fractional-cent rounding errors (ej. $599.99 MXN → 59999).
+  const amountInCents = Math.round(opts.amountMxn * 100);
+
+  const session = await getStripe().checkout.sessions.create({
+    mode: 'payment',
+    currency: 'mxn',
+    line_items: [
+      {
+        price_data: {
+          currency: 'mxn',
+          product_data: {
+            name: opts.description.slice(0, 250),
+          },
+          unit_amount: amountInCents,
+        },
+        quantity: 1,
+      },
+    ],
+    // Recibo por mail si el paciente lo completa (campo email en checkout
+    // es opcional pero Stripe lo captura si lo pone).
+    success_url: `${process.env.NEXT_PUBLIC_APP_URL}/patient/payment/success?apt=${opts.appointmentId}`,
+    cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/patient/payment/cancel?apt=${opts.appointmentId}`,
+    metadata: {
+      kind: 'appointment_payment',
+      appointment_id: opts.appointmentId,
+      tenant_id: opts.tenantId,
+      patient_phone: opts.patientPhone,
+      patient_name: opts.patientName.slice(0, 200),
+    },
+    // Expiración: Stripe default 24h. Suficiente porque el paciente debería
+    // pagar el mismo día del recordatorio 24h. Si expira, el tool puede
+    // regenerar.
+  });
+
+  if (!session.url) {
+    throw new Error('Stripe Checkout Session did not return a URL');
+  }
+  return { url: session.url, sessionId: session.id };
+}
+
+/**
  * Reporta los minutos de overage de voz a Stripe como usage record.
  *
  * Se usa desde el cron mensual (src/app/api/cron/billing-overage/route.ts)

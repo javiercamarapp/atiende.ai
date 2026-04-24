@@ -64,6 +64,51 @@ export async function POST(req: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const s = event.data.object as unknown as Record<string, unknown>;
     const meta = s.metadata as Record<string, string> | undefined;
+
+    // Appointment payment (Patient Payment Portal, Phase 1) — distinto al
+    // flujo de suscripciones del tenant. kind='appointment_payment' lo
+    // seteamos en createAppointmentPaymentLink.
+    if (meta?.kind === 'appointment_payment') {
+      const appointmentId = meta.appointment_id;
+      const tenantId = meta.tenant_id;
+      if (!appointmentId || !tenantId) {
+        logger.warn('[stripe-webhook] appointment_payment missing metadata', { session: s.id });
+        return NextResponse.json({ received: true });
+      }
+      try {
+        await supabaseAdmin
+          .from('appointments')
+          .update({
+            payment_status: 'paid',
+            payment_method: 'stripe_checkout',
+            payment_received_at: new Date().toISOString(),
+          })
+          .eq('id', appointmentId)
+          .eq('tenant_id', tenantId);
+
+        // Notificar al dueño (fire-and-forget)
+        void import('@/lib/actions/notifications').then(({ notifyOwner }) =>
+          notifyOwner({
+            tenantId,
+            event: 'new_appointment',
+            details:
+              `💰 Pago recibido\n\n` +
+              `Paciente: ${meta.patient_name || 'sin nombre'} (${meta.patient_phone || ''})\n` +
+              `Cita: ${appointmentId}\n` +
+              `Monto: $${(((s.amount_total as number) || 0) / 100).toLocaleString('es-MX')} MXN`,
+          }).catch(() => {}),
+        );
+
+        logger.info('[stripe-webhook] appointment payment completed', { appointmentId, tenantId });
+      } catch (err) {
+        logger.error('[stripe-webhook] failed to mark appointment paid', undefined, {
+          err: err instanceof Error ? err.message : String(err),
+          appointmentId,
+        });
+      }
+      return NextResponse.json({ received: true });
+    }
+
     const tid = meta?.tenant_id;
     const plan = meta?.plan;
     const stripeCustomer = s.customer as string | undefined;

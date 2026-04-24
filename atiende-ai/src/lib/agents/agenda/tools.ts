@@ -1524,3 +1524,125 @@ registerTool('list_doctor_schedule', {
     };
   },
 });
+
+// ─── Tool: send_payment_link ────────────────────────────────────────────────
+// Crea un Stripe Checkout Session one-time para la cita y lo manda al
+// paciente por WhatsApp. El webhook de Stripe (kind='appointment_payment')
+// marca payment_status='paid' cuando el paciente completa el checkout.
+const SendPaymentLinkArgs = z
+  .object({
+    appointment_id: z.string().uuid(),
+    amount_mxn: z.number().min(1).max(100_000).optional(),
+    message_prefix: z.string().max(300).optional(),
+  })
+  .strict();
+
+registerTool('send_payment_link', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'send_payment_link',
+      description:
+        'Genera un link de pago de Stripe para una cita y lo envía al paciente por WhatsApp. Usar cuando el paciente quiere prepagar su cita o cuando el dueño instruye "cobrar anticipo". Si amount_mxn se omite, usa el precio del servicio registrado en la cita; si la cita no tiene service_id vinculado, requiere amount_mxn explícito.',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'string' },
+          amount_mxn: { type: 'number', description: 'Monto a cobrar. Si se omite, se usa el precio del service asociado.' },
+          message_prefix: { type: 'string', description: 'Opcional: texto que antecede al link. Ej: "Adjunto su link para el anticipo."' },
+        },
+        required: ['appointment_id'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = SendPaymentLinkArgs.parse(rawArgs);
+
+    // Traer la cita + servicio (scoped por tenant — defense in depth).
+    const { data: apt, error: aptErr } = await supabaseAdmin
+      .from('appointments')
+      .select('id, customer_phone, customer_name, datetime, service_id, services:service_id(name, price), payment_status')
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .maybeSingle();
+
+    if (aptErr || !apt) {
+      return { sent: false, error: 'appointment_not_found_or_not_in_tenant' };
+    }
+    if (apt.payment_status === 'paid') {
+      return { sent: false, error: 'already_paid', message: 'La cita ya está pagada.' };
+    }
+
+    const svc = Array.isArray(apt.services) ? apt.services[0] : apt.services;
+    const amountMxn = args.amount_mxn ?? (svc?.price ? Number(svc.price) : null);
+    if (!amountMxn || amountMxn <= 0) {
+      return {
+        sent: false,
+        error: 'amount_missing',
+        message: 'La cita no tiene precio configurado y no se pasó amount_mxn.',
+      };
+    }
+
+    // Crear el Stripe Checkout Session
+    const { createAppointmentPaymentLink } = await import('@/lib/billing/stripe');
+    let paymentUrl: string;
+    let sessionId: string;
+    try {
+      const result = await createAppointmentPaymentLink({
+        appointmentId: apt.id as string,
+        tenantId: ctx.tenantId,
+        amountMxn,
+        patientName: (apt.customer_name as string) || 'Paciente',
+        patientPhone: apt.customer_phone as string,
+        description: svc?.name
+          ? `${svc.name} — ${(apt.customer_name as string) || 'Paciente'}`
+          : `Cita ${new Date(apt.datetime as string).toLocaleDateString('es-MX')}`,
+      });
+      paymentUrl = result.url;
+      sessionId = result.sessionId;
+    } catch (err) {
+      return {
+        sent: false,
+        error: 'stripe_create_failed',
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    // Persistir el link en la cita
+    await supabaseAdmin
+      .from('appointments')
+      .update({
+        payment_amount_mxn: amountMxn,
+        stripe_checkout_session_id: sessionId,
+        payment_link_url: paymentUrl,
+        payment_link_created_at: new Date().toISOString(),
+      })
+      .eq('id', apt.id)
+      .eq('tenant_id', ctx.tenantId);
+
+    // Mandar el mensaje por WhatsApp
+    const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
+    if (phoneNumberId) {
+      const prefix = args.message_prefix?.trim()
+        || `Para confirmar su cita puede prepagar su consulta aquí:`;
+      const text = `${prefix}\n\n${paymentUrl}\n\nMonto: $${amountMxn.toLocaleString('es-MX')} MXN. El link es válido por 24 horas.`;
+      try {
+        const { sendTextMessageSafe } = await import('@/lib/whatsapp/send');
+        await sendTextMessageSafe(phoneNumberId, apt.customer_phone as string, text, { tenantId: ctx.tenantId });
+      } catch {
+        // No fallamos el tool si el send falla — el link igual quedó guardado
+        // en appointments.payment_link_url, el dashboard lo muestra.
+      }
+    }
+
+    return {
+      sent: true,
+      appointment_id: apt.id as string,
+      payment_url: paymentUrl,
+      amount_mxn: amountMxn,
+      expires_in_hours: 24,
+    };
+  },
+});
