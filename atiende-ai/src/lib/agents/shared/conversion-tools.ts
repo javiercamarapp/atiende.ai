@@ -213,7 +213,7 @@ registerTool('validate_minor_permission', {
     if (!ctx.contactId) return { can_proceed: false, reason: 'no contactId' };
     const { data } = await supabaseAdmin
       .from('contacts')
-      .select('birth_date, is_minor, guardian_consent_at, guardian_name')
+      .select('birth_date, guardian_consent_at, guardian_name')
       .eq('id', ctx.contactId)
       .eq('tenant_id', ctx.tenantId)
       .maybeSingle();
@@ -229,7 +229,15 @@ registerTool('validate_minor_permission', {
         next_step: 'Preguntá la fecha de nacimiento del paciente antes de seguir.',
       };
     }
-    const isMinor = Boolean(data.is_minor);
+
+    // Calculamos is_minor on-demand (no podemos usar GENERATED column con
+    // CURRENT_DATE en Postgres — IMMUTABLE requirement). La lógica es la
+    // canónica de edad: hoy - birth_date ≥ 18 años.
+    const birth = new Date(data.birth_date as string);
+    const eighteenYearsAgo = new Date();
+    eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+    const isMinor = birth > eighteenYearsAgo;
+
     if (!isMinor) {
       return { is_minor: false, has_consent: true, can_proceed: true, reason: 'adult' };
     }

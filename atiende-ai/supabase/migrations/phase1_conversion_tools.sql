@@ -8,17 +8,16 @@
 -- IDEMPOTENTE. Safe to run múltiples veces.
 
 -- 1. Contacts: guardian (menor de edad) + UTM source
+--
+-- Nota sobre is_minor:
+--   No se puede usar un GENERATED column con CURRENT_DATE — Postgres lo
+--   rechaza porque CURRENT_DATE no es IMMUTABLE (cambia cada día). La
+--   alternativa canónica es calcular edad on-demand en código desde
+--   birth_date. Lo hace el tool `validate_minor_permission` en
+--   conversion-tools.ts (y cualquier query server-side puede usar
+--   `birth_date > (CURRENT_DATE - INTERVAL '18 years')` en el WHERE).
 ALTER TABLE contacts
   ADD COLUMN IF NOT EXISTS birth_date          DATE,
-  ADD COLUMN IF NOT EXISTS is_minor            BOOLEAN GENERATED ALWAYS AS (
-    -- Postgres generated column: calcula edad sobre la marcha desde birth_date.
-    -- NULL cuando birth_date IS NULL → el código debe tratarlo como "desconocido".
-    CASE
-      WHEN birth_date IS NULL THEN NULL
-      WHEN birth_date > CURRENT_DATE - INTERVAL '18 years' THEN TRUE
-      ELSE FALSE
-    END
-  ) STORED,
   ADD COLUMN IF NOT EXISTS guardian_name       TEXT,
   ADD COLUMN IF NOT EXISTS guardian_phone      TEXT,
   ADD COLUMN IF NOT EXISTS guardian_relation   TEXT,  -- 'padre' | 'madre' | 'tutor' | 'otro'
