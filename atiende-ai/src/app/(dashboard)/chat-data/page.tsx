@@ -177,11 +177,11 @@ export default function ChatDataPage() {
             Pregúntale a tu negocio en lenguaje natural y genera contenido al instante. Disponible desde el plan Profesional.
           </p>
           <Link
-            href="/settings"
+            href="/settings/billing?plan=pro"
             className="mt-7 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-full bg-[hsl(var(--brand-blue))] text-white text-sm font-medium hover:opacity-90 transition shadow-md shadow-[hsl(var(--brand-blue))]/20"
           >
             <Sparkles className="w-4 h-4" />
-            Ver planes
+            Subir a Pro
           </Link>
         </div>
       </div>
