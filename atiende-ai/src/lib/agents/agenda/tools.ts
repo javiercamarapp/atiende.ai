@@ -29,6 +29,7 @@ import {
   type ServiceRow,
 } from '@/lib/actions/appointment-helpers';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { resolveTenantTimezone } from '@/lib/config';
 import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: check_availability ──────────────────────────────────────────────
@@ -168,7 +169,7 @@ registerTool('check_availability', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = CheckAvailArgs.parse(rawArgs);
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
     const durationMinutes = args.duration_minutes ?? 30;
 
     // 1. Fecha no puede ser pasada (en TZ del tenant)
@@ -418,7 +419,7 @@ registerTool('book_appointment', {
     }
     const args = parse.data;
     args.patient_phone = normalizePhoneMx(args.patient_phone);
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
     const datetime = buildLocalIso(args.date, args.time, timezone);
 
     // 1. Validar que la fecha no es pasada
@@ -714,7 +715,7 @@ registerTool('get_my_appointments', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = GetMyArgs.parse(rawArgs);
     args.patient_phone = normalizePhoneMx(args.patient_phone);
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
 
     let q = supabaseAdmin
       .from('appointments')
@@ -846,7 +847,7 @@ registerTool('modify_appointment', {
     // del LLM. El LLM puede inventar/inyectar phone de OTRO paciente —
     // prompt injection IDOR. Solo el sender real puede modificar sus citas.
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
 
     // Resolver appointment_id desde confirmation_code si es necesario.
     let resolvedId = args.appointment_id;
@@ -1128,7 +1129,7 @@ registerTool('cancel_appointment', {
     // CRÍTICO: usar ctx.customerPhone (sender real), NO args.patient_phone
     // del LLM (vulnerable a IDOR via prompt injection).
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
 
     // Si dieron confirmation_code, resolver el appointment_id real
     let resolvedId = args.appointment_id;
@@ -1313,7 +1314,7 @@ registerTool('confirm_appointment', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = ConfirmArgs.parse(rawArgs);
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
 
     let q = supabaseAdmin
       .from('appointments')
@@ -1405,7 +1406,7 @@ registerTool('list_doctor_schedule', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = ListScheduleArgs.parse(rawArgs);
-    const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+    const timezone = resolveTenantTimezone(ctx.tenant);
     const dayStart = buildLocalIso(args.date, '00:00', timezone);
     const dayEnd = buildLocalIso(args.date, '23:59', timezone);
 

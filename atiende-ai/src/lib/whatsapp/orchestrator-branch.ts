@@ -20,6 +20,7 @@ import {
 } from '@/lib/agents';
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
 import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
+import { getConversationState, type ConversationState } from '@/lib/actions/state-machine';
 import { encryptPII } from '@/lib/utils/crypto';
 import { redactHistoryForLLM } from '@/lib/utils/logger';
 import { HISTORY_MAX_MESSAGES, HISTORY_MAX_TOKENS } from '@/lib/config';
@@ -64,6 +65,48 @@ import { MAX_USER_INPUT_CHARS } from '@/lib/config';
 
 function sanitizeInput(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim().slice(0, MAX_USER_INPUT_CHARS);
+}
+
+/**
+ * Rinde el estado conversacional activo (awaiting_X + datos parciales) como
+ * un bloque inyectable al system prompt del agente. Permite que el LLM
+ * continúe un flow multi-turno iniciado en el pipeline clásico.
+ */
+export function formatStateContext(
+  state: string,
+  context: Record<string, unknown>,
+): string {
+  const humanState: Record<string, string> = {
+    awaiting_appointment_date: 'El usuario está agendando una cita. Faltan datos que preguntar.',
+    awaiting_modify_date: 'El usuario está reprogramando una cita existente.',
+    awaiting_order_confirmation: 'El usuario está confirmando un pedido.',
+    awaiting_reservation_details: 'El usuario está completando una reserva.',
+  };
+  const description = humanState[state] || `Estado activo: ${state}.`;
+
+  // Serialización controlada: solo keys conocidas y seguras (evitamos dump
+  // bruto del JSONB que podría tener ruido o PII del flujo previo).
+  const safeKeys = [
+    'service', 'service_name', 'service_id',
+    'date', 'time', 'datetime',
+    'staff_id', 'staff_name',
+    'patient_name', 'duration_minutes',
+    'appointment_id', 'confirmation_code',
+    'notes',
+  ];
+  const partial: string[] = [];
+  for (const k of safeKeys) {
+    const v = context[k];
+    if (v !== null && v !== undefined && v !== '') {
+      partial.push(`- ${k}: ${String(v)}`);
+    }
+  }
+
+  const body = partial.length > 0
+    ? `\nDatos ya recogidos:\n${partial.join('\n')}\n\nContinúa donde quedaste. NO vuelvas a pedir lo que ya tienes arriba; pregunta solo lo que falta. Si el usuario cambia de tema, abandona este estado.`
+    : '\nEl flow está recién iniciado. Pregunta los datos que faltan.';
+
+  return `═══ ESTADO ACTIVO DE LA CONVERSACIÓN ═══\n${description}${body}`;
 }
 
 function safeUserMessage(raw: string): { content: string; flagged: boolean } {
@@ -280,7 +323,19 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   const agentName = 'agenda' as const;
   const agentConfig = AGENT_REGISTRY[agentName];
   const tools = getToolSchemas(agentConfig.tools);
-  const systemPrompt = getSystemPrompt(agentName, tenantCtx);
+  const baseSystemPrompt = getSystemPrompt(agentName, tenantCtx);
+
+  // State recovery — si el pipeline clásico dejó la conversación en un estado
+  // multi-turno (ej. AWAITING_APPOINTMENT_DATE), inyectamos ese contexto al
+  // system prompt para que el agente sepa qué datos ya tiene y qué pregunta.
+  // Sin esto el LLM trataba cada mensaje como inicio → pedía datos ya dados.
+  const convState = await getConversationState(conversationId).catch(() => ({
+    state: null as ConversationState,
+    context: {} as Record<string, unknown>,
+  }));
+  const systemPrompt = convState.state
+    ? `${baseSystemPrompt}\n\n${formatStateContext(convState.state, convState.context)}`
+    : baseSystemPrompt;
 
   const orchestratorCtx: OrchestratorContext = {
     tenantId: tenant.id,

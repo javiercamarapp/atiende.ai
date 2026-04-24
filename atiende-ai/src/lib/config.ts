@@ -89,3 +89,32 @@ export const VOICE_ALERT_THRESHOLD_PERCENT = 80;
 export const VOICE_OVERAGE_MONTHLY_CAP = 1000; // 1000 min × $5 = $5,000 MXN max
 /** Email/teléfono interno para alertas críticas de billing */
 export const ATIENDE_OPS_PHONE = process.env.JAVIER_PHONE || '';
+
+// ─── Timezone default ────────────────────────────────────────────────────
+/** Default timezone cuando un tenant no configuró `timezone`.
+ *  America/Mexico_City cubre CDMX + ~70% de México y es el IANA estándar.
+ *  Tenants de otras zonas (Yucatán=America/Merida, Noroeste=America/Hermosillo,
+ *  etc.) DEBEN configurarlo en onboarding. Si no lo hicieron, `resolveTenantTimezone`
+ *  loguea un warning para que el equipo lo detecte y corrija.
+ */
+export const DEFAULT_TIMEZONE = 'America/Mexico_City';
+
+/**
+ * Resuelve el timezone IANA a usar para operaciones de fecha/hora de un
+ * tenant. Devuelve `tenant.timezone` si es un string no-vacío; si no, el
+ * default de la plataforma con warning para visibilidad.
+ *
+ * Antes cada call-site hacía `(tenant.timezone as string) || 'America/Merida'`
+ * inline, lo que significaba que un tenant de CDMX sin timezone configurado
+ * caía a UTC-5 (Mérida) en vez de UTC-6 (CDMX) — citas con 1h de offset.
+ */
+export function resolveTenantTimezone(tenant: { timezone?: unknown } | Record<string, unknown>): string {
+  const tz = (tenant as { timezone?: unknown }).timezone;
+  if (typeof tz === 'string' && tz.trim()) return tz;
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('[timezone] tenant sin timezone configurado — usando default', {
+      default: DEFAULT_TIMEZONE,
+    });
+  }
+  return DEFAULT_TIMEZONE;
+}

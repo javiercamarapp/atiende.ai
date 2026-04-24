@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { decryptPII, encryptPII } from '@/lib/utils/crypto';
+import { DEFAULT_TIMEZONE } from '@/lib/config';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -82,8 +83,8 @@ export async function createCalendarEvent(opts: {
     requestBody: {
       summary: opts.summary,
       description: opts.description,
-      start: { dateTime: opts.startTime, timeZone: opts.timezone || 'America/Merida' },
-      end: { dateTime: opts.endTime, timeZone: opts.timezone || 'America/Merida' },
+      start: { dateTime: opts.startTime, timeZone: opts.timezone || DEFAULT_TIMEZONE },
+      end: { dateTime: opts.endTime, timeZone: opts.timezone || DEFAULT_TIMEZONE },
       attendees: opts.attendeeEmail
         ? [{ email: opts.attendeeEmail, displayName: opts.attendeeName }]
         : [],
@@ -114,10 +115,10 @@ export async function updateCalendarEvent(opts: {
   if (opts.summary !== undefined) patch.summary = opts.summary;
   if (opts.description !== undefined) patch.description = opts.description;
   if (opts.startTime) {
-    patch.start = { dateTime: opts.startTime, timeZone: opts.timezone || 'America/Merida' };
+    patch.start = { dateTime: opts.startTime, timeZone: opts.timezone || DEFAULT_TIMEZONE };
   }
   if (opts.endTime) {
-    patch.end = { dateTime: opts.endTime, timeZone: opts.timezone || 'America/Merida' };
+    patch.end = { dateTime: opts.endTime, timeZone: opts.timezone || DEFAULT_TIMEZONE };
   }
   const event = await calendar.events.patch({
     calendarId: opts.calendarId,
@@ -142,7 +143,7 @@ export async function getFreeBusySlots(opts: {
     requestBody: {
       timeMin: opts.startDate,
       timeMax: opts.endDate,
-      timeZone: opts.timezone || 'America/Merida',
+      timeZone: opts.timezone || DEFAULT_TIMEZONE,
       items: [{ id: opts.calendarId }],
     },
   });
@@ -232,7 +233,7 @@ export async function listCalendarEvents(opts: {
     singleEvents: true,
     orderBy: 'startTime',
     maxResults: 500,
-    timeZone: opts.timezone || 'America/Merida',
+    timeZone: opts.timezone || DEFAULT_TIMEZONE,
   });
   return (res.data.items || [])
     .filter((e) => e.id && (e.start?.dateTime || e.start?.date))
