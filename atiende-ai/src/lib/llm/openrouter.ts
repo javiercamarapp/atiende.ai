@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
+import { trackFallback } from '@/lib/monitoring';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lazy-init client
@@ -265,6 +266,7 @@ export async function generateResponse(opts: {
       finishReason: response.choices[0]?.finish_reason,
       tokensOut: response.usage?.completion_tokens || 0,
     });
+    trackFallback('llm_empty_content');
   }
 
   return {

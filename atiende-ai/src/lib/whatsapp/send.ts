@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { trackMetaError, trackFallback } from '@/lib/monitoring';
 
 const WA_API = 'https://graph.facebook.com/v21.0';
 const getHeaders = () => ({
@@ -54,9 +55,15 @@ function inspectAxiosError(err: unknown, fnName: string): SendResult {
       console.warn(`[whatsapp:${fnName}] HTTP ${status}: ${err.message}`);
     }
 
+    // Instrumentación — el dashboard de Ops puede ahora alertar en spikes
+    // de un código específico (ej. "131047 > 20/min → ventana 24h se está
+    // venciendo para varios clientes") o en auth_failure (token rotó).
+    trackMetaError(code ?? `http_${status ?? 'unknown'}`, label);
+
     return { ok: false, errorCode: code, errorLabel: label, errorMessage: message };
   }
   console.warn(`[whatsapp:${fnName}] unexpected error:`, err);
+  trackMetaError('non_axios_error');
   return { ok: false, errorMessage: err instanceof Error ? err.message : String(err) };
 }
 
@@ -159,6 +166,7 @@ export async function sendButtonMessage(
   const trimmedBody = body?.trim();
   if (!trimmedBody || buttons.length === 0) {
     console.warn('[sendButtonMessage] body vacío o sin botones — fallback a sendTextMessage');
+    trackFallback('button_body_empty');
     return sendTextMessage(phoneNumberId, to, trimmedBody || 'Hola');
   }
 

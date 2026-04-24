@@ -1,6 +1,7 @@
 import { generateResponse, selectModel } from '@/lib/llm/openrouter';
 import { validateResponse, pickFallback } from '@/lib/guardrails/validate';
 import { RESPONSE_GENERATION_TIMEOUT_MS } from '@/lib/config';
+import { trackFallback, trackLLMCall } from '@/lib/monitoring';
 
 interface TenantRecord {
   id: string;
@@ -74,6 +75,7 @@ export async function generateAndValidateResponse(opts: {
     console.error('[response-builder] LLM generation failed — falling back', {
       intent, model, errMsg,
     });
+    trackFallback('llm_generation_failed', tenant.id);
     const fallbackText = intent === 'GREETING' && tenant.welcome_message
       ? tenant.welcome_message
       : pickFallback(intent);
@@ -90,6 +92,11 @@ export async function generateAndValidateResponse(opts: {
 
   const responseTimeMs = Date.now() - startTime;
 
+  // Track el LLM call exitoso. Es CRÍTICO que ocurra acá y no en openrouter.ts
+  // porque en openrouter no tenemos tenantId — el dashboard de costos por
+  // tenant necesita este track para atribuir tokens/$.
+  trackLLMCall(result.model, responseTimeMs, result.cost, tenant.id);
+
   const validation = validateResponse(
     result.text,
     { business_type: String(tenant.business_type || 'other'), name: String(tenant.name || '') },
@@ -101,11 +108,16 @@ export async function generateAndValidateResponse(opts: {
   // Defensa en profundidad: si por cualquier razón validation.text queda
   // vacío, usamos welcome_message del tenant para GREETING o fallback por
   // intent. Evita que el caller reciba "" y termine enviando "Hola" pelado.
-  const finalText = validation.text && validation.text.trim()
-    ? validation.text
-    : (intent === 'GREETING' && tenant.welcome_message
+  const needsFallback = !validation.text || !validation.text.trim();
+  const finalText = needsFallback
+    ? (intent === 'GREETING' && tenant.welcome_message
       ? tenant.welcome_message
-      : pickFallback(intent));
+      : pickFallback(intent))
+    : validation.text;
+
+  if (needsFallback) {
+    trackFallback('validation_empty', tenant.id);
+  }
 
   return {
     text: finalText,

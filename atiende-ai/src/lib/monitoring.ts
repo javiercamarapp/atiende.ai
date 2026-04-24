@@ -114,6 +114,42 @@ export function trackError(errorType: string): void {
   void incr('errors:total', 1);
 }
 
+/**
+ * Reasons por las que el pipeline activó un fallback (safety-net) en vez de
+ * enviar la respuesta original del LLM. Contador dedicado separado de
+ * `errors:*` porque un fallback NO es necesariamente un error (ej. el LLM
+ * devolvió OK pero el body era whitespace) — pero sí es señal de
+ * degradación de calidad que Ops debe monitorear.
+ */
+export type FallbackReason =
+  | 'llm_empty_content'         // openrouter devolvió null/empty
+  | 'llm_generation_failed'      // LLM timeout / HTTP error / network
+  | 'validation_empty'           // validateResponse devolvió text vacío
+  | 'guardrail_empty_input'      // validateResponse recibió response vacío
+  | 'processor_last_resort'      // catch final en processor
+  | 'smart_response_empty'       // sendSmartResponse text vacío tras trim
+  | 'button_body_empty'          // sendButtonMessage body vacío → texto
+  | 'timezone_default';          // tenant sin timezone configurado
+
+export function trackFallback(reason: FallbackReason, tenantId?: string): void {
+  void incr(`fallback:${reason}`, 1);
+  void incr('fallback:total', 1);
+  if (tenantId) void incr(`fallback:tenant:${tenantId}`, 1);
+  logger.debug('Fallback activated', { reason, tenantId });
+}
+
+/**
+ * Trackea códigos de error de Meta (WhatsApp Graph API). Códigos comunes:
+ * 131030 (recipient_not_allowed), 131047 (reengagement_required),
+ * 131056 (rate_limit), 190 (token_expired), 100 (parameter_invalid).
+ * Permite dashboard "Meta API health" y alertar en spike de un código.
+ */
+export function trackMetaError(code: number | string, label?: string): void {
+  void incr(`meta_error:${code}`, 1);
+  if (label) void incr(`meta_error:label:${label}`, 1);
+  void incr('meta_error:total', 1);
+}
+
 // ─── Metrics summary ──────────────────────────────────────────────────────
 
 export interface MetricsSummary {
