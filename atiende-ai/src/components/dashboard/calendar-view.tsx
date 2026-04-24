@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check, CalendarClock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { toast } from 'sonner';
@@ -108,6 +108,50 @@ export function CalendarView({
   const [cancelReason, setCancelReason] = useState('');
   const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [rescheduleNotify, setRescheduleNotify] = useState(true);
+  const [rescheduling, setRescheduling] = useState(false);
+
+  async function handleRescheduleAppt() {
+    if (!selected || !rescheduleDate || !rescheduleTime || rescheduling) return;
+    const newIso = `${rescheduleDate}T${rescheduleTime}:00`;
+    setRescheduling(true);
+    try {
+      const res = await fetch(`/api/appointments/${selected.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_datetime: newIso,
+          reason: rescheduleReason.trim() || undefined,
+          notify_customer: rescheduleNotify,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo reagendar la cita');
+        return;
+      }
+      if (rescheduleNotify && data?.customerNotified === false) {
+        toast.success('Cita reagendada — no pudimos avisar al paciente por WhatsApp');
+      } else if (rescheduleNotify) {
+        toast.success('Cita reagendada y paciente notificado');
+      } else {
+        toast.success('Cita reagendada');
+      }
+      setRescheduleOpen(false);
+      setSelected(null);
+      setRescheduleReason('');
+      window.location.reload();
+    } catch (err) {
+      toast.error('Error de red al reagendar');
+      console.error(err);
+    } finally {
+      setRescheduling(false);
+    }
+  }
 
   async function handleCancelAppt() {
     if (!selected || cancelling) return;
@@ -809,6 +853,26 @@ export function CalendarView({
                   <button
                     type="button"
                     onClick={() => {
+                      const d = new Date(selected.datetime);
+                      const yyyy = d.getFullYear();
+                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+                      const dd = String(d.getDate()).padStart(2, '0');
+                      const hh = String(d.getHours()).padStart(2, '0');
+                      const mi = String(d.getMinutes()).padStart(2, '0');
+                      setRescheduleDate(`${yyyy}-${mm}-${dd}`);
+                      setRescheduleTime(`${hh}:${mi}`);
+                      setRescheduleReason('');
+                      setRescheduleNotify(true);
+                      setRescheduleOpen(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 h-9 rounded-full text-[13px] font-medium text-[hsl(var(--brand-blue))] bg-[hsl(var(--brand-blue-soft))] ring-1 ring-[hsl(var(--brand-blue))]/15 hover:bg-[hsl(var(--brand-blue))]/15 transition"
+                  >
+                    <CalendarClock className="w-4 h-4" />
+                    Reagendar cita
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       setCancelReason('');
                       setNotifyCustomer(true);
                       setCancelOpen(true);
@@ -901,6 +965,108 @@ export function CalendarView({
             >
               {cancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
               {cancelling ? 'Cancelando…' : 'Sí, cancelar cita'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── RESCHEDULE DIALOG ─── */}
+      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reagendar cita</DialogTitle>
+            <DialogDescription>
+              {selected && (
+                <>
+                  {selected.customer_name || selected.customer_phone} — antes el {new Date(selected.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las {fmtTime(selected.datetime)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Nueva fecha</label>
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Nueva hora</label>
+                <input
+                  type="time"
+                  value={rescheduleTime}
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">
+                Motivo (opcional)
+              </label>
+              <input
+                type="text"
+                value={rescheduleReason}
+                onChange={(e) => setRescheduleReason(e.target.value)}
+                placeholder="Ej. reorganización de agenda, retraso…"
+                maxLength={300}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+              <p className="text-[10.5px] text-zinc-500 mt-1">
+                Se incluye en el mensaje al paciente.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-zinc-50 ring-1 ring-zinc-100 cursor-pointer hover:bg-zinc-100/60 transition">
+              <div className={cn(
+                'mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition',
+                rescheduleNotify
+                  ? 'bg-[hsl(var(--brand-blue))] text-white'
+                  : 'bg-white ring-1 ring-zinc-300',
+              )}>
+                {rescheduleNotify && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+              </div>
+              <input
+                type="checkbox"
+                checked={rescheduleNotify}
+                onChange={(e) => setRescheduleNotify(e.target.checked)}
+                className="sr-only"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                  <p className="text-[13px] font-semibold text-zinc-900">Avisar al paciente por WhatsApp</p>
+                </div>
+                <p className="text-[11.5px] text-zinc-500 mt-0.5 leading-snug">
+                  Le proponemos la nueva fecha. Si no le acomoda, responde y la IA busca otro hueco.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <DialogFooter className="mt-5 gap-2 flex-col-reverse sm:flex-row">
+            <button
+              type="button"
+              onClick={() => setRescheduleOpen(false)}
+              disabled={rescheduling}
+              className="inline-flex items-center justify-center h-10 px-4 rounded-full ring-1 ring-zinc-200 bg-white text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleRescheduleAppt}
+              disabled={rescheduling || !rescheduleDate || !rescheduleTime}
+              className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-[hsl(var(--brand-blue))] text-white text-[13px] font-medium hover:opacity-90 transition disabled:opacity-60"
+            >
+              {rescheduling ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarClock className="w-4 h-4" />}
+              {rescheduling ? 'Reagendando…' : 'Reagendar y avisar'}
             </button>
           </DialogFooter>
         </DialogContent>
