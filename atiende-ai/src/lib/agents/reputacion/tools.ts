@@ -108,3 +108,53 @@ registerTool('track_review_sent', {
     return { tracked: true, appointment_id: args.appointment_id };
   },
 });
+
+// ─── Tool 3: check_existing_google_review ────────────────────────────────────
+// Antes de pedir reseña, el agente chequea si ya existe una reseña en
+// google_reviews con el nombre del paciente. Evita pedirla dos veces.
+const CheckExistingArgs = z
+  .object({ patient_name: z.string().min(2).max(200) })
+  .strict();
+
+registerTool('check_existing_google_review', {
+  isMutation: false,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'check_existing_google_review',
+      description:
+        'Chequea si el paciente ya dejó una reseña en Google (sincronizada de la Places API). Match fuzzy por nombre — Google no expone phone en reviews. Usar ANTES de send_review_request para no pedir doble.',
+      parameters: {
+        type: 'object',
+        properties: { patient_name: { type: 'string' } },
+        required: ['patient_name'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = CheckExistingArgs.parse(rawArgs);
+    // Normalización: lowercase + quita acentos + primer nombre
+    const norm = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const firstName = norm(args.patient_name).split(/\s+/)[0];
+    if (!firstName || firstName.length < 2) return { exists: false };
+
+    const { data } = await supabaseAdmin
+      .from('google_reviews')
+      .select('rating, posted_at, reviewer_name')
+      .eq('tenant_id', ctx.tenantId)
+      .ilike('reviewer_name', `%${firstName}%`)
+      .order('posted_at', { ascending: false })
+      .limit(1);
+
+    if (!data || data.length === 0) return { exists: false };
+    const row = data[0];
+    return {
+      exists: true,
+      rating: row.rating,
+      posted_at: row.posted_at,
+      reviewer_name: row.reviewer_name,
+    };
+  },
+});

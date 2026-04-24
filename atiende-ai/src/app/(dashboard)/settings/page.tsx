@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
-  ChevronRight, Building2, Workflow, Link2, MapPin,
+  ChevronRight, Building2, Workflow, Link2, MapPin, Star,
 } from 'lucide-react';
 
 export default async function SettingsHubPage() {
@@ -55,6 +55,13 @@ export default async function SettingsHubPage() {
       href: '/settings/locations',
       icon: MapPin,
       tint: 'bg-teal-50 text-teal-600',
+    },
+    {
+      title: 'Reseñas de Google',
+      description: 'Reseñas sincronizadas desde Google Business Profile. El bot las consulta antes de pedir una nueva.',
+      href: '/settings/reviews',
+      icon: Star,
+      tint: 'bg-amber-50 text-amber-500',
     },
   ];
 
