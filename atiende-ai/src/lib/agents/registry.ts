@@ -39,6 +39,13 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'escalate_urgency',
       'create_referred_contact',
       'save_patient_preferences',
+      // Conversion + compliance tools (Phase 1): cotizar, validar menor,
+      // bio del doctor, source de marketing.
+      'get_service_quote',
+      'save_patient_guardian',
+      'validate_minor_permission',
+      'retrieve_doctor_expertise',
+      'capture_marketing_source',
     ],
     systemPromptKey: 'agenda',
   },
@@ -111,6 +118,11 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'escalate_urgency',
       'save_patient_document',
       'save_patient_preferences',
+      // Phase 1: capturar source de marketing apenas arranca la
+      // conversación + registrar tutor si el paciente es menor.
+      'capture_marketing_source',
+      'save_patient_guardian',
+      'validate_minor_permission',
     ],
     systemPromptKey: 'intake',
   },
