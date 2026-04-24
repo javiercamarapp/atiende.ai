@@ -38,9 +38,52 @@ const CheckAvailArgs = z
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date debe ser YYYY-MM-DD'),
     service_type: z.string().min(1).max(120).optional(),
     staff_id: z.string().uuid().optional(),
+    location_id: z.string().uuid().optional(),
     duration_minutes: z.number().int().min(15).max(240).optional().default(30),
   })
   .strict();
+
+/**
+ * Resuelve qué location aplica a este check/book. Retorna:
+ *   - locationId: el UUID a usar (puede ser del arg o inferido si solo
+ *     hay una activa)
+ *   - needsLocation: true si el tenant tiene ≥2 locations activas y no
+ *     se pasó location_id — el agente debe preguntar cuál.
+ *   - locationRow: null cuando el tenant no usa locations (back-compat).
+ */
+async function resolveLocationContext(tenantId: string, providedLocationId?: string): Promise<{
+  locationId: string | null;
+  needsLocation: boolean;
+  locationOptions: Array<{ id: string; name: string; city: string | null; is_primary: boolean }>;
+}> {
+  const { data: locations } = await supabaseAdmin
+    .from('locations')
+    .select('id, name, city, is_primary')
+    .eq('tenant_id', tenantId)
+    .eq('active', true);
+
+  const active = locations ?? [];
+  if (active.length === 0) {
+    // Tenant sin locations configuradas — back-compat single-location
+    return { locationId: null, needsLocation: false, locationOptions: [] };
+  }
+
+  if (providedLocationId) {
+    const match = active.find((l) => l.id === providedLocationId);
+    if (!match) {
+      // Location inválida (otra tenant o inactiva) — tratamos como si no se hubiera pasado
+      return { locationId: null, needsLocation: active.length > 1, locationOptions: active };
+    }
+    return { locationId: match.id as string, needsLocation: false, locationOptions: active };
+  }
+
+  if (active.length === 1) {
+    return { locationId: active[0].id as string, needsLocation: false, locationOptions: active };
+  }
+
+  // ≥2 locations activas y no se especificó — agente debe preguntar
+  return { locationId: null, needsLocation: true, locationOptions: active };
+}
 
 /** Slot buffer entre citas (min). Evita encimar citas que terminan "justito". */
 const SLOT_BUFFER_MINUTES = 15;
@@ -172,6 +215,24 @@ registerTool('check_availability', {
     const timezone = resolveTenantTimezone(ctx.tenant);
     const durationMinutes = args.duration_minutes ?? 30;
 
+    // 0. Location resolution — si el tenant tiene ≥2 locations activas
+    // y no se pasó location_id, pedir al agente que pregunte cuál.
+    const loc = await resolveLocationContext(ctx.tenantId, args.location_id);
+    if (loc.needsLocation) {
+      return {
+        available: false,
+        reason: 'NEEDS_LOCATION',
+        message:
+          'El consultorio tiene varias sucursales. Preguntale al paciente en cuál quiere agendar antes de seguir.',
+        locations: loc.locationOptions.map((l) => ({
+          id: l.id,
+          name: l.name,
+          city: l.city,
+          is_primary: l.is_primary,
+        })),
+      };
+    }
+
     // 1. Fecha no puede ser pasada (en TZ del tenant)
     const today = todayIsoInTz(timezone);
     if (args.date < today) {
@@ -234,13 +295,34 @@ registerTool('check_availability', {
       };
     }
 
-    // 3. Cargar staff activo (filtrado opcional por staff_id)
+    // 3. Cargar staff activo (filtrado opcional por staff_id y por location)
     let staffQuery = supabaseAdmin
       .from('staff')
       .select('id, name, default_duration')
       .eq('tenant_id', ctx.tenantId)
       .eq('active', true);
     if (args.staff_id) staffQuery = staffQuery.eq('id', args.staff_id);
+
+    // Si hay location resuelta, filtrar staff que atienden ahí (join con
+    // staff_locations). Traemos los staff_ids elegibles y filtramos en
+    // memoria en vez de agregar .in() con un IN grande.
+    if (loc.locationId) {
+      const { data: staffLocRows } = await supabaseAdmin
+        .from('staff_locations')
+        .select('staff_id')
+        .eq('location_id', loc.locationId);
+      const eligibleIds = (staffLocRows || []).map((r) => r.staff_id as string);
+      if (eligibleIds.length === 0) {
+        return {
+          available: false,
+          reason: 'NO_STAFF_AT_LOCATION',
+          message:
+            'Esa sucursal todavía no tiene doctores asignados. Pide al paciente elegir otra o contactar al consultorio.',
+        };
+      }
+      staffQuery = staffQuery.in('id', eligibleIds);
+    }
+
     const { data: staffRows } = await staffQuery;
     const staffList = (staffRows || []) as StaffSlim[];
 
@@ -371,6 +453,7 @@ const BookArgs = z
       .transform((s) => s.replace(/\s+/g, ' ').trim().slice(0, 120)),
     patient_phone: z.string().min(6).max(20),
     staff_id: z.string().uuid().optional(),
+    location_id: z.string().uuid().optional(),
     // Motivo de la cita. Campo separado de `notes` para facilitar analytics
     // y mostrarlo como columna "Motivo" en el historial del paciente.
     // Ejemplos: "limpieza dental", "dolor de muela superior derecho",
@@ -404,6 +487,7 @@ registerTool('book_appointment', {
           patient_name: { type: 'string' },
           patient_phone: { type: 'string' },
           staff_id: { type: 'string', description: 'UUID opcional — si se omite se elige un staff libre' },
+          location_id: { type: 'string', description: 'UUID opcional de la sucursal. Si el tenant tiene ≥2 locations activas, es REQUERIDO — el check_availability previo retornará reason=NEEDS_LOCATION y deberás preguntar al paciente cuál eligió.' },
           reason: {
             type: 'string',
             description:
@@ -429,6 +513,25 @@ registerTool('book_appointment', {
     }
     const args = parse.data;
     args.patient_phone = normalizePhoneMx(args.patient_phone);
+
+    // Location resolution — si el tenant tiene ≥2 locations activas y no
+    // se pasó location_id, rechazamos el book con NEEDS_LOCATION.
+    // check_availability ya debería haber devuelto este error; acá es
+    // defense-in-depth por si el LLM llama book sin haber llamado check.
+    const loc = await resolveLocationContext(ctx.tenantId, args.location_id);
+    if (loc.needsLocation) {
+      return {
+        success: false,
+        error_code: 'NEEDS_LOCATION',
+        message:
+          'Hay varias sucursales. Preguntale al paciente en cuál quiere su cita y volvé a llamar book_appointment con location_id.',
+        locations: loc.locationOptions.map((l) => ({
+          id: l.id,
+          name: l.name,
+          city: l.city,
+        })),
+      };
+    }
 
     // Defensa contra LLM que pasa el teléfono como nombre. Si patient_name
     // es solo dígitos / + / espacios / guiones (≥7 chars) asumimos que el
@@ -473,12 +576,31 @@ registerTool('book_appointment', {
       };
     }
 
-    // 3. Cargar staff activo; elegir por staff_id o fuzzy-match por nombre
-    const { data: staffRows } = await supabaseAdmin
+    // 3. Cargar staff activo; elegir por staff_id o fuzzy-match por nombre.
+    // Si hay location resuelta, filtramos por los staff_ids que atienden ahí.
+    let eligibleStaffIds: string[] | null = null;
+    if (loc.locationId) {
+      const { data: staffLocRows } = await supabaseAdmin
+        .from('staff_locations')
+        .select('staff_id')
+        .eq('location_id', loc.locationId);
+      eligibleStaffIds = (staffLocRows || []).map((r) => r.staff_id as string);
+      if (eligibleStaffIds.length === 0) {
+        return {
+          success: false,
+          error_code: 'NO_STAFF_AT_LOCATION',
+          message: 'Esa sucursal no tiene doctores asignados. Elige otra sucursal o contacta al consultorio.',
+        };
+      }
+    }
+
+    let staffBaseQuery = supabaseAdmin
       .from('staff')
       .select('id, name, google_calendar_id, default_duration')
       .eq('tenant_id', ctx.tenantId)
       .eq('active', true);
+    if (eligibleStaffIds) staffBaseQuery = staffBaseQuery.in('id', eligibleStaffIds);
+    const { data: staffRows } = await staffBaseQuery;
 
     if (!staffRows || staffRows.length === 0) {
       return {
@@ -587,6 +709,7 @@ registerTool('book_appointment', {
         confirmation_code: confirmationCode,
         reason: args.reason?.trim() || null,
         notes: args.notes ?? null,
+        location_id: loc.locationId,
       })
       .select('id')
       .single();

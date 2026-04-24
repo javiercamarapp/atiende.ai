@@ -48,6 +48,8 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'capture_marketing_source',
       // Patient Payment Portal (Phase 1)
       'send_payment_link',
+      // Multi-location (Phase 2.B.2)
+      'list_locations',
     ],
     systemPromptKey: 'agenda',
   },
