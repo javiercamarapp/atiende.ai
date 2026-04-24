@@ -27,6 +27,8 @@ import './pharmacovigilance';
 import './administrative';
 import './doctor-profile';
 import './payment-resolution';
+// Phase 3 — diferenciadores
+import './treatment-coach';
 
 import type { AgentName, TenantContext, FastRoute } from './types';
 import { AGENT_REGISTRY } from './registry';
@@ -46,6 +48,7 @@ import { getPharmacovigilancePrompt } from './pharmacovigilance/prompt';
 import { getAdministrativePrompt } from './administrative/prompt';
 import { getDoctorProfilePrompt } from './doctor-profile/prompt';
 import { getPaymentResolutionPrompt } from './payment-resolution/prompt';
+import { getTreatmentCoachPrompt } from './treatment-coach/prompt';
 
 export type { AgentName, TenantContext, FastRoute, AgentConfig } from './types';
 export { AGENT_REGISTRY } from './registry';
@@ -145,6 +148,7 @@ export function getSystemPrompt(agentName: AgentName, ctx: TenantContext): strin
     case 'administrative':     return getAdministrativePrompt(ctx);
     case 'doctor-profile':     return getDoctorProfilePrompt(ctx);
     case 'payment-resolution': return getPaymentResolutionPrompt(ctx);
+    case 'treatment-coach':    return getTreatmentCoachPrompt(ctx);
     case 'faq':
       return '(FAQ no usa LLM — los handlers son funciones directas en src/lib/agents/faq/tools.ts)';
     case 'triaje':
@@ -264,6 +268,11 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     // Telemedicina (Phase 2.C)
     'mark_appointment_telemedicine',
     'send_telemed_link',
+    // Treatment plans (Phase 3)
+    'create_treatment_plan',
+    'get_patient_treatment_plan',
+    'mark_session_completed',
+    'pause_or_abandon_plan',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {
