@@ -4,6 +4,11 @@ import { CalendarView } from '@/components/dashboard/calendar-view';
 import { CalendarOnboarding } from '@/components/dashboard/calendar-onboarding';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { listCalendarEvents } from '@/lib/calendar/google';
+
+// Revalidate this route every 60s so Google-only events surface quickly
+// without making every navigation wait for the Google API roundtrip.
+export const revalidate = 60;
 
 interface CalendarEvent {
   id: string;
@@ -15,6 +20,7 @@ interface CalendarEvent {
   notes: string | null;
   staffName: string;
   serviceName: string;
+  source?: 'local' | 'google';
 }
 
 interface ServiceOption {
@@ -146,23 +152,33 @@ export default async function CalendarPage({
     );
   }
 
-  const { data: aptsRaw } = await supabase
-    .from('appointments')
-    .select(
-      'id, datetime, end_datetime, status, customer_name, customer_phone, notes, staff:staff_id(name), services:service_id(name)',
-    )
-    .eq('tenant_id', tenant.id)
-    .gte('datetime', start.toISOString())
-    .lt('datetime', end.toISOString())
-    .order('datetime', { ascending: true })
-    .limit(800);
-
-  const { data: servicesRaw } = await supabase
-    .from('services')
-    .select('id, name, category')
-    .eq('tenant_id', tenant.id)
-    .eq('active', true)
-    .order('name', { ascending: true });
+  // Fetch local appointments, services, and connected staff in parallel.
+  const [aptsRes, servicesRes, staffRes] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select(
+        'id, datetime, end_datetime, status, customer_name, customer_phone, notes, google_event_id, staff:staff_id(name), services:service_id(name)',
+      )
+      .eq('tenant_id', tenant.id)
+      .gte('datetime', start.toISOString())
+      .lt('datetime', end.toISOString())
+      .order('datetime', { ascending: true })
+      .limit(800),
+    supabase
+      .from('services')
+      .select('id, name, category')
+      .eq('tenant_id', tenant.id)
+      .eq('active', true)
+      .order('name', { ascending: true }),
+    supabaseAdmin
+      .from('staff')
+      .select('id, name, google_calendar_id')
+      .eq('tenant_id', tenant.id)
+      .not('google_calendar_id', 'is', null),
+  ]);
+  const aptsRaw = aptsRes.data;
+  const servicesRaw = servicesRes.data;
+  const connectedStaff = staffRes.data as Array<{ id: string; name: string; google_calendar_id: string }> | null;
 
   type AptRow = {
     id: string;
@@ -172,11 +188,12 @@ export default async function CalendarPage({
     customer_name: string | null;
     customer_phone: string;
     notes: string | null;
+    google_event_id: string | null;
     staff: { name: string } | { name: string }[] | null;
     services: { name: string } | { name: string }[] | null;
   };
 
-  const events: CalendarEvent[] = ((aptsRaw || []) as unknown as AptRow[]).map((a) => {
+  const localEvents: CalendarEvent[] = ((aptsRaw || []) as unknown as AptRow[]).map((a) => {
     const staff = Array.isArray(a.staff) ? a.staff[0] : a.staff;
     const svc = Array.isArray(a.services) ? a.services[0] : a.services;
     return {
@@ -189,8 +206,54 @@ export default async function CalendarPage({
       notes: a.notes,
       staffName: staff?.name ?? '—',
       serviceName: svc?.name ?? 'Consulta',
+      source: 'local',
     };
   });
+
+  // Pull Google Calendar events for each connected staff and merge.
+  // Local appointments that already have a google_event_id are authoritative;
+  // Google events without a local counterpart are surfaced as external.
+  const localGoogleIds = new Set(
+    ((aptsRaw || []) as unknown as AptRow[])
+      .map((a) => a.google_event_id)
+      .filter((v): v is string => !!v),
+  );
+
+  const googleEventsFetches = (connectedStaff || []).map(async (staff) => {
+    try {
+      const events = await listCalendarEvents({
+        staffId: staff.id,
+        calendarId: staff.google_calendar_id,
+        timeMin: start.toISOString(),
+        timeMax: end.toISOString(),
+      });
+      return events.map((e) => ({ ...e, staffName: staff.name }));
+    } catch (err) {
+      console.warn('[calendar-page] Google events fetch failed for staff', staff.id, err);
+      return [];
+    }
+  });
+
+  const googleEventsByStaff = await Promise.all(googleEventsFetches);
+  const externalEvents: CalendarEvent[] = googleEventsByStaff
+    .flat()
+    .filter((e) => !localGoogleIds.has(e.id) && e.status !== 'cancelled' && e.startTime)
+    .map((e) => ({
+      id: `google-${e.id}`,
+      datetime: e.startTime!,
+      end_datetime: e.endTime,
+      status: 'scheduled',
+      customer_name: null,
+      customer_phone: '',
+      notes: e.description,
+      staffName: e.staffName,
+      serviceName: e.summary,
+      source: 'google' as const,
+    }));
+
+  const events: CalendarEvent[] = [...localEvents, ...externalEvents].sort(
+    (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime(),
+  );
 
   const services: ServiceOption[] = (servicesRaw || []) as ServiceOption[];
 

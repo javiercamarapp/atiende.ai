@@ -153,6 +153,54 @@ export async function getFreeBusySlots(opts: {
   }));
 }
 
+export interface GoogleCalendarEventLite {
+  id: string;
+  summary: string;
+  description: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  htmlLink: string | null;
+  allDay: boolean;
+  status: string | null;
+}
+
+export async function listCalendarEvents(opts: {
+  staffId?: string;
+  calendarId: string;
+  timeMin: string; // ISO
+  timeMax: string;
+  timezone?: string;
+}): Promise<GoogleCalendarEventLite[]> {
+  const calendar = await getCalendarApi(opts.staffId);
+  const res = await calendar.events.list({
+    calendarId: opts.calendarId,
+    timeMin: opts.timeMin,
+    timeMax: opts.timeMax,
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 500,
+    timeZone: opts.timezone || 'America/Merida',
+  });
+  return (res.data.items || [])
+    .filter((e) => e.id && (e.start?.dateTime || e.start?.date))
+    .map((e) => {
+      const startDt = e.start?.dateTime || null;
+      const startDate = e.start?.date || null;
+      const endDt = e.end?.dateTime || null;
+      const endDate = e.end?.date || null;
+      return {
+        id: e.id!,
+        summary: e.summary || 'Sin título',
+        description: e.description || null,
+        startTime: startDt || startDate,
+        endTime: endDt || endDate,
+        htmlLink: e.htmlLink || null,
+        allDay: !startDt,
+        status: e.status || null,
+      };
+    });
+}
+
 export async function cancelCalendarEvent(
   calendarId: string,
   eventId: string,
