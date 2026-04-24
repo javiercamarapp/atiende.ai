@@ -83,7 +83,7 @@ export default async function PatientDetailPage({
 
   const { data: aptsData } = await supabase
     .from('appointments')
-    .select('id, datetime, end_datetime, duration_minutes, status, notes, staff:staff_id(name, speciality), services:service_id(name)')
+    .select('id, datetime, end_datetime, duration_minutes, status, reason, notes, staff:staff_id(name, speciality), services:service_id(name)')
     .eq('tenant_id', tenant.id)
     .eq('customer_phone', contact.phone)
     .order('datetime', { ascending: false })
@@ -91,7 +91,7 @@ export default async function PatientDetailPage({
 
   type AptRow = {
     id: string; datetime: string; end_datetime: string | null; duration_minutes: number | null;
-    status: string; notes: string | null;
+    status: string; reason: string | null; notes: string | null;
     staff: { name: string; speciality: string | null } | { name: string; speciality: string | null }[] | null;
     services: { name: string } | { name: string }[] | null;
   };
@@ -100,7 +100,8 @@ export default async function PatientDetailPage({
     const svc = Array.isArray(a.services) ? a.services[0] : a.services;
     return {
       id: a.id, datetime: a.datetime, end_datetime: a.end_datetime,
-      duration_minutes: a.duration_minutes, status: a.status, notes: a.notes,
+      duration_minutes: a.duration_minutes, status: a.status,
+      reason: a.reason, notes: a.notes,
       staffName: staff?.name ?? '—', staffSpeciality: staff?.speciality ?? '',
       serviceName: svc?.name ?? '—',
     };
@@ -363,6 +364,7 @@ export default async function PatientDetailPage({
                   <th className="px-6 py-3 text-left font-medium">Fecha</th>
                   <th className="px-6 py-3 text-left font-medium">Hora</th>
                   <th className="px-6 py-3 text-left font-medium">Tipo</th>
+                  <th className="hidden md:table-cell px-6 py-3 text-left font-medium">Motivo</th>
                   <th className="hidden md:table-cell px-6 py-3 text-left font-medium">Doctor</th>
                   <th className="px-6 py-3 text-left font-medium">Estado</th>
                   <th className="hidden lg:table-cell px-6 py-3 text-left font-medium">Nota</th>
@@ -377,6 +379,7 @@ export default async function PatientDetailPage({
                       <td className="px-6 py-3.5 text-zinc-900 tabular-nums whitespace-nowrap">{fmtShortDate(a.datetime)}</td>
                       <td className="px-6 py-3.5 text-zinc-600 tabular-nums whitespace-nowrap">{fmtTime(a.datetime)} - {fmtTime(endD.toISOString())}</td>
                       <td className="px-6 py-3.5 text-zinc-700">{a.serviceName}</td>
+                      <td className="hidden md:table-cell px-6 py-3.5 text-zinc-600 max-w-[220px] truncate" title={a.reason || ''}>{a.reason || '—'}</td>
                       <td className="hidden md:table-cell px-6 py-3.5">
                         <p className="text-zinc-900">{a.staffName}</p>
                         <p className="text-[11px] text-zinc-400">{a.staffSpeciality}</p>
@@ -389,7 +392,7 @@ export default async function PatientDetailPage({
                           {a.status.replace('_', ' ')}
                         </span>
                       </td>
-                      <td className="hidden lg:table-cell px-6 py-3.5 text-zinc-500 max-w-[200px] truncate">{a.notes || '—'}</td>
+                      <td className="hidden lg:table-cell px-6 py-3.5 text-zinc-500 max-w-[200px] truncate" title={a.notes || ''}>{a.notes || '—'}</td>
                     </tr>
                   );
                 })}
