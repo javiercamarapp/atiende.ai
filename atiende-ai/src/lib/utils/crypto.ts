@@ -45,46 +45,41 @@ function getKey(): Buffer | null {
   return _key;
 }
 
-// La primera vez que se invoque encrypt/decrypt, si estamos en producción Y
-// no hay key válida, LANZAMOS en vez de fail-open a texto plano. Sin esto,
-// un olvido de ENV en devops mandaba historiales clínicos en claro a
-// Supabase sin alerta alguna (violación LFPDPPP/HIPAA).
-let _assertedOnce = false;
-function assertKeyOrFailClosed(): Buffer | null {
-  const key = getKey();
-  if (key) return key;
-  if (process.env.NODE_ENV === 'production' && !_assertedOnce) {
-    _assertedOnce = true; // evita spam de throws en el mismo proceso
-    throw new Error(
-      'MESSAGES_ENCRYPTION_KEY (or PII_ENCRYPTION_KEY) is missing or invalid in production. ' +
-      'Refusing to store medical content in plaintext. Configure a 32-byte hex key ' +
-      'and redeploy. See supabase/migrations/messages_media.sql for schema.',
-    );
-  }
-  return null;
+// Rate limit para console.error de plaintext fallback — si la key
+// desaparece en runtime no queremos spamear 10k logs por minuto. Un
+// error cada 5 min es suficiente para alertar sin saturar.
+let _lastPlaintextWarnAt = 0;
+
+function notePlaintextFallback(context: string): void {
+  // Incrementamos el counter SIEMPRE (aunque silenciemos console) para que
+  // el dashboard de Ops (/metrics) muestre la tasa real de plaintext writes.
+  // Import dinámico para evitar ciclo crypto ← monitoring ← logger.
+  void import('@/lib/monitoring').then((m) => m.trackError('encryption_plaintext_fallback')).catch(() => {});
+  if (process.env.NODE_ENV !== 'production') return;
+  const now = Date.now();
+  if (now - _lastPlaintextWarnAt < 5 * 60_000) return;
+  _lastPlaintextWarnAt = now;
+  console.error(
+    `[crypto] CRITICAL: encryption key missing at runtime — ${context} falling back to plaintext. ` +
+      'Configure MESSAGES_ENCRYPTION_KEY (32 bytes hex) and redeploy. ' +
+      'Métrica: errors:encryption_plaintext_fallback.',
+  );
 }
 
 /**
- * Cifra un string con AES-256-GCM. NUNCA lanza excepciones — la decisión
- * de fail-closed en producción se toma en BOOT (ver assertEncryptionConfigured),
- * no por-llamada. Así evitamos matar abruptamente el waitUntil de Vercel si
- * algo raro pasa a mitad del pipeline.
- *
- * Antes encryptPII propagaba throw si faltaba la key en prod, lo que mataba
- * la función de Vercel a mitad del procesamiento de un mensaje. Ahora la
- * defensa contra key-missing es solo al boot (fail-fast deploy), y el
- * runtime siempre es resiliente.
+ * Cifra un string con AES-256-GCM. NUNCA lanza — fail-closed de verdad se
+ * hace en BOOT vía assertEncryptionConfigured(). En runtime, si la key
+ * desapareció (env var perdida en hot-reload, worker sin config), fallamos
+ * a plaintext PERO instrumentamos cada ocurrencia vía trackError para que
+ * Ops lo detecte en tiempo real (antes se dependía del assertOnce flag que
+ * solo emitía un error por proceso).
  */
 export function encryptPII(plaintext: string | null | undefined): string | null {
   if (plaintext == null) return null;
   if (plaintext === '') return '';
   const key = getKey();
   if (!key) {
-    // En producción esto NO debería ocurrir porque assertEncryptionConfigured
-    // se llamó al boot; si pasa, loggeamos para alertar pero no rompemos.
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[crypto] CRITICAL: encryption key missing in production runtime — storing plaintext fallback. Redeploy with MESSAGES_ENCRYPTION_KEY set.');
-    }
+    notePlaintextFallback('encryptPII');
     return plaintext;
   }
   try {
@@ -211,7 +206,10 @@ export function encryptPIIWithRotation(plaintext: string | null | undefined): st
   if (plaintext == null) return null;
   if (plaintext === '') return '';
   const key = getWriteKey();
-  if (!key) return plaintext;
+  if (!key) {
+    notePlaintextFallback('encryptPIIWithRotation');
+    return plaintext;
+  }
   try {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv(ALG, key, iv);

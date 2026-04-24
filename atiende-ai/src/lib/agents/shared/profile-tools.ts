@@ -21,6 +21,47 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 import { encryptPII } from '@/lib/utils/crypto';
 import { notifyOwner } from '@/lib/actions/notifications';
+import { trackError } from '@/lib/monitoring';
+
+/**
+ * Defense-in-depth: `supabaseAdmin` bypassa RLS, así que si un prompt
+ * injection o un bug en el orquestador contamina `ctx.contactId` con
+ * un UUID de OTRO tenant, las profile tools escribirían al perfil
+ * equivocado. Este helper hace una query previa que verifica que el
+ * contacto pertenece al tenantId del contexto. Retorna el row si OK,
+ * `null` si no existe o es de otro tenant (tool aborta).
+ *
+ * Costo: 1 extra round-trip a Supabase por tool call (~20-40ms). Dado
+ * que las profile tools son fire-and-forget durante la conversación,
+ * la latencia extra es aceptable para cerrar el gap cross-tenant.
+ */
+async function assertContactBelongsToTenant(
+  tenantId: string,
+  contactId: string,
+): Promise<boolean> {
+  if (!tenantId || !contactId) return false;
+  const { data, error } = await supabaseAdmin
+    .from('contacts')
+    .select('id')
+    .eq('id', contactId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (error) {
+    trackError('profile_tool_tenant_check_error');
+    console.warn('[profile-tools] tenant assertion query failed', { tenantId, contactId, err: error.message });
+    return false;
+  }
+  if (!data) {
+    // Esto es un SIGNAL de bug o ataque — loggear como error, no warn.
+    trackError('profile_tool_cross_tenant_blocked');
+    console.error('[profile-tools] BLOCKED cross-tenant access attempt', {
+      tenantId,
+      contactId,
+    });
+    return false;
+  }
+  return true;
+}
 
 // ─── Helper: log evento para timeline del contacto ──────────────────────────
 async function logContactEvent(opts: {
@@ -36,8 +77,12 @@ async function logContactEvent(opts: {
       event_type: opts.eventType,
       details: opts.details,
     });
-  } catch {
-    /* best effort — los events son observability, no bloquean el flow */
+  } catch (err) {
+    // Antes silenciábamos 100%. Ahora incrementamos counter para que
+    // Ops vea spikes en el dashboard aunque los events sean "best
+    // effort" — si dejan de loguearse de repente, queremos saber.
+    trackError('contact_event_log_failed');
+    console.warn('[profile-tools] logContactEvent failed', err instanceof Error ? err.message : err);
   }
 }
 
@@ -101,12 +146,16 @@ registerTool('update_patient_profile', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = UpdateProfileArgs.parse(rawArgs);
     if (!ctx.contactId) return { updated: false, error: 'no contactId in ctx' };
+    if (!(await assertContactBelongsToTenant(ctx.tenantId, ctx.contactId))) {
+      return { updated: false, error: 'contact does not belong to tenant' };
+    }
 
     // Traer intake_data previo para merge
     const { data: existing } = await supabaseAdmin
       .from('contacts')
       .select('intake_data')
       .eq('id', ctx.contactId)
+      .eq('tenant_id', ctx.tenantId)
       .maybeSingle();
 
     const prevIntake = (existing?.intake_data as Record<string, unknown> | null) || {};
@@ -141,7 +190,8 @@ registerTool('update_patient_profile', {
     const { error } = await supabaseAdmin
       .from('contacts')
       .update(update)
-      .eq('id', ctx.contactId);
+      .eq('id', ctx.contactId)
+      .eq('tenant_id', ctx.tenantId);
 
     if (error) return { updated: false, error: error.message };
 
@@ -205,6 +255,9 @@ registerTool('save_patient_document', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = SaveDocArgs.parse(rawArgs);
     if (!ctx.contactId) return { saved: false, error: 'no contactId in ctx' };
+    if (!(await assertContactBelongsToTenant(ctx.tenantId, ctx.contactId))) {
+      return { saved: false, error: 'contact does not belong to tenant' };
+    }
 
     const { data, error } = await supabaseAdmin
       .from('contact_documents')
@@ -273,15 +326,19 @@ registerTool('escalate_urgency', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = UrgencyArgs.parse(rawArgs);
 
-    // Marcar emergency_flag en contacts (solo si hay contactId)
-    if (ctx.contactId) {
+    // Marcar emergency_flag en contacts (solo si hay contactId y pertenece
+    // al tenant del contexto). Si falla la assertion no abortamos el
+    // escalate — la notificación al dueño SIEMPRE va, aunque no podamos
+    // persistir el flag. Preferimos alertar sin data que no alertar.
+    if (ctx.contactId && (await assertContactBelongsToTenant(ctx.tenantId, ctx.contactId))) {
       await supabaseAdmin
         .from('contacts')
         .update({
           emergency_flag: true,
           emergency_flag_at: new Date().toISOString(),
         })
-        .eq('id', ctx.contactId);
+        .eq('id', ctx.contactId)
+        .eq('tenant_id', ctx.tenantId);
 
       await logContactEvent({
         tenantId: ctx.tenantId,
@@ -341,6 +398,15 @@ registerTool('create_referred_contact', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = ReferredArgs.parse(rawArgs);
+
+    // Validar que el referrer (ctx.contactId) pertenece al tenant — si no,
+    // rechazamos el create para evitar que un prompt injection pueda
+    // referir pacientes cross-tenant. Si no hay contactId (ej. el flow
+    // arrancó desde un canal sin conversation asociada), el referral se
+    // crea sin referred_by.
+    if (ctx.contactId && !(await assertContactBelongsToTenant(ctx.tenantId, ctx.contactId))) {
+      return { created: false, error: 'referrer contact does not belong to tenant' };
+    }
 
     // Normalizar phone (reutilizar helper)
     const { normalizePhoneMx } = await import('@/lib/whatsapp/normalize-phone');
@@ -435,11 +501,15 @@ registerTool('save_patient_preferences', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = PreferencesArgs.parse(rawArgs);
     if (!ctx.contactId) return { saved: false, error: 'no contactId in ctx' };
+    if (!(await assertContactBelongsToTenant(ctx.tenantId, ctx.contactId))) {
+      return { saved: false, error: 'contact does not belong to tenant' };
+    }
 
     const { data: existing } = await supabaseAdmin
       .from('contacts')
       .select('preferences')
       .eq('id', ctx.contactId)
+      .eq('tenant_id', ctx.tenantId)
       .maybeSingle();
 
     const prev = (existing?.preferences as Record<string, unknown> | null) || {};
@@ -457,7 +527,8 @@ registerTool('save_patient_preferences', {
     const { error } = await supabaseAdmin
       .from('contacts')
       .update({ preferences: merged })
-      .eq('id', ctx.contactId);
+      .eq('id', ctx.contactId)
+      .eq('tenant_id', ctx.tenantId);
 
     if (error) return { saved: false, error: error.message };
 
