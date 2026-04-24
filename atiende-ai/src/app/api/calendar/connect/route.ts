@@ -10,13 +10,60 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL}/api/calendar/connect`;
 
+// ─── Signed state (no cookies needed) ───────────────────────────────────────
+// We pack a nonce, the PKCE verifier and issued-at into the OAuth state
+// parameter itself, signed with HMAC-SHA256 keyed by the server's encryption
+// key. This removes the dependency on cookies surviving the cross-site round
+// trip through Google (which Safari / Brave / Firefox-Strict love to strip).
+
+function stateSecret(): Buffer {
+  const hex = process.env.MESSAGES_ENCRYPTION_KEY || process.env.PII_ENCRYPTION_KEY;
+  if (hex) {
+    try { return Buffer.from(hex, 'hex'); } catch { /* fallthrough */ }
+  }
+  // Last-resort: derive from NEXTAUTH_SECRET / JWT or just a stable env.
+  return Buffer.from(process.env.CRON_SECRET || 'atiende-oauth-state-fallback');
+}
+
+interface StatePayload {
+  n: string;  // nonce
+  v: string;  // PKCE verifier
+  t: number;  // issued at ms
+}
+
+function signState(payload: StatePayload): string {
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const mac = crypto.createHmac('sha256', stateSecret()).update(data).digest('base64url');
+  return `${data}.${mac}`;
+}
+
+function verifyState(state: string): StatePayload | null {
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+  const [data, mac] = parts;
+  const expected = crypto.createHmac('sha256', stateSecret()).update(data).digest('base64url');
+  const expectedBuf = Buffer.from(expected);
+  const macBuf = Buffer.from(mac);
+  if (expectedBuf.length !== macBuf.length) return null;
+  if (!crypto.timingSafeEqual(expectedBuf, macBuf)) return null;
+  try {
+    const json = Buffer.from(data, 'base64url').toString('utf8');
+    const parsed = JSON.parse(json) as StatePayload;
+    if (typeof parsed.n !== 'string' || typeof parsed.v !== 'string' || typeof parsed.t !== 'number') {
+      return null;
+    }
+    // 10-minute window
+    if (Date.now() - parsed.t > 10 * 60 * 1000) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function errRedirect(reason: string, detail?: string) {
   const base = `${process.env.NEXT_PUBLIC_APP_URL}/calendar?calendar_error=${reason}`;
   const url = detail ? `${base}&detail=${encodeURIComponent(detail.slice(0, 200))}` : base;
-  const response = NextResponse.redirect(url, { status: 303 });
-  response.cookies.delete('oauth_state');
-  response.cookies.delete('oauth_code_verifier');
-  return response;
+  return NextResponse.redirect(url, { status: 303 });
 }
 
 // GET without code param = initiate OAuth flow
@@ -29,12 +76,14 @@ export async function GET(req: NextRequest) {
       return errRedirect('env_missing', 'GOOGLE_CLIENT_ID/SECRET or NEXT_PUBLIC_APP_URL not set');
     }
 
-    const state = crypto.randomBytes(32).toString('hex');
+    const nonce = crypto.randomBytes(16).toString('hex');
     const codeVerifier = crypto.randomBytes(32).toString('base64url');
     const codeChallenge = crypto
       .createHash('sha256')
       .update(codeVerifier)
       .digest('base64url');
+
+    const state = signState({ n: nonce, v: codeVerifier, t: Date.now() });
 
     const oauth2Client = new google.auth.OAuth2(
       GOOGLE_CLIENT_ID,
@@ -50,44 +99,27 @@ export async function GET(req: NextRequest) {
       state,
       code_challenge: codeChallenge,
       code_challenge_method: CodeChallengeMethod.S256,
-      // include_granted_scopes so Google does NOT replace a prior grant silently
       include_granted_scopes: true,
     });
 
-    const response = NextResponse.redirect(authUrl);
-    const cookieOpts = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax' as const,
-      maxAge: 600,
-      // Path '/' so the cookies survive the cross-site round-trip through
-      // Google. Safari/Brave strip cookies with narrow paths in some cases.
-      path: '/',
-    };
-    response.cookies.set('oauth_state', state, cookieOpts);
-    response.cookies.set('oauth_code_verifier', codeVerifier, cookieOpts);
-    return response;
+    return NextResponse.redirect(authUrl);
   }
 
   // Handle OAuth callback
   try {
     const stateParam = req.nextUrl.searchParams.get('state');
-    const stateCookie = req.cookies.get('oauth_state')?.value;
-
-    if (!stateParam || !stateCookie || stateParam !== stateCookie) {
-      console.error('[calendar-connect] CSRF check failed', {
-        hasParam: !!stateParam,
-        hasCookie: !!stateCookie,
-        match: stateParam === stateCookie,
-      });
-      return errRedirect('invalid_state');
+    if (!stateParam) {
+      console.error('[calendar-connect] missing state on callback');
+      return errRedirect('invalid_state', 'missing_state_param');
     }
 
-    const codeVerifier = req.cookies.get('oauth_code_verifier')?.value;
-    if (!codeVerifier) {
-      console.error('[calendar-connect] PKCE verifier cookie missing');
-      return errRedirect('missing_verifier');
+    const payload = verifyState(stateParam);
+    if (!payload) {
+      console.error('[calendar-connect] state signature invalid or expired');
+      return errRedirect('invalid_state', 'signature_or_expiry_failed');
     }
+
+    const codeVerifier = payload.v;
 
     const supabase = await createServerSupabase();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -104,9 +136,6 @@ export async function GET(req: NextRequest) {
 
     const { tokens } = await oauth2Client.getToken({ code, codeVerifier });
 
-    // Resolve tenant first so we can reuse an existing refresh token if Google
-    // refuses to issue a new one (happens when the user previously granted but
-    // the 'consent' prompt was satisfied by an existing session).
     const { data: tenant } = await supabase
       .from('tenants')
       .select('id, name')
@@ -121,8 +150,6 @@ export async function GET(req: NextRequest) {
     let refreshToken: string | null = tokens.refresh_token || null;
 
     if (!refreshToken) {
-      // Try to keep a previously saved one so the user is not stuck. If there
-      // is nothing saved either, ask the user to revoke access and try again.
       const { data: staffWithToken } = await supabaseAdmin
         .from('staff')
         .select('id, google_refresh_token')
@@ -138,10 +165,8 @@ export async function GET(req: NextRequest) {
           'Revoke access at https://myaccount.google.com/permissions and try again',
         );
       }
-      // Keep the existing token; still update calendar id below.
     }
 
-    // Get primary calendar ID (use the access token we just received)
     oauth2Client.setCredentials(tokens);
     let calendarId = 'primary';
     try {
@@ -192,13 +217,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const response = NextResponse.redirect(
+    return NextResponse.redirect(
       `${process.env.NEXT_PUBLIC_APP_URL}/calendar?calendar=connected`,
       { status: 303 },
     );
-    response.cookies.delete('oauth_state');
-    response.cookies.delete('oauth_code_verifier');
-    return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[calendar-connect] unhandled OAuth error', { message });
