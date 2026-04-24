@@ -42,7 +42,7 @@ export { AGENT_REGISTRY } from './registry';
 // buildTenantContext — construye el TenantContext desde el row del tenant
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_TZ = 'America/Merida';
+import { resolveTenantTimezone } from '@/lib/config';
 
 function getDateInTz(timezone: string, offsetDays: number): string {
   const d = new Date(Date.now() + offsetDays * 86_400_000);
@@ -68,8 +68,11 @@ function parseHoursWindow(s: string | undefined): { open: string; close: string 
   return open && close ? { open, close } : null;
 }
 
-export function buildTenantContext(tenant: Record<string, unknown>): TenantContext {
-  const timezone = (tenant.timezone as string) || DEFAULT_TZ;
+export function buildTenantContext(
+  tenant: Record<string, unknown>,
+  opts?: { customerName?: string | null; customerPhone?: string | null },
+): TenantContext {
+  const timezone = resolveTenantTimezone(tenant);
   const rawHours = (tenant.business_hours as Record<string, string>) || {};
   const businessHours: Record<string, { open: string; close: string }> = {};
   for (const [day, str] of Object.entries(rawHours)) {
@@ -103,6 +106,8 @@ export function buildTenantContext(tenant: Record<string, unknown>): TenantConte
     tomorrowDate: getDateInTz(timezone, 1),
     dayAfterTomorrow: getDateInTz(timezone, 2),
     nextWeekStart: nextMondayInTz(timezone),
+    customerName: opts?.customerName?.trim() || undefined,
+    customerPhone: opts?.customerPhone?.trim() || undefined,
   };
 }
 

@@ -57,6 +57,15 @@ export type TenantContext = {
   dayAfterTomorrow: string;
   /** "2026-04-20" — siguiente lunes. */
   nextWeekStart: string;
+  /** Nombre del contacto tal como figura en WhatsApp (profile.name) o como
+   *  el cliente mismo se identificó en mensajes anteriores. Si no hay nombre
+   *  conocido queda `undefined` y el agente debe preguntar "¿A nombre de
+   *  quién agendamos?" antes de llamar `book_appointment`. */
+  customerName?: string;
+  /** Teléfono del cliente en formato E.164 (521...). El agente NUNCA debe
+   *  usarlo como `patient_name` — es solo para que el LLM sepa con quién
+   *  está hablando y pueda referenciarlo ("le confirmo al +52..."). */
+  customerPhone?: string;
 };
 
 /**

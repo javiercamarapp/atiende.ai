@@ -147,7 +147,13 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
 
   waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
-  const tenantCtx = buildTenantContext(tenant as unknown as Record<string, unknown>);
+  // Pasamos el nombre conocido del contacto (profile.name de WhatsApp o el
+  // que el cliente se presentó en mensajes previos) al contexto para que el
+  // LLM no invente ni use el teléfono como nombre en book_appointment.
+  const tenantCtx = buildTenantContext(
+    tenant as unknown as Record<string, unknown>,
+    { customerName: customerName || contactName, customerPhone: senderPhone },
+  );
 
   const { isOptOutIntent } = await import('@/lib/whatsapp/opt-out-regex');
   if (isOptOutIntent(content)) {

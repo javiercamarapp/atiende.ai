@@ -181,6 +181,25 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
     fetchUsage();
   }, [fetchUsage]);
 
+  // Deep-link support: si llegamos desde /marketing o /chat-data con
+  // ?plan=pro (o basic/premium), scrolleamos la card del plan al centro
+  // y le ponemos un ring de highlight 2s. Mejor UX que caer en el tope
+  // del dashboard y tener que buscar el plan.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get('plan');
+    if (!target || !['basic', 'pro', 'premium'].includes(target)) return;
+    const el = document.getElementById(`plan-${target}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('ring-2', 'ring-[hsl(var(--brand-blue))]', 'ring-offset-2');
+    const timer = setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-[hsl(var(--brand-blue))]', 'ring-offset-2');
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
   const upgrade = async (plan: string) => {
     setLoading(plan);
     try {
@@ -372,7 +391,11 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
               : '';
 
           return (
-            <div key={plan.key} className={`${baseCard} ${themeCard}${currentBorder}`}>
+            <div
+              key={plan.key}
+              id={`plan-${plan.key}`}
+              className={`${baseCard} ${themeCard}${currentBorder}`}
+            >
               {isPopular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
                   <span className="inline-flex items-center gap-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-full shadow-lg tracking-wide">
