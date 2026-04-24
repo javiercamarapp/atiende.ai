@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Hand, ArrowLeft, Loader2, Paperclip, Smile, MoreHorizontal, Phone, Video, Bot, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { displayPatientName, patientInitials } from '@/lib/utils/patient-display';
 import { cn } from '@/lib/utils';
 import { ConversationTags } from '@/components/chat/conversation-tags';
 import { ConversationNotes, type ConversationNote } from '@/components/chat/conversation-notes';
@@ -57,8 +58,10 @@ export function ChatViewer({ conversation, messages, tenantId, phoneNumberId }: 
     ? conversation.notes
     : [];
 
-  const customerName = conversation.customer_name || conversation.customer_phone;
-  const customerInitials = customerName.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+  // conversation.customer_name ya viene decrypted del server (conversations/[id]/page.tsx).
+  // Si aún así es null/ciphertext/teléfono, displayPatientName cae a "Paciente …XXXX".
+  const customerName = displayPatientName(conversation.customer_name ?? null, conversation.customer_phone);
+  const customerInitials = patientInitials(conversation.customer_name ?? null, conversation.customer_phone);
 
   const takeOver = async () => {
     const action = status === 'human_handoff' ? 'release' : 'takeover';

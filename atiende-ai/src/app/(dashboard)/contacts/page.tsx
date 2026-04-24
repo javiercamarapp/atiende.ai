@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { ChevronDown } from 'lucide-react';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { cn } from '@/lib/utils';
+import { decryptPII } from '@/lib/utils/crypto';
+import { displayPatientName, patientInitials } from '@/lib/utils/patient-display';
 
 type FilterKey = 'all' | 'at_risk' | 'valuable' | 'inactive';
 
@@ -29,11 +31,8 @@ const AVATAR_COLORS = [
 ];
 
 function initials(name: string | null, phone: string): string {
-  if (name) {
-    const parts = name.trim().split(/\s+/);
-    return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
-  }
-  return phone.slice(-2);
+  // Reuso del helper compartido que también filtra ciphertext/phone-shape.
+  return patientInitials(name, phone);
 }
 
 function avatarColor(id: string): string {
@@ -121,8 +120,13 @@ export default async function ContactsPage({
     if (!lastByPhone.has(a.customer_phone)) lastByPhone.set(a.customer_phone, a.datetime);
   }
 
+  // Desencriptar el nombre antes de pasarlo al render. Si la env
+  // PII_ENCRYPTION_KEY no está configurada, decryptPII devuelve el
+  // ciphertext raw; el helper displayPatientName lo detecta y cae al
+  // fallback "Paciente …XXXX". Así el UI nunca muestra el blob cifrado.
   let contacts: ContactRow[] = ((contactsRaw || []) as ContactRow[]).map((c) => ({
     ...c,
+    name: decryptPII(c.name),
     last_contact_at: lastByPhone.get(c.phone) ?? null,
   }));
 
@@ -208,7 +212,7 @@ export default async function ContactsPage({
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-zinc-900 hover:text-[hsl(var(--brand-blue))] truncate">
-                              {c.name || c.phone}
+                              {displayPatientName(c.name, c.phone)}
                             </p>
                             <p className="text-[11px] text-zinc-400 tabular-nums">{shortId(c.id)}</p>
                           </div>

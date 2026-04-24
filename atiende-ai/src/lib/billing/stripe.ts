@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { STRIPE_TRIAL_DAYS } from '@/lib/config';
 
 let _stripe: Stripe | null = null;
 
@@ -89,6 +90,26 @@ export async function createCheckoutSession(tenantId: string, email: string, pla
     metadata: { tenant_id: tenantId, plan },
     currency: 'mxn',
     allow_promotion_codes: true,
+    // Nuevo modelo de trial: primer mes gratis PERO requiere tarjeta. Stripe
+    // no cobra durante STRIPE_TRIAL_DAYS, pero solicita método de pago y lo
+    // valida con una pre-autorización. Al día 31 cobra el price del plan.
+    // Reduce drásticamente el % de "tricksters" que consumen trial sin
+    // intención de pagar.
+    subscription_data: {
+      trial_period_days: STRIPE_TRIAL_DAYS,
+      trial_settings: {
+        end_behavior: {
+          // Si el trial termina y la tarjeta falla: pausar (no cancelar),
+          // así el dueño puede actualizar método sin perder su cuenta.
+          missing_payment_method: 'pause',
+        },
+      },
+      metadata: { tenant_id: tenantId, plan, trial_days: String(STRIPE_TRIAL_DAYS) },
+    },
+    // Exigir tarjeta aunque sea trial (default de Stripe permite trial
+    // sin método si `subscription_data.trial_period_days` está seteado;
+    // forzamos `always` para que el paywall real funcione).
+    payment_method_collection: 'always',
   });
 }
 

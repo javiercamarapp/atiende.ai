@@ -384,11 +384,16 @@ describe('processIncomingMessage', () => {
     expect(mockGenerateResponse).not.toHaveBeenCalled();
   });
 
-  it('sends plan limit message when monthly count exceeded', async () => {
+  it('does NOT enforce monthly cap when plan limit is unlimited (v4)', async () => {
+    // v4 (PLAN_MSG_LIMITS_MONTHLY = Infinity para todos los planes): el gate
+    // salta el reserveMonthlyMessage cuando el cap es Infinity, así que el
+    // mensaje "limite de mensajes" NUNCA se envía. Si un tenant real llega
+    // acá significa que el producto volvió a tener caps finitos y hay que
+    // actualizar el test para reflejar ese comportamiento nuevo.
     setupExisting({ ...TENANT, plan: 'basic' });
-    monthlyCountResult = { count: 9999 };
+    monthlyCountResult = { count: 9999 }; // simulado — no debe importar
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
-    expect(mockSendTextMessage).toHaveBeenCalledWith(
+    expect(mockSendTextMessage).not.toHaveBeenCalledWith(
       'phone-123',
       '5219991234567',
       expect.stringContaining('limite de mensajes')

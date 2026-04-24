@@ -64,15 +64,38 @@ export const PLAN_PRICES_MXN: Record<string, number> = {
   premium: 1499,
 };
 
-// Cap mensual de mensajes outbound por plan (reset UTC al cambio de mes).
-// El trial subió de 50 → 300 tras audit: 50 mensajes se queman en 1-2
-// conversaciones reales de onboarding, impidiendo conversión real.
+/**
+ * Cap mensual de mensajes outbound por plan (reset UTC al cambio de mes).
+ *
+ * Historial:
+ *   v1 (launch):  free 50, basic 500, pro 2000, premium 10000
+ *   v2 (audit):   free 300 tras feedback "50 se queman en onboarding"
+ *   v3 (trial):   free 2000 al introducir Stripe trial
+ *   v4 (current): TODOS ilimitados — desde el plan esencial hasta ultimate.
+ *                 El modelo de precio ahora es subscription-flat; el cap de
+ *                 mensajes confundía al tenant ("¿por qué le cobran $599 si
+ *                 solo usó 50 mensajes?") y penalizaba casos de uso legítimos
+ *                 (recordatorios masivos, promos). El costo marginal por
+ *                 mensaje es $0.005–$0.03 MXN (LLM + WhatsApp), despreciable
+ *                 frente al precio del plan.
+ *
+ * Usamos Number.POSITIVE_INFINITY como sentinel de "sin límite". `gates.ts`
+ * y `roi.ts` lo detectan con `isFinite()` antes de comparar. UI (`billing-
+ * manager.tsx`) muestra "Mensajes ilimitados" en vez de la barra de progreso.
+ */
 export const PLAN_MSG_LIMITS_MONTHLY: Record<string, number> = {
-  free_trial: 300,
-  basic: 500,
-  pro: 2000,
-  premium: 10000,
+  free_trial: Number.POSITIVE_INFINITY,
+  basic: Number.POSITIVE_INFINITY,
+  pro: Number.POSITIVE_INFINITY,
+  premium: Number.POSITIVE_INFINITY,
 };
+
+// ─── Stripe trial ────────────────────────────────────────────────────────
+/** Días de prueba gratis al suscribirse. Stripe NO cobra durante este
+ *  período pero SÍ requiere método de pago válido (ver
+ *  payment_method_collection en createCheckoutSession). Al terminar el
+ *  trial Stripe cobra automáticamente el price del plan. */
+export const STRIPE_TRIAL_DAYS = 30;
 
 // ─── Voice billing (plan premium) ─────────────────────────────────────────
 /** Minutos de voz incluidos en el plan premium ($1,499 MXN/mes).
