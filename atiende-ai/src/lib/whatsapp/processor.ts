@@ -26,7 +26,7 @@ try {
 }
 void initializeAllAgents;
 // AGENT_REGISTRY moved to orchestrator-branch.ts
-import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
+import { appendMedicalDisclaimer, pickFallback } from '@/lib/guardrails/validate';
 import {
   acquireConversationLock,
   releaseConversationLock,
@@ -479,14 +479,40 @@ async function handleSingleMessageInner(
   waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
 
   // 12. Generate and validate response
-  const response = await generateAndValidateResponse({
-    tenant: tenant as TenantRecord,
-    intent,
-    ragContext,
-    history,
-    customerName: contact?.name,
-    content,
-  });
+  //
+  // response-builder.ts ya tiene try/catch con fallback interno por intent,
+  // así que este catch es el último safety-net: si algo INESPERADO (ej.
+  // import dinámico roto, OOM, typo en env var) lanza antes del fallback
+  // interno, seguimos contestando al cliente en vez de dejar silencio.
+  let response: Awaited<ReturnType<typeof generateAndValidateResponse>>;
+  try {
+    response = await generateAndValidateResponse({
+      tenant: tenant as TenantRecord,
+      intent,
+      ragContext,
+      history,
+      customerName: contact?.name,
+      content,
+    });
+  } catch (err) {
+    logger.error('[processor] generateAndValidateResponse threw unexpectedly', undefined, {
+      intent,
+      tenantId: tenant.id,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    const fallbackText = intent === 'GREETING' && tenant.welcome_message
+      ? (tenant.welcome_message as string)
+      : pickFallback(intent);
+    response = {
+      text: fallbackText,
+      model: 'fallback',
+      tokensIn: 0,
+      tokensOut: 0,
+      cost: 0,
+      responseTimeMs: 0,
+      confidence: 0,
+    };
+  }
 
   // 13. Send response via WhatsApp
   const finalText = appendMedicalDisclaimer(content, response.text);

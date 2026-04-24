@@ -66,49 +66,98 @@ const CRISIS_MESSAGE =
   'Si es una emergencia, llama al 911. ' +
   '¿Quieres que te comunique con alguien de nuestro equipo?';
 
+// Intents conversacionales que NUNCA deberían contener precios. Si aparece
+// un número es ruido (ej. "somos 3 doctoras", "llame al 555-123") y no vale
+// la pena pasarlo por el guardrail de precios.
+const NON_PRICE_INTENTS = new Set([
+  'GREETING',
+  'FAREWELL',
+  'THANKS',
+  'SMALL_TALK',
+  'COMPLAINT',
+  'CRISIS',
+]);
+
+// Fallback por intent cuando una respuesta queda vacía (LLM devolvió null,
+// guardrail borró todo, o timeout). Siempre algo útil al usuario en vez de
+// silencio.
+const INTENT_FALLBACKS: Record<string, string> = {
+  GREETING: 'Hola, con gusto le atiendo. En qué le puedo ayudar?',
+  FAREWELL: 'Gracias por escribirnos. Que tenga excelente día!',
+  THANKS: 'Con gusto! Si necesita algo más, estamos para servirle.',
+  APPOINTMENT_NEW: 'Con gusto le agendo su cita. Qué día le viene bien?',
+  APPOINTMENT_MODIFY: 'Claro, le ayudo a modificar su cita. Cuál es su nombre o teléfono?',
+  APPOINTMENT_CANCEL: 'Entendido, le ayudo a cancelar. Me confirma su nombre o teléfono?',
+  PRICE: 'Para precios exactos, permítame verificar con el equipo y le confirmo.',
+  HOURS: 'Permítame verificar nuestros horarios y le confirmo.',
+  LOCATION: 'Con gusto le comparto nuestra ubicación.',
+  FAQ: 'Permítame verificar con el equipo y le confirmo.',
+};
+
+const DEFAULT_FALLBACK = 'Permítame verificar con el equipo y le confirmo en breve.';
+
+export function pickFallback(intent?: string): string {
+  if (!intent) return DEFAULT_FALLBACK;
+  return INTENT_FALLBACKS[intent] || DEFAULT_FALLBACK;
+}
+
 export function validateResponse(
   response: string,
   tenant: { business_type: string; name: string },
   ragContext: string,
-  customerMessage?: string
+  customerMessage?: string,
+  intent?: string,
 ): { valid: boolean; text: string } {
+  // Early guard: si el LLM devolvió vacío, usar fallback contextual por
+  // intent antes de correr cualquier otra capa (ninguna tiene sentido
+  // sobre string vacío y varias generan falsos positivos).
+  if (!response || !response.trim()) {
+    return { valid: false, text: pickFallback(intent) };
+  }
+
   let text = response;
 
   // ═══ CAPA 1: Verificar precios mencionados ═══
+  // Saltear para intents conversacionales donde un número nunca es precio
+  // (evita que "son 3 doctoras" o un telefono dispare el guardrail).
+  const skipPriceValidation = intent ? NON_PRICE_INTENTS.has(intent) : false;
+
   // Normaliza AMBOS lados antes de comparar para evitar falsos positivos
   // por formato. "$800.00" debe match "$800"; "$1,200" debe match "1200";
   // símbolos de moneda, comas, ceros decimales innecesarios y espacios se
   // eliminan. Capa 1 sigue siendo conservadora: si el número entero no
   // existe en el RAG (ni en texto ni normalizado), la respuesta se
   // reemplaza.
-  const normalizedContext = normalizePrices(ragContext);
-  // Además de lookup literal, calculamos sumas válidas (2-3 ítems) del
-  // catálogo para que "Limpieza $500 + Extracción $300 = $800" no se marque
-  // como alucinación si esos 2 precios están en el RAG.
-  const validPriceSet = extractAllValidPrices(ragContext);
-  const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
-  for (const match of priceMatches) {
-    const raw = match[0];
-    const num = match[1];
-    // Solo consideramos "precio" si hay $ o si el número es de >=3 dígitos
-    // (evita falsos positivos con "30 minutos", "5 días", etc.).
-    const looksLikePrice = raw.includes('$') || Number(num.replace(/[,\s]/g, '')) >= 100;
-    if (!looksLikePrice) continue;
+  if (!skipPriceValidation) {
+    const normalizedContext = normalizePrices(ragContext);
+    // Además de lookup literal, calculamos sumas válidas (2-3 ítems) del
+    // catálogo para que "Limpieza $500 + Extracción $300 = $800" no se marque
+    // como alucinación si esos 2 precios están en el RAG.
+    const validPriceSet = extractAllValidPrices(ragContext);
+    const priceMatches = [...text.matchAll(/\$?\s?(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)];
+    for (const match of priceMatches) {
+      const raw = match[0];
+      const num = match[1];
+      // Solo consideramos "precio" si hay $ o si el número es de >=3 dígitos
+      // (evita falsos positivos con "30 minutos", "5 días", etc.).
+      const looksLikePrice = raw.includes('$') || Number(num.replace(/[,\s]/g, '')) >= 100;
+      if (!looksLikePrice) continue;
 
-    const canonical = canonicalizePrice(num);
-    if (!canonical) continue;
+      const canonical = canonicalizePrice(num);
+      if (!canonical) continue;
 
-    const found = normalizedContext.includes(canonical)
-      || ragContext.includes(raw.trim())
-      || ragContext.includes(num)
-      || validPriceSet.has(canonical); // suma válida del catálogo
+      const found = normalizedContext.includes(canonical)
+        || ragContext.includes(raw.trim())
+        || ragContext.includes(num)
+        || validPriceSet.has(canonical); // suma válida del catálogo
 
-    if (!found) {
-      return {
-        valid: false,
-        text: 'Para precios exactos y actualizados, le invito a ' +
-              'consultarnos directamente. Le puedo ayudar con algo mas?'
-      };
+      if (!found) {
+        return {
+          valid: false,
+          text: 'Para precios exactos y actualizados, le invito a ' +
+                'consultarnos directamente. Le puedo ayudar con algo mas?'
+        };
+      }
     }
   }
 

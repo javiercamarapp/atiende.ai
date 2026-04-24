@@ -428,12 +428,14 @@ describe('processIncomingMessage', () => {
   it('validates response with guardrails', async () => {
     setupExisting();
     await processIncomingMessage(makeBody({ type: 'text', text: { body: 'Hola' } }));
-    // AUDIT R15: validateResponse signature (bot_text, tenant_shape, rag, user).
+    // AUDIT R15: validateResponse signature (bot_text, tenant_shape, rag, user, intent).
     // El tenant_shape ahora es {business_type, name} (suficiente para el
-    // guardrail, sin pasar objeto completo).
+    // guardrail, sin pasar objeto completo). Intent fue agregado para
+    // permitir fallbacks contextuales y skip de price-validation.
     expect(mockValidateResponse).toHaveBeenCalledWith(
       'Con gusto le ayudo.',
       expect.objectContaining({ business_type: 'dental' }),
+      expect.any(String),
       expect.any(String),
       expect.any(String),
     );
