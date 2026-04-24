@@ -76,6 +76,31 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/**
+ * Cuando una cita no tiene nombre del paciente guardado (appointments
+ * importados de Google Calendar, creadas manualmente sin nombre, etc.),
+ * mostrar el teléfono crudo tiene dos problemas:
+ *   1. El dueño no lo lee como identificador — es una cadena de 13 dígitos
+ *      que no dice nada a primera vista.
+ *   2. Móviles lo auto-linkifican como `tel:` — link azul subrayado que
+ *      se ve como un bug en un dashboard.
+ *
+ * Helper unificado: devuelve el nombre si existe; si no, "Paciente ...0779"
+ * (últimos 4 dígitos). Si tampoco hay teléfono válido, fallback genérico.
+ * Siempre devuelve string no-empty, apto para render directo.
+ */
+function displayPatientName(
+  name: string | null | undefined,
+  phone: string | null | undefined,
+  fallbackLabel = 'Paciente',
+): string {
+  const trimmed = name?.trim();
+  if (trimmed) return trimmed;
+  const digits = (phone || '').replace(/\D/g, '');
+  if (digits.length >= 4) return `${fallbackLabel} …${digits.slice(-4)}`;
+  return fallbackLabel;
+}
+
 type View = 'semana' | 'dia' | 'agenda' | 'lista';
 
 export function CalendarView({
@@ -1020,7 +1045,7 @@ export function CalendarView({
                               </p>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[13px] font-semibold text-zinc-900 truncate">{e.customer_name || e.customer_phone}</p>
+                              <p className="text-[13px] font-semibold text-zinc-900 truncate">{displayPatientName(e.customer_name, e.customer_phone)}</p>
                               <p className="text-[12px] text-zinc-500 truncate">{e.serviceName} · {e.staffName}</p>
                             </div>
                           </button>
@@ -1062,7 +1087,7 @@ export function CalendarView({
                 <p className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Paciente</p>
                 <div className="flex items-center gap-2 text-[13px] text-zinc-800">
                   <User className="w-3.5 h-3.5 text-zinc-400" />
-                  {selected.customer_name || selected.customer_phone}
+                  {displayPatientName(selected.customer_name, selected.customer_phone)}
                 </div>
               </div>
               <div>
@@ -1209,7 +1234,7 @@ export function CalendarView({
             <DialogDescription>
               {selected && (
                 <>
-                  {selected.customer_name || selected.customer_phone} — {new Date(selected.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las {fmtTime(selected.datetime)}
+                  {displayPatientName(selected.customer_name, selected.customer_phone)} — {new Date(selected.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las {fmtTime(selected.datetime)}
                 </>
               )}
             </DialogDescription>
@@ -1290,7 +1315,7 @@ export function CalendarView({
             <DialogDescription>
               {selected && (
                 <>
-                  {selected.customer_name || selected.customer_phone} — antes el {new Date(selected.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las {fmtTime(selected.datetime)}
+                  {displayPatientName(selected.customer_name, selected.customer_phone)} — antes el {new Date(selected.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las {fmtTime(selected.datetime)}
                 </>
               )}
             </DialogDescription>
