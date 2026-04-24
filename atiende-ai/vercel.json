@@ -19,10 +19,10 @@
     { "path": "/api/cron/faq-gaps", "schedule": "0 6 * * 1" },
     { "path": "/api/cron/prompt-finetuning", "schedule": "0 23 * * 0" },
     { "path": "/api/cron/fraud-detection", "schedule": "0 2 * * *" },
-    { "path": "/api/cron/refresh-materialized-views", "schedule": "0 * * * *" },
+    { "path": "/api/cron/refresh-materialized-views", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/intelligence", "schedule": "0 9 * * *" },
     { "path": "/api/cron/data-retention", "schedule": "0 3 * * 0" },
-    { "path": "/api/cron/notify-retry", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/notify-retry", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/billing-overage", "schedule": "0 8 1 * *" },
     { "path": "/api/cron/refresh-model-prices", "schedule": "0 3 1 * *" },
     { "path": "/api/cron/review-candidate-sweep", "schedule": "0 7 * * 1" }
