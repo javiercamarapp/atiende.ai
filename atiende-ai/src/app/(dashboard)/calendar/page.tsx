@@ -1,8 +1,9 @@
 import Link from 'next/link';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Sparkles, Clock, MessageSquare } from 'lucide-react';
 import { CalendarView } from '@/components/dashboard/calendar-view';
 import { CalendarOnboarding } from '@/components/dashboard/calendar-onboarding';
 import { createServerSupabase } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 interface CalendarEvent {
   id: string;
@@ -45,32 +46,73 @@ export default async function CalendarPage({
     .single();
   if (!tenant) return <div>No tenant found</div>;
 
-  const { count: connectedStaffCount } = await supabase
+  // Bypass RLS for the count — we already validated tenant ownership above.
+  const { count: connectedStaffCount } = await supabaseAdmin
     .from('staff')
     .select('id', { count: 'exact', head: true })
     .eq('tenant_id', tenant.id)
     .not('google_calendar_id', 'is', null);
 
   if (!connectedStaffCount || connectedStaffCount === 0) {
+    const features = [
+      { icon: Sparkles, title: 'Sincronización bidireccional', body: 'Las citas que agendamos vía WhatsApp aparecen en tu calendario al instante, y los bloqueos que pongas en Google se respetan.' },
+      { icon: Clock, title: 'Recordatorios automáticos', body: '24 h y 2 h antes de cada cita, enviamos recordatorio por WhatsApp con opción a confirmar o reagendar.' },
+      { icon: MessageSquare, title: 'La IA agenda por ti', body: 'El bot revisa tu disponibilidad real en Google antes de proponer horarios. Sin doble-booking.' },
+    ];
     return (
-      <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center animate-element">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-lg shadow-[hsl(var(--brand-blue))]/20">
-            <CalendarDays className="w-8 h-8 text-white" />
+      <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4 py-8">
+        <div className="max-w-xl w-full">
+          {/* Hero */}
+          <div className="relative text-center animate-element">
+            <div aria-hidden className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
+              <div className="w-64 h-64 rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue-soft))] to-transparent blur-3xl opacity-70" />
+            </div>
+            <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-xl shadow-[hsl(var(--brand-blue))]/25 animate-float">
+              <CalendarDays className="w-10 h-10 text-white" strokeWidth={1.75} />
+            </div>
+            <h1 className="mt-7 text-3xl md:text-[40px] font-semibold tracking-tight text-zinc-900 leading-[1.05]">
+              Conecta tu Google Calendar
+            </h1>
+            <p className="mt-4 text-[15px] md:text-base text-zinc-500 leading-relaxed max-w-md mx-auto">
+              Sincroniza tus citas de WhatsApp con Google Calendar. Configuración en 30 segundos, sin pasos adicionales.
+            </p>
+            <Link
+              href="/api/calendar/connect"
+              className="mt-8 group inline-flex items-center justify-center gap-2.5 h-12 px-7 rounded-full bg-zinc-900 text-white text-[14px] font-medium hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-900/10 hover:shadow-xl hover:shadow-zinc-900/20 hover:-translate-y-0.5"
+            >
+              <svg viewBox="0 0 48 48" className="w-4 h-4" aria-hidden>
+                <path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              Conectar con Google
+              <span aria-hidden className="opacity-60 transition-transform group-hover:translate-x-0.5">→</span>
+            </Link>
+            <p className="mt-4 text-[11.5px] text-zinc-400">
+              Solo pedimos acceso a tu calendario. Puedes revocar el acceso en cualquier momento desde Google.
+            </p>
           </div>
-          <h1 className="mt-6 text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
-            Conecta tu Google Calendar
-          </h1>
-          <p className="mt-3 text-sm md:text-[15px] text-zinc-500 leading-relaxed">
-            Sincroniza tus citas automáticamente con Google Calendar para tener todo en un solo lugar.
-          </p>
-          <Link
-            href="/api/calendar/connect"
-            className="mt-7 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-full bg-[hsl(var(--brand-blue))] text-white text-sm font-medium hover:opacity-90 transition shadow-md shadow-[hsl(var(--brand-blue))]/20"
-          >
-            <CalendarDays className="w-4 h-4" />
-            Conectar Google Calendar
-          </Link>
+
+          {/* Feature grid */}
+          <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {features.map((f, i) => {
+              const Icon = f.icon;
+              return (
+                <div
+                  key={f.title}
+                  className="animate-element glass-card p-4 text-left"
+                  style={{ animationDelay: `${150 + i * 100}ms` }}
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] flex items-center justify-center">
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <p className="mt-3 text-[13px] font-semibold text-zinc-900">{f.title}</p>
+                  <p className="mt-1 text-[11.5px] text-zinc-500 leading-snug">{f.body}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );

@@ -26,6 +26,25 @@
   animation: gentleFloat 4s ease-in-out infinite;
 }
 
+@keyframes confettiFall {
+  0%   { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+
+.confetti-piece {
+  animation: confettiFall 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes pulseSoft {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.05); opacity: 0.85; }
+}
+
+.animate-pulse-soft {
+  animation: pulseSoft 2.4s ease-in-out infinite;
+}
+
 .animate-element {
   opacity: 0; filter: blur(4px); transform: translateY(12px);
   animation: fadeSlideIn 0.6s ease forwards;

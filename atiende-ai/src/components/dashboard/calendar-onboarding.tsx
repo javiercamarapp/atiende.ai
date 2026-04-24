@@ -137,17 +137,20 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
   const [tourOpen, setTourOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
-    if (!autoOpen) return;
-    const key = 'calendar_tour_seen_v1';
-    if (typeof window === 'undefined') return;
-    if (window.localStorage.getItem(key)) return;
+    if (!autoOpen || typeof window === 'undefined') return;
+    // If the user just returned from OAuth, always show the tour on that
+    // landing. The ?calendar=connected flag is stripped after opening so a
+    // plain refresh won't re-trigger it.
     setTourOpen(true);
-    window.localStorage.setItem(key, '1');
+    setShowConfetti(true);
+    const t = window.setTimeout(() => setShowConfetti(false), 1800);
     const url = new URL(window.location.href);
     url.searchParams.delete('calendar');
     window.history.replaceState({}, '', url.toString());
+    return () => window.clearTimeout(t);
   }, [autoOpen]);
 
   const connected = INTEGRATIONS.filter((i) => i.status === 'connected');
@@ -156,12 +159,19 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
   return (
     <>
       {/* ── Connections bar ── */}
-      <section className="glass-card p-4 md:p-5 animate-element">
-        <div className="flex items-start justify-between gap-3 mb-3">
+      <section className="relative glass-card p-4 md:p-5 animate-element overflow-hidden">
+        <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-gradient-to-br from-[hsl(var(--brand-blue-soft))] to-transparent blur-2xl pointer-events-none" />
+        <div className="relative flex items-start justify-between gap-3 mb-3.5">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
-              Conexiones
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                Conexiones
+              </p>
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+            </div>
             <h3 className="text-[15px] font-semibold text-zinc-900 mt-0.5">
               {connected.length} {connected.length === 1 ? 'servicio sincronizado' : 'servicios sincronizados'}
             </h3>
@@ -169,17 +179,19 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
           <button
             type="button"
             onClick={() => setTourOpen(true)}
-            className="text-[12px] text-[hsl(var(--brand-blue))] hover:opacity-80 font-medium shrink-0"
+            className="inline-flex items-center gap-1.5 text-[12px] text-[hsl(var(--brand-blue))] hover:opacity-80 font-medium shrink-0 transition"
           >
+            <Sparkles className="w-3 h-3" />
             Ver tour
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {connected.map((i) => (
+        <div className="relative flex flex-wrap gap-2">
+          {connected.map((i, idx) => (
             <span
               key={i.key}
-              className="inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full bg-white ring-1 ring-zinc-200 text-[12.5px] text-zinc-800 font-medium"
+              className="stagger-item inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full bg-white ring-1 ring-zinc-200 text-[12.5px] text-zinc-800 font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
+              style={{ animationDelay: `${idx * 60}ms` }}
             >
               {i.logo}
               {i.name}
@@ -190,9 +202,9 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] text-[12.5px] font-medium hover:opacity-90 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] text-[12.5px] font-medium hover:bg-[hsl(var(--brand-blue))]/15 transition-all"
           >
-            <Plus className={cn('w-3.5 h-3.5 transition-transform', expanded && 'rotate-45')} />
+            <Plus className={cn('w-3.5 h-3.5 transition-transform duration-300', expanded && 'rotate-45')} />
             {expanded ? 'Ocultar' : 'Añadir integración'}
           </button>
         </div>
@@ -220,6 +232,31 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
         )}
       </section>
 
+      {/* ── Confetti burst (solo al regresar del OAuth) ── */}
+      {showConfetti && (
+        <div aria-hidden className="fixed inset-0 z-50 pointer-events-none overflow-hidden">
+          {Array.from({ length: 32 }).map((_, i) => {
+            const colors = ['#3b82f6', '#6366f1', '#8b5cf6', '#22c55e', '#f59e0b'];
+            const color = colors[i % colors.length];
+            const left = `${(i * 3.125) % 100}%`;
+            const delay = `${(i % 8) * 60}ms`;
+            const rot = `${(i * 37) % 360}deg`;
+            return (
+              <span
+                key={i}
+                className="absolute top-0 w-1.5 h-2.5 rounded-[2px] confetti-piece"
+                style={{
+                  left,
+                  backgroundColor: color,
+                  animationDelay: delay,
+                  transform: `rotate(${rot})`,
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Welcome tour ── */}
       <Dialog open={tourOpen} onOpenChange={setTourOpen}>
         <DialogContent className="sm:max-w-lg p-0 overflow-hidden gap-0">
@@ -232,14 +269,15 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
             <X className="w-3.5 h-3.5" />
           </button>
 
-          <div className="relative bg-gradient-to-br from-[hsl(var(--brand-blue-soft))] via-white to-white px-6 pt-8 pb-5">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-lg shadow-[hsl(var(--brand-blue))]/20">
-                <CalendarDays className="w-5 h-5 text-white" />
+          <div className="relative bg-gradient-to-br from-[hsl(var(--brand-blue-soft))] via-white to-white px-6 pt-8 pb-5 overflow-hidden">
+            <div aria-hidden className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-[hsl(var(--brand-blue))]/10 blur-2xl" />
+            <div className="relative flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[hsl(var(--brand-blue))] to-[hsl(235_84%_68%)] flex items-center justify-center shadow-xl shadow-[hsl(var(--brand-blue))]/25 animate-float">
+                <CalendarCheck2 className="w-6 h-6 text-white" strokeWidth={2} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <DialogHeader className="text-left p-0 space-y-0">
-                  <DialogTitle className="text-[17px] font-semibold text-zinc-900">
+                  <DialogTitle className="text-[18px] font-semibold text-zinc-900 tracking-tight">
                     ¡Listo! Tu calendario está conectado
                   </DialogTitle>
                   <DialogDescription className="text-[12.5px] text-zinc-500 mt-0.5">

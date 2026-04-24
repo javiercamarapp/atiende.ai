@@ -126,25 +126,45 @@ export async function GET(req: NextRequest) {
     const primaryCalendar = calendarList.items?.find(c => c.primary);
     const calendarId = primaryCalendar?.id || 'primary';
 
-    // Store refresh token and calendar ID for the staff member
+    // Store refresh token and calendar ID for the tenant's primary staff.
+    // The staff table has no user_id column, so we bind to tenant_id; if the
+    // tenant has no staff row yet we create one so the connection is never
+    // lost to a silent UPDATE-hits-zero-rows.
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('id')
+      .select('id, name')
       .eq('user_id', user.id)
       .single();
 
     if (tenant) {
-      // Encrypt the refresh token before storing
       const encryptedRefreshToken = encryptPII(tokens.refresh_token);
 
-      await supabaseAdmin
+      const { data: existingStaff } = await supabaseAdmin
         .from('staff')
-        .update({
-          google_calendar_id: calendarId,
-          google_refresh_token: encryptedRefreshToken,
-        })
+        .select('id')
         .eq('tenant_id', tenant.id)
-        .eq('user_id', user.id);
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingStaff?.id) {
+        await supabaseAdmin
+          .from('staff')
+          .update({
+            google_calendar_id: calendarId,
+            google_refresh_token: encryptedRefreshToken,
+          })
+          .eq('id', existingStaff.id);
+      } else {
+        await supabaseAdmin
+          .from('staff')
+          .insert({
+            tenant_id: tenant.id,
+            name: (tenant.name as string) || 'Titular',
+            google_calendar_id: calendarId,
+            google_refresh_token: encryptedRefreshToken,
+          });
+      }
     }
 
     const response = NextResponse.redirect(
