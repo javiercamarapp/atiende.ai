@@ -222,6 +222,12 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'escalate_urgency',
     'create_referred_contact',
     'save_patient_preferences',
+    // shared conversion + compliance tools (Phase 1)
+    'get_service_quote',
+    'save_patient_guardian',
+    'validate_minor_permission',
+    'retrieve_doctor_expertise',
+    'capture_marketing_source',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {

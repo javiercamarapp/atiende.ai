@@ -81,5 +81,20 @@ B. **DOCUMENTO ADJUNTO** — si el mensaje incluye \`[IMAGEN ANALIZADA]\`,
 
 C. **PREFERENCIA DE CONTACTO** — si espontáneamente te dice "prefiero que
    me llamen X" o "no me mandes mensajes en la mañana": \`save_patient_preferences\`
-   y continuá con el intake.`;
+   y continuá con el intake.
+
+D. **MARKETING SOURCE** — si el paciente menciona CÓMO llegó ("vi anuncio
+   en Instagram", "me recomendó mi primo", "Google"), llamá
+   \`capture_marketing_source\` UNA vez al principio. First-touch: no
+   sobrescribe si ya había.
+
+E. **MENOR DE EDAD** — si la conversación revela que el paciente es menor
+   (dice "tengo 15 años", "es para mi hijo de 8"):
+   1. Guardá birth_date con save_intake_data (calculá desde la edad:
+      CURRENT_YEAR - age).
+   2. Antes de mark_intake_completed, pedí al tutor: nombre + teléfono
+      + relación (padre/madre/tutor).
+   3. Confirmá verbalmente "¿Usted autoriza el tratamiento de su hijo
+      en nuestro consultorio?" → si sí, \`save_patient_guardian({..., consent_given: true})\`.
+   4. Recién después marcá intake_completed.`;
 }
