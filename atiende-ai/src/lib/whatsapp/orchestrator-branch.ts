@@ -81,6 +81,10 @@ export function formatStateContext(
     awaiting_modify_date: 'El usuario está reprogramando una cita existente.',
     awaiting_order_confirmation: 'El usuario está confirmando un pedido.',
     awaiting_reservation_details: 'El usuario está completando una reserva.',
+    awaiting_survey_response:
+      'El bot envió una encuesta de satisfacción y espera la respuesta del paciente. El siguiente mensaje del paciente es SU respuesta a la encuesta — parseala, llamá save_survey_response y cerrá el flow.',
+    awaiting_appointment_confirmation:
+      'El bot envió un recordatorio 24h antes de la cita y espera confirmación. Si el paciente confirma (ej. "sí, ahí estaré", "confirmo"), llamá mark_confirmed. Si dice que no puede, ofrecé reagendar y cedé a agenda.',
   };
   const description = humanState[state] || `Estado activo: ${state}.`;
 
@@ -92,6 +96,7 @@ export function formatStateContext(
     'staff_id', 'staff_name',
     'patient_name', 'duration_minutes',
     'appointment_id', 'confirmation_code',
+    'doctor_name',
     'notes',
   ];
   const partial: string[] = [];
@@ -326,15 +331,17 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     { role: 'user' as const, content: safeMsg.content },
   ];
 
-  // Routing dinámico agenda vs intake — si el contacto todavía no tiene
-  // perfil completo (sin name o sin intake_completed) lo mandamos al
-  // agente de admisión antes de poder agendar. El agente intake recolecta
-  // nombre/edad/género + datos médicos, marca intake_completed y en el
-  // siguiente turno este código rutea a agenda.
-  //
-  // Query light-weight (solo 2 campos). Si el contacto no existe todavía
-  // o la query falla, default a intake — mejor pedir datos dos veces que
-  // crear una cita fantasma sin nombre.
+  // Conversation state — leído antes del routing para poder derivarlo
+  // desde estados outbound (AWAITING_SURVEY_RESPONSE,
+  // AWAITING_APPOINTMENT_CONFIRMATION). Si falla la lectura default a null
+  // (no tenemos memoria — tratamos como conversación fresca).
+  const convState = await getConversationState(conversationId).catch(() => ({
+    state: null as ConversationState,
+    context: {} as Record<string, unknown>,
+  }));
+
+  // Contacto: traer name + intake_completed para decidir intake vs agenda
+  // cuando no hay state outbound activo.
   const { data: contactRow } = contactId
     ? await supabaseAdmin
         .from('contacts')
@@ -347,19 +354,31 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   const intakeDone = contactRow?.intake_completed === true;
   const needsIntake = !hasName || !intakeDone;
 
-  const agentName = needsIntake ? ('intake' as const) : ('agenda' as const);
+  // Routing priority:
+  //   1. State outbound pendiente (survey / appointment confirmation)
+  //      → rutea al sub-agente que sabe procesar ese tipo de respuesta.
+  //   2. Nuevo paciente sin intake → intake.
+  //   3. Default → agenda (agenda de citas).
+  //
+  // El sub-agente correspondiente limpia el state al completarse
+  // (save_survey_response / mark_confirmed). Si el paciente cambia de
+  // tema ("olvidá la encuesta, quiero cita") el prompt del agente le
+  // pide ceder — próximo turno cae en agenda de vuelta.
+  let agentName: 'encuesta' | 'no-show' | 'intake' | 'agenda' = 'agenda';
+  if (convState.state === 'awaiting_survey_response') {
+    agentName = 'encuesta';
+  } else if (convState.state === 'awaiting_appointment_confirmation') {
+    agentName = 'no-show';
+  } else if (needsIntake) {
+    agentName = 'intake';
+  }
+
   const agentConfig = AGENT_REGISTRY[agentName];
   const tools = getToolSchemas(agentConfig.tools);
   const baseSystemPrompt = getSystemPrompt(agentName, tenantCtx);
 
-  // State recovery — si el pipeline clásico dejó la conversación en un estado
-  // multi-turno (ej. AWAITING_APPOINTMENT_DATE), inyectamos ese contexto al
-  // system prompt para que el agente sepa qué datos ya tiene y qué pregunta.
-  // Sin esto el LLM trataba cada mensaje como inicio → pedía datos ya dados.
-  const convState = await getConversationState(conversationId).catch(() => ({
-    state: null as ConversationState,
-    context: {} as Record<string, unknown>,
-  }));
+  // State recovery — si hay state activo (de cualquier tipo) lo inyectamos
+  // al system prompt para que el agente sepa qué datos ya tiene.
   const systemPrompt = convState.state
     ? `${baseSystemPrompt}\n\n${formatStateContext(convState.state, convState.context)}`
     : baseSystemPrompt;
