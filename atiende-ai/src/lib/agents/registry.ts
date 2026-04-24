@@ -50,6 +50,9 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'send_payment_link',
       // Multi-location (Phase 2.B.2)
       'list_locations',
+      // Telemedicina (Phase 2.C)
+      'mark_appointment_telemedicine',
+      'send_telemed_link',
     ],
     systemPromptKey: 'agenda',
   },
