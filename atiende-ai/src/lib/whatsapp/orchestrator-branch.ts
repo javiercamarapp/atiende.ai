@@ -358,19 +358,75 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   //   1. State outbound pendiente (survey / appointment confirmation)
   //      → rutea al sub-agente que sabe procesar ese tipo de respuesta.
   //   2. Nuevo paciente sin intake → intake.
-  //   3. Default → agenda (agenda de citas).
+  //   3. Keyword-based topic classifier (Phase 1 subagents) — pharmacovigilance,
+  //      payment, administrative, quoting, doctor-profile.
+  //   4. Default → agenda.
   //
-  // El sub-agente correspondiente limpia el state al completarse
-  // (save_survey_response / mark_confirmed). Si el paciente cambia de
-  // tema ("olvidá la encuesta, quiero cita") el prompt del agente le
-  // pide ceder — próximo turno cae en agenda de vuelta.
-  let agentName: 'encuesta' | 'no-show' | 'intake' | 'agenda' = 'agenda';
+  // El keyword classifier es intencionalmente simple (regex + case-fold).
+  // Para producción se podría upgradear a LLM-classifier, pero un LLM para
+  // elegir agente + LLM dentro del agente duplica costo. Mantenemos regex
+  // y dejamos que el prompt de cada agente maneje casos ambiguos.
+  const msgNorm = content.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  type AgentName = 'encuesta' | 'no-show' | 'intake' | 'agenda'
+    | 'quoting' | 'pharmacovigilance' | 'administrative'
+    | 'doctor-profile' | 'payment-resolution';
+
+  function detectTopicAgent(): AgentName | null {
+    // Pharmacovigilance — PRIORIDAD ALTA: cualquier reporte de reacción es
+    // safety-critical. Debe ganar antes que quoting/admin (que pueden
+    // mencionar "medicamento" sin ser reacción adversa).
+    if (
+      /(reaccion|alergi|efecto|me salio|me salieron|ronchas|sarpullido|vomit|mareo|ardor) (a|al|despues|tras|de tomar|de la pastilla|de la medicina)|(me hizo mal|me cayo mal|me siento mal).{0,30}(pastilla|medicina|medicamento)/i.test(msgNorm)
+      || /despues de tomar|tras la dosis|tras tomar/i.test(msgNorm)
+    ) {
+      return 'pharmacovigilance';
+    }
+
+    // Payment resolution — disputas + facturas fiscales.
+    if (
+      /\b(disputa|reembolso|me cobraron|cobro indebido|doble cobro|no reconozco|por que me cobran|facturar|factura|recibo cfdi|rfc|historial de pago|cuanto he pagado)\b/i.test(msgNorm)
+    ) {
+      return 'payment-resolution';
+    }
+
+    // Administrative — certificados, expedientes, consentimientos.
+    if (
+      /\b(certificad|justificante|constancia|incapacidad|expediente|transferir.{0,20}expediente|consentimiento|permiso para.{0,20}(hijo|menor|procedimiento))\b/i.test(msgNorm)
+    ) {
+      return 'administrative';
+    }
+
+    // Doctor profile — preguntas sobre el doctor.
+    if (
+      /\b(quien atiende|experiencia del doctor|que estudios|curriculum|cv del|biograf|es especialist|es ortodoncist|es endodoncist|tiene experiencia con|tiene casos de)\b/i.test(msgNorm)
+    ) {
+      return 'doctor-profile';
+    }
+
+    // Quoting — pregunta precio SIN intent inmediato de agendar.
+    // "¿cuánto cuesta X?" / "¿tienen paquete?" / "¿precio de Y?"
+    // Distinguir de agendamiento: si además dice "agendar/cita" en el mismo
+    // mensaje, dejamos que agenda tome ese flow (cotiza + agenda).
+    if (
+      /\b(cuanto cuesta|cuanto sale|precio|costo|cuotiza|paquete|promocion|descuento|tarifa)\b/i.test(msgNorm)
+      && !/\b(agendar|agendo|cita|reservar|reservo|cuando puedo)\b/i.test(msgNorm)
+    ) {
+      return 'quoting';
+    }
+
+    return null;
+  }
+
+  let agentName: AgentName = 'agenda';
   if (convState.state === 'awaiting_survey_response') {
     agentName = 'encuesta';
   } else if (convState.state === 'awaiting_appointment_confirmation') {
     agentName = 'no-show';
   } else if (needsIntake) {
     agentName = 'intake';
+  } else {
+    const topicAgent = detectTopicAgent();
+    if (topicAgent) agentName = topicAgent;
   }
 
   const agentConfig = AGENT_REGISTRY[agentName];
