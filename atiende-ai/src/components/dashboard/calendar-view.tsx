@@ -1,9 +1,18 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Search, Plus, Lock, X, Clock, User, CalendarDays, SlidersHorizontal, XCircle, Loader2, MessageSquare, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface CalendarEvent {
   id: string;
@@ -95,6 +104,47 @@ export function CalendarView({
   const [newApptOpen, setNewApptOpen] = useState(false);
   const [newAppt, setNewAppt] = useState({ customer: '', phone: '', service: '', date: '', time: '', notes: '' });
   const [savingAppt, setSavingAppt] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
+
+  async function handleCancelAppt() {
+    if (!selected || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/appointments/${selected.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: cancelReason.trim() || undefined,
+          notify_customer: notifyCustomer,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'No se pudo cancelar la cita');
+        return;
+      }
+      if (notifyCustomer && data?.customerNotified === false) {
+        toast.success('Cita cancelada — no pudimos avisar al paciente por WhatsApp');
+      } else if (notifyCustomer) {
+        toast.success('Cita cancelada y paciente notificado');
+      } else {
+        toast.success('Cita cancelada');
+      }
+      setCancelOpen(false);
+      setSelected(null);
+      setCancelReason('');
+      // Hard reload to re-fetch merged Google + local events
+      window.location.reload();
+    } catch (err) {
+      toast.error('Error de red al cancelar');
+      console.error(err);
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   async function handleCreateAppt(e: React.FormEvent) {
     e.preventDefault();
@@ -747,10 +797,114 @@ export function CalendarView({
                   {selected.status}
                 </span>
               </div>
+
+              {selected.source === 'google' ? (
+                <div className="pt-3 p-3 rounded-xl bg-zinc-50 ring-1 ring-zinc-100">
+                  <p className="text-[11.5px] text-zinc-600 leading-relaxed">
+                    Este evento viene directamente de Google Calendar. Para editarlo o cancelarlo, hazlo desde Google.
+                  </p>
+                </div>
+              ) : selected.status !== 'cancelled' && (
+                <div className="pt-3 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelReason('');
+                      setNotifyCustomer(true);
+                      setCancelOpen(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 h-9 rounded-full text-[13px] font-medium text-rose-700 bg-rose-50 ring-1 ring-rose-200 hover:bg-rose-100 transition"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    Cancelar cita
+                  </button>
+                </div>
+              )}
             </div>
           </aside>
         )}
       </div>
+
+      {/* ─── CANCEL DIALOG ─── */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar cita</DialogTitle>
+            <DialogDescription>
+              {selected && (
+                <>
+                  {selected.customer_name || selected.customer_phone} — {new Date(selected.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las {fmtTime(selected.datetime)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div>
+              <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">
+                Motivo (opcional)
+              </label>
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Ej. emergencia médica, viaje imprevisto…"
+                maxLength={300}
+                className="w-full h-10 px-3 rounded-lg bg-white border border-zinc-200 text-[13px] focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-blue-soft))]"
+              />
+              <p className="text-[10.5px] text-zinc-500 mt-1">
+                Si lo pones, se incluye en el mensaje al paciente.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-zinc-50 ring-1 ring-zinc-100 cursor-pointer hover:bg-zinc-100/60 transition">
+              <div className={cn(
+                'mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition',
+                notifyCustomer
+                  ? 'bg-[hsl(var(--brand-blue))] text-white'
+                  : 'bg-white ring-1 ring-zinc-300',
+              )}>
+                {notifyCustomer && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+              </div>
+              <input
+                type="checkbox"
+                checked={notifyCustomer}
+                onChange={(e) => setNotifyCustomer(e.target.checked)}
+                className="sr-only"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                  <p className="text-[13px] font-semibold text-zinc-900">Avisar al paciente por WhatsApp</p>
+                </div>
+                <p className="text-[11.5px] text-zinc-500 mt-0.5 leading-snug">
+                  Le enviamos un mensaje explicando la cancelación e invitándolo a reagendar. Si responde, la IA toma la conversación.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <DialogFooter className="mt-5 gap-2 flex-col-reverse sm:flex-row">
+            <button
+              type="button"
+              onClick={() => setCancelOpen(false)}
+              disabled={cancelling}
+              className="inline-flex items-center justify-center h-10 px-4 rounded-full ring-1 ring-zinc-200 bg-white text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 transition disabled:opacity-50"
+            >
+              Conservar cita
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelAppt}
+              disabled={cancelling}
+              className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-full bg-rose-600 text-white text-[13px] font-medium hover:bg-rose-700 transition disabled:opacity-60"
+            >
+              {cancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+              {cancelling ? 'Cancelando…' : 'Sí, cancelar cita'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── MOBILE FAB — New appointment ─── */}
       <button
