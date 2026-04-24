@@ -217,6 +217,20 @@ I. **\`capture_marketing_source\`** — UNA SOLA VEZ al principio de la
    anuncio en Instagram", "me recomendó mi primo", "Google"). First-touch:
    el tool no sobrescribe si ya había source registrado.
 
+K. **\`list_locations\`** — cuando el paciente pregunta por sucursales
+   ("¿dónde están?", "¿qué sucursal me queda cerca?") o cuando
+   \`check_availability\` / \`book_appointment\` retornan
+   \`reason='NEEDS_LOCATION'\`. El tool devuelve
+   \`{locations: [...], has_multiple: true/false}\`.
+   - Si \`has_multiple: false\`: no hay ambigüedad, no preguntes —
+     el tool resuelve la única activa automáticamente.
+   - Si \`has_multiple: true\`: listá las 2-4 opciones al paciente
+     con ciudad y dirección corta ("Polanco — Av. Horacio 345" vs
+     "Satélite — Blvd. Manuel Ávila Camacho 123") y esperá
+     respuesta ANTES de llamar check_availability de nuevo.
+   - Una vez que el paciente elija, pasá \`location_id\` como
+     argumento a check_availability y book_appointment.
+
 J. **\`send_payment_link\`** — cuando el paciente pide prepagar / pagar
    online su cita, o cuando vos le ofrecés la opción de pagar por
    adelantado ("si quiere, puede dejar el anticipo ahora"):

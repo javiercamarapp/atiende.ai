@@ -259,6 +259,8 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'dispute_charge',
     // Patient payment portal (Phase 1)
     'send_payment_link',
+    // Multi-location (Phase 2.B.2)
+    'list_locations',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {
