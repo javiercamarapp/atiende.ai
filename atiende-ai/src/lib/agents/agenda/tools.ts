@@ -1769,3 +1769,137 @@ registerTool('send_payment_link', {
     };
   },
 });
+
+// ─── Tool: mark_appointment_telemedicine ───────────────────────────────────
+// Cuando el paciente dice "quiero que sea por videollamada" (o el agente
+// detecta que la visita es consulta remota), marcamos la cita como telemed
+// y generamos un room. El link se envía 15 min antes vía send_telemed_link
+// o vía el cron pre-visit.
+const MarkTelemedArgs = z.object({
+  appointment_id: z.string().uuid(),
+  is_telemedicine: z.boolean().default(true),
+}).strict();
+
+registerTool('mark_appointment_telemedicine', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'mark_appointment_telemedicine',
+      description:
+        'Marca una cita como telemedicina (videollamada) en vez de presencial. Usar cuando el paciente explícitamente pide consulta remota. El tenant debe tener telemedicine_enabled=true en su config. Genera un telemed_room único; el link se envía después con send_telemed_link.',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'string' },
+          is_telemedicine: { type: 'boolean', description: 'Default true; pasalo false si querés revertir a presencial.' },
+        },
+        required: ['appointment_id'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = MarkTelemedArgs.parse(rawArgs);
+
+    const telemedEnabled = ctx.tenant.telemedicine_enabled === true;
+    if (!telemedEnabled && args.is_telemedicine) {
+      return {
+        success: false,
+        error_code: 'TELEMED_NOT_ENABLED',
+        message: 'Este consultorio no tiene telemedicina habilitada. Ofrecé cita presencial.',
+      };
+    }
+
+    const { generateRoomName } = await import('@/lib/telemedicine/providers');
+    const room = args.is_telemedicine ? generateRoomName(args.appointment_id) : null;
+
+    const { data, error } = await supabaseAdmin
+      .from('appointments')
+      .update({
+        is_telemedicine: args.is_telemedicine,
+        telemed_room: room,
+      })
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .select('id, is_telemedicine, telemed_room')
+      .single();
+
+    if (error || !data) return { success: false, error: error?.message };
+    return { success: true, ...data };
+  },
+});
+
+// ─── Tool: send_telemed_link ────────────────────────────────────────────────
+// Genera el URL del provider y lo envía al paciente por WhatsApp. Usado
+// por el cron pre-visit 15 min antes de la cita, o on-demand por el agente
+// cuando el paciente pregunta "¿y el link?".
+const SendTelemedArgs = z.object({
+  appointment_id: z.string().uuid(),
+}).strict();
+
+registerTool('send_telemed_link', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'send_telemed_link',
+      description:
+        'Envía por WhatsApp al paciente el link de videollamada para una cita de telemedicina. Si el paciente pregunta "¿y el link?" usar este. Requiere que la cita tenga is_telemedicine=true (ver mark_appointment_telemedicine).',
+      parameters: {
+        type: 'object',
+        properties: { appointment_id: { type: 'string' } },
+        required: ['appointment_id'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = SendTelemedArgs.parse(rawArgs);
+
+    const { data: apt } = await supabaseAdmin
+      .from('appointments')
+      .select('id, is_telemedicine, telemed_room, customer_phone, datetime')
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .maybeSingle();
+
+    if (!apt) return { sent: false, error: 'appointment_not_found' };
+    if (!apt.is_telemedicine) {
+      return {
+        sent: false,
+        error: 'not_telemedicine',
+        message: 'Esa cita no está marcada como telemedicina. Usar mark_appointment_telemedicine primero.',
+      };
+    }
+    if (!apt.telemed_room) {
+      return { sent: false, error: 'no_room' };
+    }
+
+    const { buildTelemedUrl } = await import('@/lib/telemedicine/providers');
+    const provider = (ctx.tenant.telemedicine_provider as 'jitsi' | 'daily' | 'custom_url') || 'jitsi';
+    const customBase = (ctx.tenant.telemedicine_custom_url as string | undefined) ?? null;
+    const url = buildTelemedUrl(provider, apt.telemed_room as string, customBase);
+
+    const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
+    if (phoneNumberId) {
+      const text =
+        `Su consulta virtual está por comenzar. Abra este link para entrar:\n\n${url}\n\n` +
+        `Funciona en cualquier navegador (Chrome/Safari) — le pedirá permiso de cámara y micrófono. ` +
+        `Si no puede entrar, llame al consultorio y lo acomodamos.`;
+      try {
+        const { sendTextMessageSafe } = await import('@/lib/whatsapp/send');
+        await sendTextMessageSafe(phoneNumberId, apt.customer_phone as string, text, { tenantId: ctx.tenantId });
+      } catch {
+        /* best effort */
+      }
+    }
+
+    await supabaseAdmin
+      .from('appointments')
+      .update({ telemed_link_sent_at: new Date().toISOString() })
+      .eq('id', apt.id);
+
+    return { sent: true, url };
+  },
+});

@@ -217,6 +217,22 @@ I. **\`capture_marketing_source\`** — UNA SOLA VEZ al principio de la
    anuncio en Instagram", "me recomendó mi primo", "Google"). First-touch:
    el tool no sobrescribe si ya había source registrado.
 
+L. **\`mark_appointment_telemedicine\` + \`send_telemed_link\`** — consulta
+   remota (videollamada) en vez de presencial. SOLO usar si el tenant
+   tiene telemedicine_enabled=true (el tool rechaza con TELEMED_NOT_ENABLED
+   si no).
+   - Cuando el paciente diga "quiero por videollamada" / "puedo hacerla
+     remota" / "no puedo ir al consultorio": después de book_appointment
+     llamá \`mark_appointment_telemedicine({appointment_id, is_telemedicine: true})\`.
+     Esto genera un room único y marca la cita como telemed.
+   - Si más tarde el paciente pregunta "¿y el link?": llamá
+     \`send_telemed_link({appointment_id})\` — envía la URL por WhatsApp.
+     El cron pre-visit también manda automáticamente 15 min antes.
+   - Al confirmar la cita, mencioná: "Le enviaré el link de la
+     videollamada 15 minutos antes por este medio. Va a necesitar un
+     navegador reciente con cámara y micrófono."
+   - Para CANCELAR telemed: \`mark_appointment_telemedicine({appointment_id, is_telemedicine: false})\`.
+
 K. **\`list_locations\`** — cuando el paciente pregunta por sucursales
    ("¿dónde están?", "¿qué sucursal me queda cerca?") o cuando
    \`check_availability\` / \`book_appointment\` retornan
