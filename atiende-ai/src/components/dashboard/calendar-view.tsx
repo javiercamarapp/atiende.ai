@@ -102,7 +102,7 @@ export function CalendarView({
   const [servicesOpen, setServicesOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [newApptOpen, setNewApptOpen] = useState(false);
-  const [newAppt, setNewAppt] = useState({ customer: '', phone: '', service: '', date: '', time: '', notes: '' });
+  const [newAppt, setNewAppt] = useState({ customer: '', phone: '', service: '', date: '', time: '', notes: '', repeat_weeks: 1 });
   const [savingAppt, setSavingAppt] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -117,6 +117,7 @@ export function CalendarView({
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Array<{ source: 'local' | 'google'; id: string; title: string; start: string; end: string; staffName: string | null }>>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
+  const [slotSuggestions, setSlotSuggestions] = useState<Array<{ start: string; end: string }>>([]);
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
@@ -289,9 +290,39 @@ export function CalendarView({
           }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!cancelled) setConflicts(Array.isArray(data?.conflicts) ? data.conflicts : []);
+        if (!cancelled) {
+          const list = Array.isArray(data?.conflicts) ? data.conflicts : [];
+          setConflicts(list);
+          // If conflicts found, ask backend for nearest open slots
+          if (list.length > 0) {
+            try {
+              const suggRes = await fetch('/api/appointments/suggest-slots', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  target: startDt.toISOString(),
+                  duration_minutes: duration,
+                  exclude_appointment_id: selected.id,
+                  count: 5,
+                  window_hours: 72,
+                }),
+              });
+              const suggData = await suggRes.json().catch(() => ({}));
+              if (!cancelled) {
+                setSlotSuggestions(Array.isArray(suggData?.suggestions) ? suggData.suggestions : []);
+              }
+            } catch {
+              if (!cancelled) setSlotSuggestions([]);
+            }
+          } else {
+            setSlotSuggestions([]);
+          }
+        }
       } catch {
-        if (!cancelled) setConflicts([]);
+        if (!cancelled) {
+          setConflicts([]);
+          setSlotSuggestions([]);
+        }
       } finally {
         if (!cancelled) setCheckingConflicts(false);
       }
@@ -390,11 +421,12 @@ export function CalendarView({
           service_name: newAppt.service,
           datetime: `${newAppt.date}T${newAppt.time}:00`,
           notes: newAppt.notes || null,
+          repeat_weeks: newAppt.repeat_weeks,
         }),
       });
       if (!res.ok) throw new Error('Error al crear cita');
       setNewApptOpen(false);
-      setNewAppt({ customer: '', phone: '', service: '', date: '', time: '', notes: '' });
+      setNewAppt({ customer: '', phone: '', service: '', date: '', time: '', notes: '', repeat_weeks: 1 });
       window.location.reload();
     } catch {
       // stay open on error
@@ -1317,6 +1349,36 @@ export function CalendarView({
                   )}
                 </ul>
                 <p className="text-[10.5px] text-amber-800 mt-2">Puedes continuar de todas formas; Atiende no bloquea el doble-booking automáticamente.</p>
+                {slotSuggestions.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-amber-200/70">
+                    <p className="text-[11px] font-semibold text-amber-900 mb-2">Horarios cercanos disponibles:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {slotSuggestions.map((s) => {
+                        const d = new Date(s.start);
+                        const dateLabel = d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
+                        const timeLabel = d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <button
+                            key={s.start}
+                            type="button"
+                            onClick={() => {
+                              const yyyy = d.getFullYear();
+                              const mm = String(d.getMonth() + 1).padStart(2, '0');
+                              const dd = String(d.getDate()).padStart(2, '0');
+                              const hh = String(d.getHours()).padStart(2, '0');
+                              const mi = String(d.getMinutes()).padStart(2, '0');
+                              setRescheduleDate(`${yyyy}-${mm}-${dd}`);
+                              setRescheduleTime(`${hh}:${mi}`);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white text-[11px] font-medium text-zinc-800 ring-1 ring-zinc-200 hover:bg-[hsl(var(--brand-blue-soft))] hover:ring-[hsl(var(--brand-blue))] hover:text-[hsl(var(--brand-blue))] transition"
+                          >
+                            {dateLabel} · {timeLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {!checkingConflicts && conflicts.length === 0 && rescheduleDate && rescheduleTime && (
@@ -1682,6 +1744,31 @@ export function CalendarView({
                   className="w-full px-4 py-3 text-[14px] rounded-2xl bg-zinc-50 border border-zinc-200 placeholder:text-zinc-400 focus:border-[hsl(var(--brand-blue))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--brand-blue-soft))] transition resize-none leading-relaxed"
                 />
               </label>
+              <div className="space-y-1.5">
+                <span className="text-[12px] text-zinc-600 font-medium">Repetir cada semana</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[1, 2, 4, 8, 12, 24].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setNewAppt({ ...newAppt, repeat_weeks: n })}
+                      className={cn(
+                        'inline-flex items-center justify-center px-3.5 h-9 rounded-full text-[12.5px] font-medium transition',
+                        newAppt.repeat_weeks === n
+                          ? 'bg-[hsl(var(--brand-blue))] text-white shadow-sm'
+                          : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50',
+                      )}
+                    >
+                      {n === 1 ? 'Solo esta vez' : `${n} semanas`}
+                    </button>
+                  ))}
+                </div>
+                {newAppt.repeat_weeks > 1 && (
+                  <p className="text-[11px] text-zinc-500 pl-1">
+                    Se crearán {newAppt.repeat_weeks} citas en fechas consecutivas (cada {newAppt.repeat_weeks === 2 ? '2 semanas' : '7 días'}).
+                  </p>
+                )}
+              </div>
             </div>
             <div className="px-6 py-4 border-t border-zinc-100 bg-white/80 backdrop-blur-sm flex items-center gap-3">
               <button

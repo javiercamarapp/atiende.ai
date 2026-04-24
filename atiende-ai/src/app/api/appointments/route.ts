@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createCalendarEvent } from '@/lib/calendar/google';
@@ -17,6 +18,9 @@ const BodySchema = z.object({
   datetime: z.string().min(1),
   duration_minutes: z.number().int().min(5).max(600).optional(),
   notes: z.string().max(2000).nullable().optional(),
+  // Recurring: creates N - 1 additional copies spaced weekly (7 days).
+  // Use repeat_weeks >= 2 to generate a series. Max 52 (one year).
+  repeat_weeks: z.number().int().min(1).max(52).optional().default(1),
 });
 
 export async function POST(req: NextRequest) {
@@ -103,65 +107,107 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const endTime = new Date(new Date(datetime).getTime() + durationMinutes * 60000).toISOString();
+    // Build the series of occurrences (1 = single appointment; N > 1 = weekly)
+    const repeatWeeks = parsed.data.repeat_weeks || 1;
+    const occurrences: { start: string; end: string }[] = Array.from({ length: repeatWeeks }, (_, i) => {
+      const offsetMs = i * 7 * 24 * 60 * 60 * 1000;
+      const start = new Date(new Date(datetime).getTime() + offsetMs).toISOString();
+      const end = new Date(new Date(start).getTime() + durationMinutes * 60000).toISOString();
+      return { start, end };
+    });
 
-    // Push to Google Calendar first so the event id can be saved.
-    let googleEventId: string | null = null;
-    if (staff.google_calendar_id) {
-      try {
-        const ev = await createCalendarEvent({
-          staffId: staff.id,
-          calendarId: staff.google_calendar_id,
-          summary: `${serviceNameResolved} - ${customer_name}`,
-          description:
-            `Agendada desde atiende.ai\n` +
-            `Paciente: ${customer_name}\n` +
-            `Tel: ${customer_phone}` +
-            (notes ? `\nNotas: ${notes}` : ''),
-          startTime: datetime,
-          endTime,
-          timezone: (tenant.timezone as string) || 'America/Merida',
-        });
-        googleEventId = ev.eventId;
-      } catch (err) {
-        logger.error(
-          '[api/appointments] Google Calendar sync failed',
-          err instanceof Error ? err : new Error(String(err)),
-          { tenant_id: tenant.id, staff_id: staff.id },
-        );
-        // Continue — we still persist in DB so nothing is lost.
+    // Generate a recurrence_group_id so downstream tooling can find the series.
+    const recurrenceGroupId = repeatWeeks > 1 ? crypto.randomUUID() : null;
+
+    const createdRows: Array<{ id: string; google_event_id: string | null; datetime: string }> = [];
+    let googleFailures = 0;
+
+    for (let i = 0; i < occurrences.length; i++) {
+      const occ = occurrences[i];
+      let googleEventId: string | null = null;
+
+      if (staff.google_calendar_id) {
+        try {
+          const seriesLabel = repeatWeeks > 1 ? ` (${i + 1}/${repeatWeeks})` : '';
+          const ev = await createCalendarEvent({
+            staffId: staff.id,
+            calendarId: staff.google_calendar_id,
+            summary: `${serviceNameResolved} - ${customer_name}${seriesLabel}`,
+            description:
+              `Agendada desde atiende.ai\n` +
+              `Paciente: ${customer_name}\n` +
+              `Tel: ${customer_phone}` +
+              (notes ? `\nNotas: ${notes}` : '') +
+              (recurrenceGroupId ? `\nSerie: ${recurrenceGroupId}` : ''),
+            startTime: occ.start,
+            endTime: occ.end,
+            timezone: (tenant.timezone as string) || 'America/Merida',
+          });
+          googleEventId = ev.eventId;
+        } catch (err) {
+          googleFailures++;
+          logger.error(
+            '[api/appointments] Google Calendar sync failed',
+            err instanceof Error ? err : new Error(String(err)),
+            { tenant_id: tenant.id, staff_id: staff.id, occurrence_index: i },
+          );
+        }
       }
-    }
 
-    const { data: appointment, error: insertErr } = await supabaseAdmin
-      .from('appointments')
-      .insert({
+      const payload: Record<string, unknown> = {
         tenant_id: tenant.id,
         staff_id: staff.id,
         service_id: serviceId,
         customer_name,
         customer_phone,
-        datetime,
-        end_datetime: endTime,
+        datetime: occ.start,
+        end_datetime: occ.end,
         duration_minutes: durationMinutes,
         status: 'scheduled',
         source: 'web',
         google_event_id: googleEventId,
         notes: notes ?? null,
-      })
-      .select()
-      .single();
+      };
+      if (recurrenceGroupId) payload.recurrence_group_id = recurrenceGroupId;
 
-    if (insertErr) {
-      logger.error(
-        '[api/appointments] DB insert failed',
-        new Error(insertErr.message),
-        { tenant_id: tenant.id },
-      );
-      return NextResponse.json({ error: 'DB insert failed' }, { status: 500 });
+      let { data: appointment, error: insertErr } = await supabaseAdmin
+        .from('appointments')
+        .insert(payload)
+        .select('id, google_event_id, datetime')
+        .single();
+
+      // Retry without recurrence_group_id if the column isn't present yet.
+      if (insertErr && recurrenceGroupId && /recurrence_group_id/.test(insertErr.message || '')) {
+        delete payload.recurrence_group_id;
+        ({ data: appointment, error: insertErr } = await supabaseAdmin
+          .from('appointments')
+          .insert(payload)
+          .select('id, google_event_id, datetime')
+          .single());
+      }
+
+      if (insertErr) {
+        logger.error(
+          '[api/appointments] DB insert failed',
+          new Error(insertErr.message),
+          { tenant_id: tenant.id, occurrence_index: i },
+        );
+        if (i === 0) {
+          return NextResponse.json({ error: 'DB insert failed' }, { status: 500 });
+        }
+        // Skip this occurrence, keep going.
+        continue;
+      }
+
+      if (appointment) createdRows.push(appointment);
     }
 
-    return NextResponse.json({ appointment, synced: !!googleEventId });
+    return NextResponse.json({
+      appointment: createdRows[0] ?? null,
+      created_count: createdRows.length,
+      recurrence_group_id: recurrenceGroupId,
+      google_failures: googleFailures,
+    });
   } catch (err) {
     logger.error(
       '[api/appointments] unhandled',
