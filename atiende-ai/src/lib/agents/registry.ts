@@ -225,11 +225,15 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
   'payment-resolution': {
     name: 'payment-resolution',
     model: MODELS.ORCHESTRATOR,
-    description: 'Disputas de cobro, historial de pagos, facturación CFDI',
+    description: 'Disputas de cobro, historial de pagos, facturación CFDI, reclamos de aseguradora',
     tools: [
       'get_payment_history',
       'request_invoice',
       'dispute_charge',
+      // Phase 3 — insurance claims tracking
+      'log_insurance_claim',
+      'get_my_insurance_claims',
+      'update_insurance_claim_status',
     ],
     systemPromptKey: 'payment-resolution',
   },

@@ -273,6 +273,10 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'get_patient_treatment_plan',
     'mark_session_completed',
     'pause_or_abandon_plan',
+    // Insurance claims (Phase 3)
+    'log_insurance_claim',
+    'get_my_insurance_claims',
+    'update_insurance_claim_status',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {
