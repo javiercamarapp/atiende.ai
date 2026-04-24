@@ -136,39 +136,32 @@ export async function reportVoiceOverageToStripe(
   overageMinutes: number,
   /**
    * Identificador ESTABLE del periodo de facturación que se está cerrando
-   * (ej. "2026-03" = cerramos marzo). Se usa como componente determinístico
-   * de la idempotency key de Stripe.
+   * (formato "YYYY-MM", ej. "2026-03" = cerrando marzo). AHORA ES REQUIRED.
    *
-   * Antes usábamos `new Date().toISOString().substring(0,7)` — el problema:
-   * si el cron dispara a las 23:59 del 31 de Enero (reportando Enero) y falla,
-   * y retry dispara a las 00:01 del 1 de Febrero, la key cambia de "2026-01"
-   * a "2026-02" → Stripe NO deduplica → doble cargo.
+   * Historial: el fallback wall-clock (legacy) podía cambiar la idempotency
+   * key entre un primer intento a las 23:59 del 31 de enero y un retry a
+   * las 00:01 del 1 de febrero → "2026-01" → "2026-02" → Stripe NO
+   * deduplica → doble cargo.
    *
-   * Pasar el periodo explícito (el caller sabe qué mes está cerrando) hace la
-   * key 100% determinística. Fallback al comportamiento anterior solo si el
-   * caller no lo provee (retrocompatibilidad; logueamos un warning).
+   * Sacamos el fallback por completo. Todos los callers (solo hay uno, el
+   * cron de billing-overage) ya tienen el `year_month` del row que está
+   * procesando, así que pasarlo es trivial. Si llega vacío/inválido
+   * rechazamos la llamada (return error, no throw) para no romper el
+   * cron entero si un row tiene data corrupta.
    */
-  periodKey?: string,
+  periodKey: string,
 ): Promise<{ success: boolean; recordId?: string; error?: string }> {
   if (!subscriptionItemId || overageMinutes <= 0) {
     return { success: true };
   }
 
-  // Computar idempotency key determinística — prioridad al periodKey del caller.
-  let resolvedPeriod: string;
-  if (periodKey && /^\d{4}-\d{2}$/.test(periodKey)) {
-    resolvedPeriod = periodKey;
-  } else {
-    // Fallback wall-clock (legacy). Log warning en non-prod para cazar callers.
-    resolvedPeriod = new Date().toISOString().substring(0, 7);
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn(
-        '[stripe] reportVoiceOverageToStripe called without periodKey — ' +
-        `falling back to wall-clock "${resolvedPeriod}". This is fragile on ` +
-        'month-boundary retries. Pass row.year_month from the caller.',
-      );
-    }
+  if (!periodKey || !/^\d{4}-\d{2}$/.test(periodKey)) {
+    return {
+      success: false,
+      error: `invalid periodKey "${periodKey}" — must be YYYY-MM. Double-charge risk avoided.`,
+    };
   }
+  const resolvedPeriod = periodKey;
 
   // Retry con backoff exponencial sobre 429 / 5xx. Stripe rate-limit es
   // 100 r/s en write — improbable saturarlo, pero un 5xx transitorio del

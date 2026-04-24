@@ -102,10 +102,32 @@ export async function POST(req: NextRequest) {
               stripe_subscription_item_voice_id: meteredItem?.id ?? null,
             };
             if (!meteredItem) {
-              logger.warn('[stripe-webhook] premium subscription lacks metered item — overage billing requires manual SQL update', {  tenantId: tid  });
+              // Revenue leak risk: premium subscription sin metered item
+              // significa que NO podemos cobrar overage de voz. Antes solo
+              // loggeábamos warn. Ahora elevamos a error + trackError +
+              // alerta al owner vía notifyOwner para que pueda contactar
+              // soporte de Stripe inmediato.
+              const { trackError } = await import('@/lib/monitoring');
+              trackError('stripe_premium_no_metered_item');
+              logger.error('[stripe-webhook] CRITICAL: premium subscription lacks metered item — voice overage cannot be billed', undefined, {
+                tenantId: tid,
+                subscriptionId: subId,
+              });
+              try {
+                const { notifyOwner } = await import('@/lib/actions/notifications');
+                await notifyOwner({
+                  tenantId: tid as string,
+                  event: 'complaint',
+                  details: `⚠️ Billing config issue — your premium subscription is missing the metered voice item in Stripe. Overage cannot be billed until this is fixed. Contact support.`,
+                });
+              } catch {
+                /* best effort */
+              }
             }
           }
         } catch (err) {
+          const { trackError } = await import('@/lib/monitoring');
+          trackError('stripe_subscription_fetch_failed');
           logger.error('[stripe-webhook] failed to fetch subscription items', undefined, {  err: err instanceof Error ? err.message : err, tenantId: tid  });
         }
       }
