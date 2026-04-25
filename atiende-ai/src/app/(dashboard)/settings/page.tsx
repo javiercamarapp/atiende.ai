@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
-  ChevronRight, Building2, Workflow, Link2, MapPin, Star, FileText,
+  ChevronRight, Building2, Workflow, Link2, MapPin, Star, FileText, Shield,
 } from 'lucide-react';
 
 export default async function SettingsHubPage() {
@@ -69,6 +69,13 @@ export default async function SettingsHubPage() {
       href: '/settings/cfdi',
       icon: FileText,
       tint: 'bg-indigo-50 text-indigo-600',
+    },
+    {
+      title: 'Reclamos de aseguradora',
+      description: 'Trackeo de claims a GNP, AXA, Metlife, BUPA, IMSS, ISSSTE. Alertas para direct-billing vencido.',
+      href: '/settings/insurance',
+      icon: Shield,
+      tint: 'bg-blue-50 text-blue-600',
     },
   ];
 
