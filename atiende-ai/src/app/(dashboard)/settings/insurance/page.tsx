@@ -14,6 +14,7 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { decryptPII } from '@/lib/utils/crypto';
 import { displayPatientName } from '@/lib/utils/patient-display';
 import { Shield, AlertCircle, Hourglass, CheckCircle2, XCircle } from 'lucide-react';
+import { ClaimQuickActions } from '@/components/dashboard/claim-quick-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -305,6 +306,11 @@ function ClaimCard({ claim }: { claim: ClaimRow }) {
       )}
       {claim.notes && (
         <p className="mt-2 text-[12px] text-zinc-600 leading-relaxed">{claim.notes}</p>
+      )}
+
+      {/* Quick actions: dueño puede actualizar status sin pasar por el agente */}
+      {!['paid', 'denied'].includes(claim.status) && (
+        <ClaimQuickActions claimId={claim.id} status={claim.status as Parameters<typeof ClaimQuickActions>[0]['status']} />
       )}
     </li>
   );
