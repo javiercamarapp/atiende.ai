@@ -84,6 +84,7 @@ import {
   ORCHESTRATOR_PRIMARY_TIMEOUT_MS as PRIMARY_TIMEOUT_MS,
   ORCHESTRATOR_FALLBACK_TIMEOUT_MS as FALLBACK_TIMEOUT_MS,
   ORCHESTRATOR_TOTAL_TIMEOUT_MS as TOTAL_TIMEOUT_MS,
+  ORCHESTRATOR_MAX_TOOL_ROUNDS as MAX_TOOL_ROUNDS,
 } from '@/lib/config';
 
 /** Default sub-agente cuando el caller no especifica uno. */
@@ -250,7 +251,7 @@ async function runOrchestratorInner(
         // el JSON del tool_call + razonamiento intermedio + respuesta final.
         maxTokens: ctx.tools.length > 0 ? 2000 : 800,
         temperature: 0.5,
-        maxToolRounds: 5,
+        maxToolRounds: MAX_TOOL_ROUNDS,
         signal: primaryController.signal,
       }),
       primaryController,
@@ -384,7 +385,7 @@ async function runOrchestratorInner(
           tool_choice: fallbackToolChoice,
           maxTokens: ctx.tools.length > 0 ? 2000 : 800,
           temperature: 0.5,
-          maxToolRounds: 5,
+          maxToolRounds: MAX_TOOL_ROUNDS,
           signal: fallbackController.signal,
         }),
         fallbackController,

@@ -544,13 +544,17 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
       console.warn('[orchestrator] rate limited:', err.scope, 'retry_after=', err.retryAfter);
       responseText = RATE_LIMIT_USER_MESSAGE;
     } else if (err instanceof OrchestratorBothFailedError) {
+      // Casi siempre transitorio: timeout/loop en ambos modelos. En vez de
+      // sonar a apocalipsis ("ya avisé al equipo y lo contactarán"),
+      // invitamos al usuario a reintentar — la próxima request casi siempre
+      // funciona porque el LLM no entra en el mismo loop.
       console.error('[orchestrator] both models failed:', err.message);
       responseText =
-        'Tuvimos un problema técnico momentáneo. Ya avisé al equipo y lo contactarán en breve.';
+        'Disculpa, tardé un poco con tu mensaje. ¿Puedes repetirme tu última pregunta más cortita?';
     } else {
       console.error('[orchestrator] unexpected error:', err);
       responseText =
-        'Tuvimos un problema técnico momentáneo. Ya avisé al equipo y lo contactarán en breve.';
+        'Disculpa, hubo un problema procesando tu mensaje. ¿Puedes volver a escribirme en un momento?';
     }
   }
 

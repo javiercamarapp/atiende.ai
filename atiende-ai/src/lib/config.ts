@@ -23,15 +23,23 @@ export const HISTORY_MAX_TOKENS = Math.floor(HISTORY_MAX_CHARS / 3);
 export const HISTORY_KEEP_RECENT = 8;
 
 // ─── LLM orchestrator ──────────────────────────────────────────────────────
-export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 10_000;
+// Subimos primary 10→12s: Grok 4.1 Fast con tools complejas (intake + agenda
+// + 22 tools schema) puede tardar hasta ~9s en una sola ronda; 10s era muy
+// ajustado y disparaba TimeoutError antes de que el modelo terminara.
+export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 12_000;
 export const ORCHESTRATOR_FALLBACK_TIMEOUT_MS = 10_000;
 /** Wall-clock ceiling para TODO el turno (primary + fallback + tools).
- *  Peor caso sin esto: 10s primary timeout + tool exec + 10s fallback
- *  + tool exec ≈ 25s. En serverless edge eso ya pasó el p95 que queremos
- *  (<15s total) y puede encadenarse con Meta timeout de 20s. 18s deja
- *  margen para SmartResponse + persist + disclaimer downstream. */
-export const ORCHESTRATOR_TOTAL_TIMEOUT_MS = 18_000;
-export const ORCHESTRATOR_MAX_TOOL_ROUNDS = 5;
+ *  Subido 18→25s tras observar `OrchestratorTimeoutError/PartialExecutionError`
+ *  en producción cuando Grok hacía 5 rondas de tools (5 LLM calls + 5 tool
+ *  execs ≈ 20s). Vercel maxDuration del worker es 300s, así que 25s sigue
+ *  siendo seguro. */
+export const ORCHESTRATOR_TOTAL_TIMEOUT_MS = 25_000;
+/** Reducido 5→3: con 5 rondas Grok se quedaba dando vueltas (ej: re-pide
+ *  check_availability con args ligeramente distintos) y agotaba el budget
+ *  total sin emitir texto final → "Tuvimos un problema técnico". 3 rondas
+ *  cubren el flujo típico (intake → check_availability → book_appointment)
+ *  sin dejar margen para loops. */
+export const ORCHESTRATOR_MAX_TOOL_ROUNDS = 3;
 export const ORCHESTRATOR_MAX_TOKENS_WITH_TOOLS = 2000;
 export const ORCHESTRATOR_MAX_TOKENS_NO_TOOLS = 800;
 
