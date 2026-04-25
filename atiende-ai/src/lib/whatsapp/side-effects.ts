@@ -140,4 +140,21 @@ export async function runPostResponseEffects(
   } catch (err) {
     console.warn('[side-effects] hot lead routing failed:', err instanceof Error ? err.message : err);
   }
+
+  // Same-day review trigger — opportunistic. Si el paciente nos escribió hoy
+  // y tuvo cita completada hoy, le pedimos reseña como follow-up del bot.
+  try {
+    if (contactId) {
+      const { maybeRequestSameDayReview } = await import('@/lib/marketing/same-day-review');
+      await maybeRequestSameDayReview({
+        tenant,
+        phoneNumberId,
+        senderPhone,
+        conversationId,
+        contactId,
+      });
+    }
+  } catch (err) {
+    console.warn('[side-effects] same-day review trigger failed:', err instanceof Error ? err.message : err);
+  }
 }
