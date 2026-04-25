@@ -130,11 +130,12 @@ export async function hasConflict(opts: {
   datetime: string;
   durationMinutes: number;
 }): Promise<boolean> {
-  const newStart = new Date(opts.datetime).toISOString();
-  const newEnd = new Date(
-    new Date(opts.datetime).getTime() + opts.durationMinutes * 60000,
-  ).toISOString();
+  const newStartMs = new Date(opts.datetime).getTime();
+  const newEndMs = newStartMs + opts.durationMinutes * 60000;
+  const newStart = new Date(newStartMs).toISOString();
+  const newEnd = new Date(newEndMs).toISOString();
 
+  // 1. Conflict contra appointments LOCALES
   let query = supabaseAdmin
     .from('appointments')
     .select('id', { count: 'exact', head: true })
@@ -147,7 +148,48 @@ export async function hasConflict(opts: {
   if (opts.staffId) query = query.eq('staff_id', opts.staffId);
 
   const { count } = await query;
-  return (count ?? 0) > 0;
+  if ((count ?? 0) > 0) return true;
+
+  // 2. Bug fix: ALSO check Google Calendar busy times. Antes hasConflict
+  // SOLO verificaba la tabla appointments local — si el doctor tenía un
+  // evento en su Google Calendar (consulta privada, otro compromiso), el
+  // bot agendaba encima sin detectar conflicto.
+  if (!opts.staffId) return false;
+
+  try {
+    const { data: staff } = await supabaseAdmin
+      .from('staff')
+      .select('google_calendar_id')
+      .eq('id', opts.staffId)
+      .eq('tenant_id', opts.tenantId)
+      .maybeSingle();
+
+    const calendarId = staff?.google_calendar_id as string | null;
+    if (!calendarId) return false;
+
+    const { listCalendarEvents } = await import('@/lib/calendar/google');
+    const events = await listCalendarEvents({
+      staffId: opts.staffId,
+      calendarId,
+      timeMin: newStart,
+      timeMax: newEnd,
+    });
+
+    // Cualquier evento que se solape (singleEvents=true en la API ya expande
+    // recurrentes) y que no esté cancelado cuenta como conflict.
+    const overlaps = events.some((e) => {
+      if (e.status === 'cancelled') return false;
+      if (!e.startTime || !e.endTime) return false;
+      const evStart = new Date(e.startTime).getTime();
+      const evEnd = new Date(e.endTime).getTime();
+      return evStart < newEndMs && evEnd > newStartMs;
+    });
+    return overlaps;
+  } catch (err) {
+    // Si Google Calendar falla, NO permitimos booking ciego — fallar safe.
+    console.warn('[hasConflict] gcal check failed, blocking booking as safe default:', err instanceof Error ? err.message : err);
+    return true;
+  }
 }
 
 // ─── Staff selection (bug B) ───────────────────────────────────────────────
