@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
-  ChevronRight, Building2, Workflow, Link2, MapPin, Star, FileText, Shield,
+  ChevronRight, Building2, Workflow, Link2, MapPin, Star, FileText, Shield, Video,
 } from 'lucide-react';
 
 export default async function SettingsHubPage() {
@@ -76,6 +76,13 @@ export default async function SettingsHubPage() {
       href: '/settings/insurance',
       icon: Shield,
       tint: 'bg-blue-50 text-blue-600',
+    },
+    {
+      title: 'Telemedicina',
+      description: 'Videollamadas (Jitsi, Daily o URL custom). El bot manda el link 15 min antes.',
+      href: '/settings/telemedicine',
+      icon: Video,
+      tint: 'bg-cyan-50 text-cyan-600',
     },
   ];
 
