@@ -13,14 +13,10 @@
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
-import { trackError } from '@/lib/monitoring';
+import { assertContactInTenant } from '@/lib/agents/shared/tenant-guards';
 
-async function assertContact(tenantId: string, contactId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin.from('contacts').select('id')
-    .eq('id', contactId).eq('tenant_id', tenantId).maybeSingle();
-  if (!data) { trackError('treatment_tool_cross_tenant_blocked'); return false; }
-  return true;
-}
+const assertContact = (tenantId: string, contactId: string) =>
+  assertContactInTenant(tenantId, contactId, 'treatment');
 
 // ─── Tool: create_treatment_plan ───────────────────────────────────────────
 const CreatePlanArgs = z.object({
