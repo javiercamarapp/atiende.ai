@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, MessageSquare, Calendar, CalendarDays, Bot,
   BookOpen, BarChart3, Settings, UserCircle2,
-  Sparkles, Megaphone, LogOut, TrendingUp,
+  Sparkles, Megaphone, LogOut, TrendingUp, ListTodo,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -15,13 +15,14 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, appointments: Calendar, calendar: CalendarDays,
   conversations: MessageSquare, contacts: UserCircle2, agents: Bot,
   knowledge: BookOpen, 'chat-data': Sparkles, marketing: Megaphone,
-  analytics: BarChart3, settings: Settings,
+  analytics: BarChart3, settings: Settings, treatments: ListTodo,
 };
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard', appointments: 'Citas', calendar: 'Calendario',
   conversations: 'Conversaciones', contacts: 'Pacientes', agents: 'Agents',
   knowledge: 'Conocimiento', 'chat-data': 'Personal AI',
   marketing: 'Marketing AI Content', analytics: 'Analytics', settings: 'Ajustes',
+  treatments: 'Tratamientos',
 };
 
 /** Sidebar order split into 3 visual sections:
@@ -29,7 +30,7 @@ const LABELS: Record<string, string> = {
  *  2) Conocimiento — biblioteca
  *  3) AI tools    — Agents, Personal AI, Marketing AI Content */
 const SECTIONS: string[][] = [
-  ['dashboard', 'conversations', 'analytics', 'appointments', 'calendar', 'contacts'],
+  ['dashboard', 'conversations', 'analytics', 'appointments', 'calendar', 'contacts', 'treatments'],
   ['knowledge'],
   ['agents', 'chat-data', 'marketing'],
 ];
