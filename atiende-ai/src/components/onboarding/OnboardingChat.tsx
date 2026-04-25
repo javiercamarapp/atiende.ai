@@ -172,6 +172,13 @@ export function OnboardingChat() {
       const currentVertical = verticalRef.current;
       const currentFields = capturedFieldsRef.current;
       const bName = currentFields.q1 || currentVertical || 'Mi negocio';
+      // Bot name capturado por el agente conversacional como bot_name (ver
+      // chat-agent.ts regla 10). Caemos a 'Sofía' si quedó vacío.
+      const agentBotName =
+        currentFields.bot_name ||
+        currentFields.botName ||
+        currentFields.q_botname ||
+        '';
 
       const res = await fetch('/api/onboarding/generate', {
         method: 'POST',
@@ -180,6 +187,7 @@ export function OnboardingChat() {
           vertical: currentVertical,
           answers: currentFields,
           businessName: bName,
+          botName: agentBotName,
         }),
       });
       if (!res.ok) {
