@@ -504,6 +504,16 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     agentName,
   };
 
+  // DIAG: log tools que se pasan al LLM. Aparecerá en Vercel logs.
+  // Útil para confirmar que getToolSchemas() encuentra las tools registradas.
+  console.log('[orch-diag]', JSON.stringify({
+    agent: agentName,
+    tools_count: tools.length,
+    tools_names: tools.map((t) => 'function' in t ? t.function.name : (t as { name?: string }).name ?? '?'),
+    config_tools: agentConfig.tools,
+    msgs_count: orchestratorMessages.length,
+  }));
+
   const startMs = Date.now();
   let responseText: string;
   let modelUsed = 'orchestrator-failed';
@@ -523,6 +533,16 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     costUsd = result.costUsd;
     tokensIn = result.tokensIn;
     tokensOut = result.tokensOut;
+    // DIAG: log result. Vercel logs nos dirán si el LLM hizo tool_calls
+    // o solo respondió texto.
+    console.log('[orch-diag-result]', JSON.stringify({
+      agent: agentName,
+      model: modelUsed,
+      fallback: fallbackUsed,
+      tool_calls_count: toolCallsExecuted.length,
+      tool_calls_names: toolCallsExecuted.map((c) => c.toolName),
+      response_text_preview: (responseText || '').slice(0, 100),
+    }));
   } catch (err) {
     if (err instanceof CircuitOpenError) {
       console.warn('[orchestrator] circuit breaker OPEN; retry_after=', err.retryAfter);
