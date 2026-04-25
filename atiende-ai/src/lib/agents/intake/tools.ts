@@ -144,15 +144,21 @@ registerTool('save_intake_data', {
       };
     }
 
-    // Traemos el intake_data existente para hacer merge (no queremos perder
-    // alergias guardadas en turno N al volver a llamar la tool en turno N+1
-    // solo con el medicamento).
-    const { data: existing } = await supabaseAdmin
+    // BUG FIX: usábamos .eq('phone', args.patient_phone) que fallaba cuando
+    // (a) el phone está cifrado v1:... en BD pero el LLM pasa plain
+    // (b) el LLM normaliza el formato (+ prefix, espacios) distinto al stored.
+    // Ahora preferimos ctx.contactId que el orchestrator ya tiene resuelto
+    // y es UUID estable. Phone queda como fallback solo si no hay contactId.
+    let lookupQuery = supabaseAdmin
       .from('contacts')
       .select('intake_data')
-      .eq('tenant_id', ctx.tenantId)
-      .eq('phone', args.patient_phone)
-      .maybeSingle();
+      .eq('tenant_id', ctx.tenantId);
+    if (ctx.contactId) {
+      lookupQuery = lookupQuery.eq('id', ctx.contactId);
+    } else {
+      lookupQuery = lookupQuery.eq('phone', args.patient_phone);
+    }
+    const { data: existing } = await lookupQuery.maybeSingle();
 
     const previousIntake = (existing?.intake_data as Record<string, unknown> | null) || {};
 
@@ -182,17 +188,33 @@ registerTool('save_intake_data', {
       update.name = encryptPII(args.patient_name.trim()) ?? args.patient_name.trim();
     }
 
-    const { error } = await supabaseAdmin
+    let updateQuery = supabaseAdmin
       .from('contacts')
       .update(update)
-      .eq('tenant_id', ctx.tenantId)
-      .eq('phone', args.patient_phone);
+      .eq('tenant_id', ctx.tenantId);
+    if (ctx.contactId) {
+      updateQuery = updateQuery.eq('id', ctx.contactId);
+    } else {
+      updateQuery = updateQuery.eq('phone', args.patient_phone);
+    }
+    // Bug fix: agregamos .select('id') para CONFIRMAR que el UPDATE afectó
+    // alguna fila. Antes solo veíamos error===null y asumíamos éxito —
+    // pero un .eq que no matchea retorna 204 sin error y rows=0.
+    const { data: updated, error } = await updateQuery.select('id');
 
     if (error) return { saved: false, error: error.message };
+    if (!updated || updated.length === 0) {
+      return {
+        saved: false,
+        error: 'contact_not_found',
+        next_step: `No se encontró el contacto. Verificá que ctx.contactId existe y que el tenant es el correcto. patient_phone="${args.patient_phone}", contact_id="${ctx.contactId ?? 'null'}".`,
+      };
+    }
     return {
       saved: true,
       fields_saved_this_turn: Object.keys(newIntakeFields).length + (args.patient_name ? 1 : 0),
       name_updated: Boolean(args.patient_name),
+      rows_affected: updated.length,
     };
   },
 });
@@ -217,15 +239,26 @@ registerTool('mark_intake_completed', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = MarkIntakeArgs.parse(rawArgs);
-    const { error } = await supabaseAdmin
+    // Bug fix: usar contact_id si está disponible (más estable que phone
+    // que puede estar cifrado o tener formato distinto que el que el LLM
+    // pasa en patient_phone).
+    let q = supabaseAdmin
       .from('contacts')
       .update({
         intake_completed: true,
         intake_completed_at: new Date().toISOString(),
       })
-      .eq('tenant_id', ctx.tenantId)
-      .eq('phone', args.patient_phone);
+      .eq('tenant_id', ctx.tenantId);
+    if (ctx.contactId) {
+      q = q.eq('id', ctx.contactId);
+    } else {
+      q = q.eq('phone', args.patient_phone);
+    }
+    const { data: updated, error } = await q.select('id');
     if (error) return { marked: false, error: error.message };
+    if (!updated || updated.length === 0) {
+      return { marked: false, error: 'contact_not_found', next_step: `contact_id=${ctx.contactId ?? 'null'}, phone=${args.patient_phone}` };
+    }
     return { marked: true };
   },
 });
