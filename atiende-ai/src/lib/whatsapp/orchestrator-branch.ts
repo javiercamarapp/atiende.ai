@@ -484,11 +484,24 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   const tools = getToolSchemas(agentConfig.tools);
   const baseSystemPrompt = getSystemPrompt(agentName, tenantCtx);
 
+  // Bug fix: inyectamos snapshot del estado del paciente (nombre, citas
+  // activas, intake done, etc) al system prompt. Aunque el historial se
+  // trunque, el LLM ve el estado canónico desde BD y NO repite preguntas
+  // ni ofrece reservar si ya hay cita activa.
+  const { buildPatientStateSnapshot } = await import('./patient-state-snapshot');
+  const stateSnapshot = contactId
+    ? await buildPatientStateSnapshot(tenant.id, contactId).catch(() => '')
+    : '';
+
   // State recovery — si hay state activo (de cualquier tipo) lo inyectamos
   // al system prompt para que el agente sepa qué datos ya tiene.
-  const systemPrompt = convState.state
-    ? `${baseSystemPrompt}\n\n${formatStateContext(convState.state, convState.context)}`
-    : baseSystemPrompt;
+  const stateContext = convState.state
+    ? formatStateContext(convState.state, convState.context)
+    : '';
+
+  const systemPrompt = [baseSystemPrompt, stateSnapshot, stateContext]
+    .filter(Boolean)
+    .join('\n\n');
 
   const orchestratorCtx: OrchestratorContext = {
     tenantId: tenant.id,
