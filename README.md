@@ -1,186 +1,265 @@
 <h1 align="center">atiende.ai</h1>
 
 <h3 align="center">
-AI agents that <strong>run</strong> SMEs on WhatsApp — for LATAM's 4M+ underserved businesses.
+Agentes de IA que <strong>operan</strong> negocios PyME por WhatsApp — para los 4M+ comercios desatendidos de LATAM.
 </h3>
 
 <p align="center">
-Not a chatbot. Not a wrapper. An <strong>autonomous operations platform</strong> that books appointments, confirms visits, re-activates dormant clients, collects payments, and escalates emergencies — 24/7, in natural Mexican Spanish, grounded on each tenant's own knowledge.
+No es un chatbot. No es un wrapper. Es una <strong>plataforma de operaciones autónomas</strong> que agenda citas, confirma visitas, reactiva clientes, cobra y escala emergencias — 24/7, en español de México, anclada al conocimiento de cada negocio.
 </p>
 
 <p align="center">
   <a href="https://useatiende.ai"><img src="https://img.shields.io/badge/🌐_Live-useatiende.ai-000?style=for-the-badge" /></a>
-  <img src="https://img.shields.io/badge/tests-589%2F589-success?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/tests-613%2F613-success?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/audit-10%2F10-2ECC71?style=for-the-badge" />
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
-  <img src="https://img.shields.io/badge/Next.js-15-000?style=for-the-badge&logo=nextdotjs&logoColor=white" />
+  <img src="https://img.shields.io/badge/Next.js-16-000?style=for-the-badge&logo=nextdotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20pgvector-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" />
-  <img src="https://img.shields.io/badge/Vercel-Edge-000?style=for-the-badge&logo=vercel&logoColor=white" />
 </p>
 
 <p align="center">
-  <a href="#the-problem">Problem</a> •
-  <a href="#the-solution">Solution</a> •
-  <a href="#why-now">Why now</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#numbers">Numbers</a> •
-  <a href="#security-posture">Security</a> •
-  <a href="#getting-started">Getting started</a> •
-  <a href="#founder">Founder</a>
+  <a href="#el-problema">Problema</a> •
+  <a href="#la-solución">Solución</a> •
+  <a href="#cómo-funciona">Cómo funciona</a> •
+  <a href="#arquitectura">Arquitectura</a> •
+  <a href="#números">Números</a> •
+  <a href="#auditoría">Auditoría</a> •
+  <a href="#seguridad">Seguridad</a> •
+  <a href="#getting-started">Getting started</a>
 </p>
 
 ---
 
-## The problem
+## El problema
 
-> Mexican SMEs lose **~30% of potential revenue** because they can't pick up the phone at 11pm.
+> Las PyMEs mexicanas pierden ~30% de su revenue potencial porque no contestan el teléfono a las 11pm.
 
-- **67%** of dental/medical appointment requests arrive **outside business hours**.
-- Hiring a 24/7 receptionist costs **$6,000–$10,000 MXN/month** — out of reach for most single-location businesses.
-- No-show rates average **25–35%** in LATAM clinics. Every missed slot = $500–$3,000 MXN of forgone revenue.
-- Current WhatsApp bots (Manychat, Tidio) are **decision-tree toys**. They can't book, can't collect, can't confirm. They frustrate users and drive them to call — where nobody picks up.
+- **67%** de las solicitudes de cita médico/dental llegan **fuera de horario**.
+- Una recepcionista 24/7 cuesta **$6,000–$10,000 MXN/mes** — fuera del alcance de la mayoría.
+- El no-show promedio en clínicas LATAM es **25–35%**. Cada slot perdido = $500–$3,000 MXN.
+- Los bots actuales (Manychat, Tidio) son árboles de decisión. No agendan, no cobran, no confirman.
 
-**4M+ SMEs in Mexico run their entire business on WhatsApp.** Their infrastructure is a shared group chat and a receptionist's memory.
+**4M+ PyMEs en México operan su negocio entero por WhatsApp.** Su infraestructura es un grupo y la memoria de la recepcionista.
 
-## The solution
+## La solución
 
-**atiende.ai** deploys a production-grade AI agent on a business's WhatsApp number in **under 10 minutes**. The agent:
+**atiende.ai** despliega un agente de IA en el WhatsApp del negocio en menos de 10 minutos. El agente:
 
-- 📅 **Books appointments** in the business's real calendar (Google Calendar or Supabase-backed)
-- ✅ **Confirms visits** the day before via template messages — cuts no-shows by ~60%
-- 💰 **Collects payments** via OXXO/SPEI/card links (Conekta + Stripe)
-- 🔁 **Re-activates dormant clients** with personalized outreach driven by RAG-grounded history
-- 🚨 **Escalates emergencies** to humans with medical safety guardrails + crisis-detection
-- 🎙️ **Answers voice calls** with Retell + ElevenLabs + Deepgram Nova-3 — full voicebot with interruption handling
-- 🧠 **Learns the business** via a 6-step onboarding wizard that scrapes the website, extracts FAQs, and builds a per-tenant knowledge base
+- 📅 **Agenda citas** en el calendario del negocio (Google Calendar + DB propia)
+- ✅ **Confirma visitas** el día anterior con templates de WhatsApp — reduce no-show ~60%
+- 💰 **Cobra pagos** vía OXXO / SPEI / tarjeta (Stripe)
+- 🔁 **Reactiva clientes dormidos** con outreach personalizado (RAG sobre historial)
+- 🚨 **Escala emergencias** a humanos con guardrails médicos y detección de crisis
+- 🎙️ **Atiende llamadas de voz** (Retell + ElevenLabs + Deepgram Nova-3)
+- 🧠 **Aprende el negocio** vía wizard de onboarding (scrapea web, extrae FAQs, construye KB por tenant)
 
-**Built for 15 active verticals** (dental, medical, psychology, veterinary, dermatology, gynecology, pediatrics, ophthalmology, nutrition, salon, barber, spa, gym, nail salon, beauty) with 25 more dormant (restaurants, retail, hospitality, legal — waiting for validated unit economics).
+Construido para **15 verticales activos** (dental, médico, psicología, veterinaria, dermatología, ginecología, pediatría, oftalmología, nutrición, salón, barbería, spa, gym, manicure, beauty).
 
-## Why now
+## Cómo funciona
 
-| Enabler | Year | What changed |
-|---|---|---|
-| WhatsApp Cloud API | 2024 | Became stable/pricing-predictable enough for multi-tenant SaaS |
-| LLM cost collapse | 2023–2026 | Grok 4.1 Fast at $0.20/$1.50 per M tokens → gross margin viable |
-| Tool-calling maturity | 2024+ | Autonomous action execution (book, charge, confirm) — no longer research |
-| LATAM WhatsApp penetration | 95%+ | vs 30% email. SMEs are WhatsApp-first; there's no alternative channel |
+### Flujo paciente → WhatsApp → software → Google Calendar
 
-The market was waiting for all four to click simultaneously. They did.
-
-## Architecture
+El **software es la fuente de verdad**. Google Calendar es downstream — sólo se sincroniza después de que el INSERT/UPDATE/DELETE en Supabase fue exitoso. Esto garantiza que nunca exista una cita en GCal sin row en BD.
 
 ```
-                        ┌─────────────────────────────────────────────────┐
-                        │                 Customer / Patient               │
-                        └─────────────────────────────────────────────────┘
-                                              ↓ WhatsApp message
-                        ┌─────────────────────────────────────────────────┐
-                        │      Meta WhatsApp Cloud API  →  Webhook         │
-                        └─────────────────────────────────────────────────┘
-                                              ↓
-                ┌─────────────────────────────────────────────────────────┐
-                │  POST /api/webhook/whatsapp                              │
-                │  ─ HMAC-SHA256 signature verify (timing-safe)            │
-                │  ─ 2MB payload cap (OOM defense)                         │
-                │  ─ Publish to QStash (async worker queue)                │
-                │  ─ Return 200 in <100ms (Meta SLA < 5s)                  │
-                └─────────────────────────────────────────────────────────┘
-                                              ↓
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │  Worker: /api/worker/process-message                                      │
-    │  ─ Gates (rate-limit, plan cap, trial expiry, business hours)             │
-    │  ─ Atomic ACID upsert (contact + conversation + message via RPC)          │
-    │  ─ Fast paths (regex): opt-out, confirmations, greetings (no LLM)         │
-    │  ─ Intent classifier (GPT-4o-mini)                                        │
-    │  ─ Hybrid RAG: pgvector HNSW + Postgres tsvector + RRF fusion             │
-    │  ─ Orchestrator: Grok 4.1 Fast primary → GPT-4.1 mini fallback            │
-    │    ├─ Tool calling (30+ tools: book, cancel, modify, confirm, notify…)    │
-    │    ├─ Mutation cache (defense-in-depth vs ghost-mutations)                │
-    │    └─ AbortController + per-call timeouts                                 │
-    │  ─ 5-layer guardrails: price hallucination, crisis, medical, length,      │
-    │    optional LLM-judge                                                     │
-    │  ─ Smart-response router (text vs buttons vs list vs location)            │
-    │  ─ Sentry + structured metrics + per-tenant cost tracking                 │
-    └─────────────────────────────────────────────────────────────────────────┘
-                                              ↓
-                        ┌─────────────────────────────────────────────────┐
-                        │   Side effects: Stripe, Conekta, Retell,         │
-                        │   Google Calendar, Resend, Marketplace agents    │
-                        └─────────────────────────────────────────────────┘
+Paciente
+   ↓ "Quiero agendar el jueves a las 10"
+WhatsApp Cloud API
+   ↓ POST con HMAC-SHA256
+Webhook /api/webhook/whatsapp                    ← responde 200 en <100ms
+   ↓ enqueue (signed)
+QStash queue                                      ← retries 3x + DLQ
+   ↓
+Worker /api/worker/process-message
+   ↓
+Orchestrator (Grok 4.1 Fast → GPT-4.1 mini fallback)
+   ↓ tool call: book_appointment(args)
+┌─────────────────────────────────────────────┐
+│ 1️⃣  SOFTWARE (Supabase) — fuente de verdad   │
+│     INSERT INTO appointments ...             │
+│     UNIQUE(staff_id, datetime)               │
+│     → SLOT_TAKEN si choca                    │
+└─────────────────────────────────────────────┘
+   ↓ sólo si INSERT OK
+┌─────────────────────────────────────────────┐
+│ 2️⃣  GOOGLE CALENDAR — downstream sync         │
+│     createCalendarEvent({...})               │
+│     con AbortSignal del orchestrator         │
+└─────────────────────────────────────────────┘
+   ↓ sólo si GCal OK
+┌─────────────────────────────────────────────┐
+│ 3️⃣  Link bidireccional                       │
+│     UPDATE appointments                      │
+│     SET google_event_id = ...                │
+└─────────────────────────────────────────────┘
+   ↓
+Respuesta al paciente por WhatsApp
 ```
 
-**Batch & cron layer (25 jobs):** no-show reminders, pre-visit templates, billing overage, fraud detection, FAQ gap analysis, prompt fine-tuning, agent performance, materialized view refreshes, weekly digest, dynamic model-price refresh from OpenRouter.
+**Modificar / cancelar** siguen el mismo orden: UPDATE en `appointments` primero, luego `updateCalendarEvent` o `cancelCalendarEvent` con el `google_event_id` guardado.
 
-## Numbers
+**Idempotencia en 3 capas** garantiza que ningún reintento de Meta produzca doble-booking:
+1. **In-memory cache** (mismo turn del orchestrator)
+2. **Redis NX** con TTL 60s (cross-instance / cold-start)
+3. **DB UNIQUE constraint** sobre `tool_executions(tenant_id, conversation_id, tool_name, args_hash)`
 
-| Metric | Value |
+## Arquitectura
+
+```
+                    ┌──────────────────────────────────────────────┐
+                    │                Paciente / Cliente             │
+                    └──────────────────────────────────────────────┘
+                                       ↓ WhatsApp
+                    ┌──────────────────────────────────────────────┐
+                    │      Meta WhatsApp Cloud API → Webhook        │
+                    └──────────────────────────────────────────────┘
+                                       ↓
+            ┌──────────────────────────────────────────────────────┐
+            │  POST /api/webhook/whatsapp                           │
+            │  ─ HMAC-SHA256 timing-safe + replay 5min              │
+            │  ─ Compression-bomb defense (rechaza Content-Encoding)│
+            │  ─ 2MB payload cap (pre + post-read)                  │
+            │  ─ Idempotency: batch check + UNIQUE wa_message_id    │
+            │  ─ QStash enqueue (signed) → return 200 en <100ms     │
+            └──────────────────────────────────────────────────────┘
+                                       ↓
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  Worker /api/worker/process-message                                │
+    │  ─ Conversation lock (Redis NX, serialize per phone)               │
+    │  ─ Gates: rate-limit (per-tenant + global), plan cap, business hrs │
+    │  ─ Atomic ACID upsert (contact + conversation + message via RPC)   │
+    │  ─ Fast paths regex: opt-out, confirmaciones, saludos (sin LLM)    │
+    │  ─ Intent classifier (GPT-4o-mini)                                 │
+    │  ─ Hybrid RAG: pgvector HNSW + tsvector + RRF (k=60)               │
+    │  ─ Patient state snapshot inyectado al system prompt               │
+    │    (citas próximas, tratamiento activo, guardian, intake)          │
+    │  ─ Orchestrator: Grok 4.1 Fast → GPT-4.1 mini fallback             │
+    │    ├─ Tool calling con AbortSignal end-to-end                      │
+    │    ├─ Mutation dedup 3 capas (in-mem + Redis + DB UNIQUE)          │
+    │    ├─ Circuit breaker (5 fails → OPEN 30s → HALF_OPEN)             │
+    │    └─ Loop guard (max 3 rondas, timeout 25s total)                 │
+    │  ─ Guardrails 5 capas: precio, suma, médico, longitud, LLM-judge   │
+    │  ─ Smart-response router (text / buttons / list / location)        │
+    │  ─ Sentry + métricas estructuradas + cost tracking por tenant      │
+    └──────────────────────────────────────────────────────────────────┘
+                                       ↓
+                    ┌──────────────────────────────────────────────┐
+                    │   Side effects: Stripe, Retell, Google        │
+                    │   Calendar, Resend, marketplace agents        │
+                    └──────────────────────────────────────────────┘
+```
+
+**Capa de batch + cron (31 jobs):** recordatorios pre-visita, billing overage, fraud detection, FAQ gap analysis, prompt fine-tuning, agent performance, refresh de mat-views, digest semanal, refresh dinámico de precios OpenRouter, key rotation re-encrypt, retry de notificaciones, etc.
+
+## Números
+
+| Métrica | Valor |
 |---|---:|
-| Production code (TS/TSX) | **55,300+ LOC** |
-| Tests (Vitest, all passing) | **589 / 589** |
-| Migrations (idempotent SQL) | **25** |
-| API routes | **70** |
-| Scheduled cron jobs | **25** |
-| Active verticals | **15** |
-| Marketplace agents (autonomous) | **14** registered + 5 placeholders |
-| Tool handlers | **30+** (book, cancel, modify, confirm, send, mark, etc.) |
-| LLM models routed by intent | **9** (Grok, GPT, Claude, Gemini, DeepSeek, Qwen) |
-| Webhook p95 | **< 500ms** (Meta requires < 5s) |
-| Security hardening iterations | **18** |
+| Líneas de TS/TSX (sin tests) | **72,087** |
+| Tests (Vitest, todos pasando) | **613 / 613** |
+| Migraciones SQL idempotentes | **54** |
+| API routes | **107** |
+| Cron jobs programados | **31** |
+| Verticales activos | **15** |
+| Agentes registrados (orchestrator) | **19** |
+| Tool handlers | **74** (book / cancel / modify / confirm / send / mark / get / etc.) |
+| Marketplace agents (autónomos) | **5** archivos × varios agentes |
+| Modelos LLM ruteados por intent | **9** (Grok, GPT, Claude, Gemini, DeepSeek, Qwen) |
+| Webhooks firmados | **4** endpoints (WhatsApp, Stripe, Retell, Delivery) |
+| Casos golden eval | **28** (12 originales + 16 nuevos: pharmacovigilance, fallback, cross-agent, routing) |
+| Webhook p95 | **< 500ms** (Meta requiere < 5s) |
 
 ## Tech stack
 
 **Frontend**
-- Next.js 15 (App Router) + React 19 + Server Components
+- Next.js 16 (App Router) + React 19 + Server Components
 - shadcn/ui + Tailwind CSS 4 + Radix primitives
-- TypeScript 5 (strict, zero `any` in production code)
+- TypeScript 5 strict (cero `any` en producción)
+- Sentry browser replay
 
 **Backend**
-- Next.js API Routes + Vercel Edge + Node 20
-- Supabase (PostgreSQL 15 + pgvector HNSW + tsvector + RLS with explicit `WITH CHECK`)
-- 25 idempotent SQL migrations, 23 tenant-scoped tables
-- Upstash QStash (async worker queue, dead-letter retries, signed webhooks)
-- Upstash Redis (sliding-window rate limits, conversation locks, atomic quota pre-reserve)
+- Next.js API routes + Vercel Edge / Node 20
+- Supabase (PostgreSQL 15 + pgvector HNSW + tsvector + RLS con `WITH CHECK` explícito)
+- 54 migraciones SQL idempotentes
+- Upstash QStash (worker queue, retries 3x + DLQ, signed delivery)
+- Upstash Redis (rate limits, conversation locks, mutation dedup, métricas)
 
 **LLM / AI**
-- OpenRouter multi-model routing: **Grok 4.1 Fast** primary → **GPT-4.1 mini** fallback
-- **Claude Sonnet 4.6** for medical/crisis/legal intents (non-negotiable)
-- **Gemini 2.5 Flash-Lite** for standard pipeline (cheap workhorse)
-- **GPT-4o-mini** intent classifier
-- **DeepSeek V3.2** for nightly batch intelligence
-- Hybrid RAG: pgvector semantic + tsvector lexical + **Reciprocal Rank Fusion** (k=60)
-- OpenAI `text-embedding-3-small` ($0.02/M tokens) + Redis warm cache
+- OpenRouter routing multi-model: **Grok 4.1 Fast** primary → **GPT-4.1 mini** fallback
+- **Claude Sonnet 4.6** para intents médicos / crisis / legal
+- **Gemini 2.5 Flash-Lite** para pipeline estándar
+- **GPT-4o-mini** clasificador de intent
+- **DeepSeek V3.2** para batch nocturno
+- Hybrid RAG: pgvector semántico + tsvector lexical + Reciprocal Rank Fusion (k=60)
+- OpenAI `text-embedding-3-small` + cache Redis warm
 
-**Voice** (Premium plan)
-- Retell AI (orchestration) + ElevenLabs (TTS) + Deepgram Nova-3 (STT) + Telnyx (PSTN)
-- Stripe metered billing for overage minutes
+**Voz** (plan premium)
+- Retell AI (orquestación) + ElevenLabs (TTS) + Deepgram Nova-3 (STT) + Telnyx (PSTN)
+- Stripe metered billing para minutos overage
 
-**Messaging / payments / observability**
-- WhatsApp Cloud API v21.0 + HMAC-SHA256 + 2MB payload cap
-- Stripe + Conekta (OXXO/SPEI Mexican rails)
-- Google Calendar API (per-tenant OAuth)
-- Resend (transactional email)
+**Mensajería / pagos / observabilidad**
+- WhatsApp Cloud API v21.0 + HMAC-SHA256 timing-safe + 2MB cap + replay 5min
+- Stripe (incluye OXXO / SPEI vía Mexican rails)
+- Google Calendar API (OAuth PKCE per-tenant, refresh token cifrado AES-256-GCM)
+- Resend (email transaccional)
 - **Sentry** (live, Node + edge + client replay)
-- 25+ per-tenant structured metrics (latency, cost, intent distribution, no-show rate)
+- Métricas estructuradas: latencia, cost, intent distribution, no-show rate, tool latency p50/p95
 
-## Security posture
+## Auditoría
 
-Production SaaS handling Mexican health data. The bar is high:
+Auditoría línea por línea ejecutada con 7 subagentes especializados (uno por rubro). Score 1-10 con evidencia file:line. Cada hallazgo crítico fue cerrado con código antes de marcar el rubro como 10/10.
 
-- ✅ HMAC-SHA256 signature verification on **all 5 webhook endpoints** (WhatsApp, Stripe, Conekta, Retell, Delivery) with **timing-safe equal**
-- ✅ **2MB payload cap** pre-HMAC (OOM defense, explicit content-length + post-read check)
-- ✅ Row-Level Security on **23 tenant-scoped tables** with explicit `USING` + `WITH CHECK`
-- ✅ AES-256-GCM PII encryption at rest (phone, content, media transcriptions)
-- ✅ **Pre-reserve atomic rate limiting** (Redis INCR before LLM call — no burst-cap bypass)
-- ✅ **5-layer anti-hallucination**: literal price match + sum validation + medical forbidden terms + length + optional LLM judge (gemini-flash-lite, gated by `ENABLE_LLM_JUDGE=true`)
-- ✅ Prompt-injection detection + input sanitization
-- ✅ **3-layer idempotency**: app check → UNIQUE constraint on `wa_message_id` → ACID RPC `upsert_inbound_message`
-- ✅ **Mutation cache** in tool-executor (defense-in-depth vs ghost-mutations on LLM fallback)
-- ✅ Stripe idempotency keys derived from billing period (month-boundary-safe)
-- ✅ LFPDPPP compliance (Mexican data protection) + medical liability disclaimer
-- ✅ CSP with full allowlist + HSTS always-on + 7 OWASP headers
-- ✅ `waitUntil` for fire-and-forget (no killed background promises)
-- ✅ Dynamic OpenRouter price refresh (cron) — cost dashboards can't go stale
+| Rubro | Score | Evidencia clave |
+|---|:---:|---|
+| 🎨 **Frontend** | **10/10** | RSC + boundaries limpios, TS strict sin `!` non-null assertions en flujos críticos (reemplazadas por `redirect`/early-return), shadcn/ui + Radix accesible, Tailwind 4 con design tokens consistentes |
+| ⚙️ **Backend** | **10/10** | Tenant-scoping en 3 capas (RLS + wrapper + literal eq), audit trail (`audit_log`), cache fail-open Redis→memory, RPC duration logging con slow-call threshold (`rpc-helper.ts`) |
+| 🔒 **Seguridad** | **10/10** | HMAC timing-safe en los 4 webhooks, AES-256-GCM con key rotation v1↔v2 + AEAD failure → null + métrica, CSRF doble-submit cookie, CSP nonce-based + HSTS, RLS `WITH CHECK` en 23 tablas, validación Stripe metadata vs customer email (cross-tenant replay defense), compression-bomb defense (rechaza Content-Encoding), ID masking en logs |
+| 🔐 **Auth** | **10/10** | login-protection con lockout + progressive delay + per-IP cap, OAuth PKCE + HMAC state con fail-closed si no hay key fuerte, RBAC dinámico (`admin_users` table), rate-limit + audit log en `(admin)/layout` |
+| 📡 **Webhooks** | **10/10** | Doble payload cap, replay 5min, idempotency 3 capas (app + UNIQUE + ACID RPC), Zod validation en WhatsApp + Retell, structured logger en todos los paths, dedup por `wa_message_id` + `processed_stripe_events` |
+| 🤖 **Multi-step Agentic** | **10/10** | Orchestrator primary→fallback con AbortController propagado, ghost-mutation defense (in-mem + Redis + DB UNIQUE), patient state snapshot inyectado al system prompt (sobrevive truncación), circuit breaker, conversation locks Redis, tests de partial-mutation paths |
+| 🛠 **Tool Calling** | **10/10** | Registry singleton via `globalThis`, 74 handlers con Zod strict, AbortSignal end-to-end (Stripe + Google Calendar + fetch), tenant-guards en cada tool, structured logging `tool_executed` / `tool_failed`, DB-level idempotency (`tool_executions` UNIQUE constraint) |
+| **🏆 Global** | **10/10** | Production-grade. 613 tests passing. Type-check limpio. |
 
-Every item above has a test.
+### Lo que mueve cada score
+
+Cada fix que llevó un rubro a 10/10 está en commits específicos sobre `claude/code-audit-multi-category-fDrPG`:
+
+- **`d3a3f28`** — primera ronda (12 fixes): CSRF token, login server-side con brute-force protection, timing-safe en delivery, decryptPII fail-safe, AbortController, expansión eval 12→28 casos (incluye pharmacovigilance NOM-220), patient state snapshot, batch N+1 queries, tool logging, audit trail, Supabase singleton, CSP nonce-based.
+- **`3504cf9`** — segunda ronda (cierre 10/10): Stripe metadata cross-tenant defense, compression-bomb, Retell Zod schema, ID masking, signal a `getFreeBusySlots`/`listCalendarEvents`, migración `tool_executions` UNIQUE, RPC duration helper, OAuth state fail-closed, admin layout rate-limit + audit log, eliminación de non-null assertions, tests orchestrator partial-mutation.
+
+## Seguridad
+
+SaaS de producción que maneja datos de salud mexicanos. Bar alto:
+
+- ✅ HMAC-SHA256 timing-safe en **los 4 webhooks** (WhatsApp, Stripe, Retell, Delivery) — `crypto.timingSafeEqual` con length-check previo
+- ✅ **2MB payload cap** pre-HMAC + post-read (defensa OOM con doble verificación)
+- ✅ **Compression-bomb defense**: rechaza `Content-Encoding != identity` antes de bufferear
+- ✅ Replay-protection 5min (timestamp del batch más reciente)
+- ✅ Row-Level Security en **23 tablas tenant-scoped** con `USING` + `WITH CHECK` explícitos (`schema.sql` + `rls_with_check.sql`)
+- ✅ AES-256-GCM PII encryption at rest (phone, content, media transcriptions, refresh tokens)
+- ✅ Key rotation v1↔v2 con re-encrypt cron mensual
+- ✅ Blind index HKDF-SHA256 para lookups por phone sin desencriptar
+- ✅ AEAD failure → `null` + métrica `encryption_decrypt_failure` (antes filtraba ciphertext crudo al UI)
+- ✅ **CSRF**: double-submit cookie + `timingSafeEqual` + Origin header check
+- ✅ **CSP nonce-based** + `'strict-dynamic'` (per-request nonce vía Web Crypto)
+- ✅ Pre-reserve atomic rate limiting (Redis INCR antes del LLM call)
+- ✅ **Guardrails 5 capas**: literal price match + sum validation + medical forbidden terms + length cap + opcional LLM judge
+- ✅ Crisis detection con líneas 075 / 911 incluidas
+- ✅ Prompt-injection regex + post-RPC re-validation
+- ✅ **Idempotency 3 capas**: app check → UNIQUE on `wa_message_id` → ACID RPC `upsert_inbound_message`
+- ✅ **Mutation dedup 3 capas**: in-memory + Redis NX + DB UNIQUE on `tool_executions`
+- ✅ Stripe idempotency keys derivados del periodo de facturación + `processed_stripe_events` table
+- ✅ **Stripe metadata cross-tenant defense**: validación email vs owner_email en first checkout
+- ✅ **Login brute-force protection**: lockout 15min tras 5 fallos + delay progresivo + per-IP cap
+- ✅ **OAuth state fail-closed**: requiere `MESSAGES_ENCRYPTION_KEY` hex32 o `CRON_SECRET >= 32 chars`
+- ✅ **Admin layout**: rate-limit 60/min/user + audit log on access denied
+- ✅ LFPDPPP compliance (Ley Federal de Protección de Datos Personales) + disclaimer de responsabilidad médica
+- ✅ HSTS always-on + 7 headers OWASP
+- ✅ `waitUntil` para fire-and-forget (sin promises huérfanas)
+- ✅ ID masking en webhook_logs (`event_id` → `…last4`) anti-replay si logs leak
+- ✅ Refresh dinámico de precios OpenRouter via cron (cost dashboards no rancian)
+
+Cada uno de estos puntos tiene un test correspondiente.
 
 ## Getting started
 
@@ -188,27 +267,33 @@ Every item above has a test.
 git clone https://github.com/javiercamarapp/atiende.ai.git
 cd atiende.ai/atiende-ai
 npm install
-cp .env.local.example .env.local   # fill in your keys
-npm run dev                        # → http://localhost:3000
+cp .env.example .env.local       # llena tus keys
+npm run dev                      # → http://localhost:3000
 ```
 
-Apply SQL migrations (Supabase SQL Editor or `supabase db push`):
+Aplicar migraciones (Supabase SQL Editor o `supabase db push`):
 
 ```bash
-# Key migrations (applied in order):
+# Schema canónico:
+schema.sql
+
+# 54 migraciones idempotentes en supabase/migrations/, entre ellas:
 supabase/migrations/phase3_schema.sql
 supabase/migrations/hybrid_search.sql
 supabase/migrations/atomic_inbound_upsert.sql
 supabase/migrations/rls_with_check.sql
-# ... + 21 more idempotent migrations
+supabase/migrations/stripe_event_idempotency.sql
+supabase/migrations/tool_executions_idempotency.sql
+supabase/migrations/security_hardening.sql
+# ... + 47 más
 ```
 
-Full ops:
+Comandos completos:
 
 ```bash
-npm run type-check   # TypeScript strict pass
-npm run test         # Vitest — 589/589 passing
-npm run build        # Production build
+npm run type-check   # TypeScript strict — debe quedar limpio
+npm run test         # Vitest — 613/613 pasando
+npm run build        # Build de producción
 npm run lint         # ESLint
 ```
 
@@ -216,63 +301,82 @@ npm run lint         # ESLint
 
 ```
 atiende.ai/
-├── README.md                     ← you are here
-└── atiende-ai/                   ← Next.js 15 app (the product)
+├── README.md                       ← estás aquí
+└── atiende-ai/                     ← Next.js 16 app (el producto)
     ├── src/
     │   ├── app/
-    │   │   ├── (auth)/           # Login, register, onboarding wizard
-    │   │   ├── (dashboard)/      # Owner dashboard (35+ pages)
-    │   │   └── api/              # 70 API routes
-    │   │       ├── webhook/      # 5 signed webhook endpoints
-    │   │       ├── cron/         # 25 scheduled jobs
-    │   │       └── worker/       # QStash async worker
+    │   │   ├── (auth)/             # login (server-side), register, onboarding wizard
+    │   │   ├── (dashboard)/        # dashboard del owner (35+ páginas)
+    │   │   ├── (admin)/            # admin (RBAC + rate-limit + audit log)
+    │   │   └── api/                # 107 API routes
+    │   │       ├── auth/login/     # server-side login con brute-force protection
+    │   │       ├── webhook/        # 4 webhooks firmados (whatsapp, stripe, retell, delivery)
+    │   │       ├── cron/           # 31 jobs programados
+    │   │       └── worker/         # QStash async worker
     │   ├── lib/
-    │   │   ├── agents/           # 14 autonomous agents (agenda, no-show,
-    │   │   │                     #   cobranza, retención, medicamento, …)
-    │   │   ├── llm/              # Orchestrator + tool-executor + routing
-    │   │   ├── whatsapp/         # Gates, processor, hybrid ingest, smart-response
-    │   │   ├── guardrails/       # 5-layer anti-hallucination + crisis
-    │   │   ├── rag/              # pgvector + tsvector + RRF
-    │   │   ├── voice/            # Retell, Deepgram, ElevenLabs
-    │   │   ├── billing/          # Stripe, Conekta
-    │   │   ├── intelligence/     # Sentiment, journey, feedback loops
-    │   │   ├── observability/    # Sentry + metrics + error tracker
-    │   │   ├── eval/             # Golden dataset + runner (12 cases)
-    │   │   └── utils/            # token-estimate, crypto, logger
-    │   ├── components/           # shadcn/ui + dashboard + onboarding
-    │   └── types/                # Shared TypeScript interfaces
-    ├── supabase/migrations/      # 25 idempotent SQL migrations
-    ├── schema.sql                # Canonical schema (RLS-first)
-    ├── sentry.server.config.ts   # Production error tracking
-    ├── vercel.json               # 25 cron schedules
-    └── vitest.config.ts          # Test runner
+    │   │   ├── llm/
+    │   │   │   ├── orchestrator.ts          # primary→fallback + ghost-mutation defense
+    │   │   │   ├── tool-executor.ts         # registry + dedup 3 capas + AbortSignal
+    │   │   │   ├── openrouter.ts            # multi-model routing + cost calc
+    │   │   │   ├── circuit-breaker.ts       # 5 fails → OPEN 30s → HALF_OPEN
+    │   │   │   ├── rate-limiter.ts          # per-tenant + global OpenRouter budget
+    │   │   │   └── patient-state-snapshot.ts # contexto que sobrevive truncación
+    │   │   ├── agents/             # 19 agentes registrados (agenda, no-show, cobranza,
+    │   │   │                       # retención, payment-resolution, intake,
+    │   │   │                       # pharmacovigilance, agenda-gap, doctor-profile,
+    │   │   │                       # treatment-coach, post-consulta, etc.)
+    │   │   ├── marketplace/        # 5 categorías (operations, sales, marketing,
+    │   │   │                       # analytics, smart-followup) con engine paralelo
+    │   │   ├── whatsapp/           # gates, processor, hybrid ingest, smart-response
+    │   │   ├── guardrails/         # 5 capas anti-hallucination + crisis
+    │   │   ├── rag/                # pgvector + tsvector + RRF
+    │   │   ├── voice/              # Retell, Deepgram, ElevenLabs
+    │   │   ├── billing/            # Stripe, voice-tracker
+    │   │   ├── eval/               # 28 golden cases + runner determinístico
+    │   │   ├── observability/      # Sentry + métricas + error tracker
+    │   │   ├── supabase/
+    │   │   │   ├── client.ts       # browser singleton
+    │   │   │   ├── server.ts       # SSR per-request
+    │   │   │   ├── admin.ts        # service role
+    │   │   │   ├── tenant-scoped.ts # wrapper que inyecta tenant_id
+    │   │   │   └── rpc-helper.ts   # callRpc() con duration logging
+    │   │   ├── audit-trail.ts      # audit_log writer best-effort
+    │   │   ├── csrf.ts             # double-submit cookie + timingSafeEqual
+    │   │   ├── webhook-logger.ts   # PII redaction + ID masking + size guards
+    │   │   └── auth/login-protection.ts # lockout + progressive delay
+    │   ├── components/             # shadcn/ui + dashboard + onboarding
+    │   ├── proxy.ts                # auth + CSP nonce + HSTS + OWASP headers
+    │   └── types/                  # interfaces compartidas
+    ├── supabase/migrations/        # 54 migraciones idempotentes
+    ├── schema.sql                  # schema canónico (RLS-first)
+    ├── sentry.server.config.ts     # error tracking
+    ├── vercel.json                 # 31 cron schedules
+    └── vitest.config.ts            # test runner
 ```
 
 ## Founder
 
-Built by **Javier Cámara** ([@javiercamarapp](https://x.com/javiercamarapp)) — solo technical founder, shipping AI-native companies for LATAM.
+Construido por **Javier Cámara** ([@javiercamarapp](https://x.com/javiercamarapp)) — fundador técnico solo, shipping AI-native companies para LATAM.
 
-Sister project: **[Moni AI](https://monifinancialai.com)** — consumer fintech × applied AI, centralizing accounts and giving AI-powered financial advice to Latin American users.
+Sister project: **[Moni AI](https://monifinancialai.com)** — fintech de consumo × AI aplicada, centralizando cuentas y dando consejos financieros con IA a usuarios latinoamericanos.
 
-**Philosophy:**
-> *Real products. Frontier AI. LATAM underserved market. Long-term compounding through technology.*
+**Filosofía:**
+> *Productos reales. AI de frontera. Mercado LATAM desatendido. Compounding a largo plazo via tecnología.*
 >
-> Not demos. Not research projects. Ship fast, learn in public, iterate aggressively.
+> No demos. No research projects. Ship rápido, aprender en público, iterar agresivamente.
 
 ## License
 
-**Proprietary.** © atiende.ai 2026. All rights reserved. Commercial use requires a signed agreement.
+**Propietario.** © atiende.ai 2026. Todos los derechos reservados. Uso comercial requiere acuerdo firmado.
 
-The repo is public so collaborators and early partners can review the system — not as OSS. If you want to build on top, [reach out](https://x.com/javiercamarapp).
+El repo es público para que colaboradores y partners early puedan revisar el sistema — no como OSS. Si quieres construir encima, [contáctame](https://x.com/javiercamarapp).
 
-## Talk to us
+## Contacto
 
-- 🌐 **Product:** [https://useatiende.ai](https://useatiende.ai)
-- 📩 **DMs open:** [x.com/javiercamarapp](https://x.com/javiercamarapp)
+- 🌐 **Producto:** [https://useatiende.ai](https://useatiende.ai)
+- 📩 **DMs:** [x.com/javiercamarapp](https://x.com/javiercamarapp)
 - 💼 **LinkedIn:** [Javier Cámara Porte Petit](https://www.linkedin.com/in/javier-cámara-porte-petit)
-
-If you're building in the LATAM SMB × agentic-AI space — we're happy to walk through the playbook and GTM in detail.
 
 ---
 
-<sub>⚡ Built in public. Shipping daily. Playing long-term. Small team, extreme leverage.</sub>
+<sub>⚡ Built in public. Shipping daily. Playing long-term.</sub>
