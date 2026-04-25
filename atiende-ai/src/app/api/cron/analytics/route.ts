@@ -1,8 +1,19 @@
+// ═════════════════════════════════════════════════════════════════════════════
+// CRON — Daily analytics rollup
+//
+// Audit fix: antes hacía 11 queries serial por tenant (5 messages, 3
+// appointments, 2 orders, 1 conversations + costos). Con 1k tenants se
+// acercaba al timeout 300s. Ahora delegamos a Postgres function que hace
+// todo en 1 sola query con CTEs paralelas (~10x más rápido + libera Vercel).
+// ═════════════════════════════════════════════════════════════════════════════
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,52 +21,30 @@ export async function GET(req: NextRequest) {
     if (authFail) return authFail;
 
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const yS = `${yesterday}T00:00:00`;
-    const yE = `${yesterday}T23:59:59`;
 
     const { data: tenants } = await supabaseAdmin
       .from('tenants')
-      .select('id,business_type,plan')
+      .select('id')
       .eq('status', 'active');
 
-    for (const t of tenants || []) {
-      const { count: mI } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('direction', 'inbound').gte('created_at', yS).lte('created_at', yE);
-      const { count: mO } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('direction', 'outbound').gte('created_at', yS).lte('created_at', yE);
-      const { count: hf } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('sender_type', 'human').gte('created_at', yS).lte('created_at', yE);
-      const { count: ab } = await supabaseAdmin.from('appointments').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
-      const { count: noShow } = await supabaseAdmin.from('appointments').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('status', 'no_show').gte('datetime', yS).lte('datetime', yE);
-      const { count: cancelled } = await supabaseAdmin.from('appointments').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('status', 'cancelled').gte('datetime', yS).lte('datetime', yE);
-      const { data: orders } = await supabaseAdmin.from('orders').select('total').eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
-      const ordersRevenue = (orders || []).reduce((sum, o) => sum + Number(o.total || 0), 0);
-      const { count: ordersTotal } = await supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
-      const { count: newConvs } = await supabaseAdmin.from('conversations').select('*', { count: 'exact', head: true }).eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE);
-      const { data: costs } = await supabaseAdmin.from('messages').select('cost_usd').eq('tenant_id', t.id).gte('created_at', yS).lte('created_at', yE).not('cost_usd', 'is', null);
-      const llmCost = (costs || []).reduce((sum, m) => sum + Number(m.cost_usd || 0), 0);
-      const msgsSaved = (mI || 0);
-      const minSaved = msgsSaved * 2.5;
+    let processed = 0;
+    let failed = 0;
 
-      await supabaseAdmin.from('daily_analytics').upsert(
-        {
-          tenant_id: t.id,
-          date: yesterday,
-          conversations_new: newConvs || 0,
-          messages_inbound: mI || 0,
-          messages_outbound: mO || 0,
-          handoffs_human: hf || 0,
-          appointments_booked: ab || 0,
-          appointments_no_show: noShow || 0,
-          appointments_cancelled: cancelled || 0,
-          orders_total: ordersTotal || 0,
-          orders_revenue: ordersRevenue,
-          llm_cost_usd: llmCost,
-          messages_saved: msgsSaved,
-          minutes_saved: minSaved,
-        },
-        { onConflict: 'tenant_id,date' },
-      );
+    for (const t of tenants || []) {
+      try {
+        const { error } = await supabaseAdmin.rpc('compute_daily_analytics_for_tenant', {
+          p_tenant_id: t.id as string,
+          p_date: yesterday,
+        });
+        if (error) throw error;
+        processed++;
+      } catch (err) {
+        console.error('[cron/analytics] tenant failed:', t.id, err);
+        failed++;
+      }
     }
 
-    return NextResponse.json({ processed: tenants?.length || 0, date: yesterday });
+    return NextResponse.json({ processed, failed, date: yesterday });
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

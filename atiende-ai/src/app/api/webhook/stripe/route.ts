@@ -206,10 +206,31 @@ export async function POST(req: NextRequest) {
     const inv = event.data.object as unknown as Record<string, unknown>;
     const customerId = inv.customer as string | undefined;
     if (customerId) {
-      await supabaseAdmin
+      const { data: tenantRow } = await supabaseAdmin
         .from('tenants')
         .update({ status: 'past_due' })
-        .eq('stripe_customer_id', customerId);
+        .eq('stripe_customer_id', customerId)
+        .select('id')
+        .maybeSingle();
+
+      // Audit fix: log payment failure para compliance + alerting.
+      // trackError counter dispara alertas si pasa >threshold/hr.
+      const { trackError } = await import('@/lib/monitoring');
+      trackError('stripe_payment_failed');
+      if (tenantRow?.id) {
+        const { logAudit } = await import('@/lib/audit');
+        await logAudit({
+          tenantId: tenantRow.id as string,
+          action: 'payment_failed',
+          entityType: 'invoice',
+          entityId: (inv.id as string) || undefined,
+          details: {
+            amount_due: inv.amount_due,
+            attempt_count: inv.attempt_count,
+            failure_code: (inv as { last_finalization_error?: { code?: string } }).last_finalization_error?.code,
+          },
+        }).catch((err) => logger.warn('[stripe.webhook] audit failed', { err }));
+      }
     }
   }
 

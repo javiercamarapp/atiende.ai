@@ -261,7 +261,9 @@ async function handleSingleMessage(
     await handleSingleMessageInner(msg, metadata, tenant as TenantRecord, senderPhone, phoneNumberId, messageId);
   } finally {
     if (lock.token) {
-      await releaseConversationLock(tenant.id as string, senderPhone, lock.token).catch(() => {});
+      await releaseConversationLock(tenant.id as string, senderPhone, lock.token).catch((err) => {
+        logger.warn('[processor] release conversation lock failed', { err: err instanceof Error ? err.message : err });
+      });
     }
   }
 }
@@ -334,7 +336,10 @@ async function handleSingleMessageInner(
     );
     return;
   }
-  if (!content || content.length < 1) {
+  // Audit fix: trim() para detectar mensajes que solo traen whitespace o
+  // que el sanitizer dejó vacíos (ej. paciente envía solo emoji que stripped
+  // por sanitizeInput). Antes pasaba al LLM y devolvía respuesta junk.
+  if (!content || !content.trim()) {
     // Rollback: reservamos un slot en checkGates pero no
     // vamos a consumir (no hay contenido procesable, no se envía respuesta).
     try {
@@ -477,7 +482,9 @@ async function handleSingleMessageInner(
   // waitUntil evita que Vercel mate la HTTP request al regresar el handler
   // — sin esto, si la respuesta principal termina antes de que Meta reciba
   // el typing POST, el runtime puede cortarlo.
-  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
+  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch((err) => {
+    logger.warn('[processor] typing indicator failed', { err: err instanceof Error ? err.message : err });
+  }));
 
   // 12. Generate and validate response
   //
