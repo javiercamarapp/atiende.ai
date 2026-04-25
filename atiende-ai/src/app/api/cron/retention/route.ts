@@ -33,7 +33,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       summary.processed,
       summary.failed,
       summary.results.find((r) => !r.success)?.error,
-    ).catch(() => {});
+    ).catch((err) => console.warn("[cron] alertOnCronFailure failed:", err instanceof Error ? err.message : err));
   }
 
   return NextResponse.json(summary);

@@ -333,6 +333,18 @@ export async function executeTool(
   // check (inbound exists) but the processor would skip processing.
   // However, if QStash retries with a fresh conversationId or the
   // inbound wasn't persisted yet, this Redis guard is the last line.
+  // Audit fix: read-only tools también benefician de cache in-memory dentro
+  // del mismo turn. Ej: agente puede llamar check_availability(date=hoy)
+  // dos veces durante un flujo de booking — segunda llamada devuelve cache
+  // sin pegarle a Supabase. Saves ~$50/mo a 1k tenants en tool roundtrips.
+  if (!def.isMutation && ctx.successfulCallCache) {
+    const cacheKey = buildToolCallCacheKey(name, args);
+    const cached = ctx.successfulCallCache.get(cacheKey);
+    if (cached) {
+      return { ...cached, durationMs: 0 };
+    }
+  }
+
   if (def.isMutation) {
     const cacheKey = buildToolCallCacheKey(name, args);
     // Layer 1: in-memory
@@ -375,6 +387,11 @@ export async function executeTool(
         ctx.successfulCallCache?.set(ck, execResult);
         void setRedisMutationDedup(ctx.conversationId, ck);
       }
+    } else if (ctx.successfulCallCache) {
+      // Audit fix: cachear también read-only para evitar roundtrip duplicado
+      // dentro del mismo turn (ej. agente llama check_availability 2 veces).
+      const ck = buildToolCallCacheKey(name, args);
+      ctx.successfulCallCache.set(ck, execResult);
     }
     return execResult;
   } catch (err) {

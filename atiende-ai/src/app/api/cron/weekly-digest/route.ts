@@ -197,7 +197,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (failed > 0) {
     const { alertOnCronFailure } = await import('@/lib/cron/alert-on-failure');
-    await alertOnCronFailure('weekly-digest', tenants.length, failed).catch(() => {});
+    await alertOnCronFailure('weekly-digest', tenants.length, failed).catch((err) => console.warn("[cron] alertOnCronFailure failed:", err instanceof Error ? err.message : err));
   }
 
   return NextResponse.json({

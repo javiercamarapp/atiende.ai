@@ -332,7 +332,9 @@ export async function POST(
       `Doctor: ${freeStaff.name}\n` +
       `Fecha: ${input.date} ${input.time}\n` +
       `Código: ${confirmationCode}`,
-  }).catch(() => {});
+  }).catch((err) => {
+    console.warn('[public-booking] notifyOwner failed:', err instanceof Error ? err.message : err);
+  });
 
   return NextResponse.json({
     ok: true,
