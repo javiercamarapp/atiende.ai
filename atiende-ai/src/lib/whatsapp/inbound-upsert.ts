@@ -183,7 +183,10 @@ async function legacyPath(input: InboundUpsertInput): Promise<InboundUpsertResul
   } else {
     convQuery = convQuery.eq('customer_phone', input.senderPhone);
   }
-  let { data: conv } = await convQuery.single();
+  // .maybeSingle en lugar de .single — cuando no hay conversación previa
+  // (paciente nuevo) PostgREST devolvía 400 ensuciando los Vercel logs.
+  // .maybeSingle retorna { data: null } limpio en ese caso.
+  let { data: conv } = await convQuery.maybeSingle();
 
   const isNewConversation = !conv;
 

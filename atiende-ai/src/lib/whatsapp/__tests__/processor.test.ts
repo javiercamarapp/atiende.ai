@@ -98,6 +98,11 @@ vi.mock('@/lib/supabase/admin', () => ({
         const chain = makeChainable(() => conversationResult);
         chain.insert = mockInsertConversations;
         chain.update = mockUpdateConversations;
+        // El lookup de conversación en inbound-upsert.ts ahora usa
+        // .maybeSingle() (antes .single() — generaba 400 ruidosos en logs).
+        // Override del default { data: null } para que devuelva la fixture
+        // del test cuando hay conversationResult seteado.
+        chain.maybeSingle = vi.fn().mockImplementation(() => conversationResult);
         return chain;
       }
       if (table === 'messages') {
