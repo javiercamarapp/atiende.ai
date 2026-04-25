@@ -10,7 +10,9 @@
 
 import { MODELS } from '@/lib/llm/openrouter';
 import type { AgentConfig, AgentName } from './types';
-import { triajeConfig } from './placeholders/triaje';
+// triaje passes from placeholder to active in this PR — see entry below
+import { MODELS as _MODELS } from '@/lib/llm/openrouter';
+void _MODELS;
 
 export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
   orchestrator: {
@@ -264,6 +266,17 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
     systemPromptKey: 'treatment-coach',
   },
 
-  // ── Phase 3 placeholders restantes ───────────────────────────────────────
-  triaje: triajeConfig,
+  // ── Phase 3.C — Triaje clínico (urgency assessment) ──────────────────────
+  triaje: {
+    name: 'triaje',
+    model: MODELS.PREMIUM, // medical safety — usar el mejor modelo
+    description: 'Pre-consulta clínica: clasifica urgencia ESI 1-4 sin diagnosticar',
+    tools: [
+      'record_triage_assessment',
+      'escalate_urgency',
+      'check_availability',
+      'book_appointment',
+    ],
+    systemPromptKey: 'triaje',
+  },
 };

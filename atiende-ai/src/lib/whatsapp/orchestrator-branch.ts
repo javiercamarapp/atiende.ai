@@ -369,9 +369,22 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   const msgNorm = content.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   type AgentName = 'encuesta' | 'no-show' | 'intake' | 'agenda'
     | 'quoting' | 'pharmacovigilance' | 'administrative'
-    | 'doctor-profile' | 'payment-resolution' | 'treatment-coach';
+    | 'doctor-profile' | 'payment-resolution' | 'treatment-coach' | 'triaje';
 
   function detectTopicAgent(): AgentName | null {
+    // Triaje clínico — el paciente reporta síntoma con preocupación pero no
+    // es claramente reacción a medicamento (eso ya cae en pharmacovigilance).
+    // Patterns: "me duele mucho", "no sé si esperar", "creo que algo está mal",
+    // "tengo fiebre", "me siento mal hace X días". Triaje hace preguntas
+    // estructuradas ANTES de agendar, clasifica urgencia, deriva a doctor o
+    // ER si nivel 1-2.
+    if (
+      /\b(me duele mucho|dolor (muy fuerte|severo|insoportable|10 de 10|9 de 10)|no se si (esperar|sera grave|es algo serio)|algo (esta mal|anda mal)|tengo fiebre|llevo (varios|\d+) (dias|días|horas) con|empeora|cada vez peor|estoy preocupad[oa]|muy mal del?|que tan grave es|sera grave)\b/i.test(msgNorm)
+      || /\b(sintomas?|síntomas?) (graves?|raros?|de alarma|preocupantes?)\b/i.test(msgNorm)
+    ) {
+      return 'triaje';
+    }
+
     // Pharmacovigilance — PRIORIDAD ALTA: cualquier reporte de reacción es
     // safety-critical. Debe ganar antes que quoting/admin (que pueden
     // mencionar "medicamento" sin ser reacción adversa).
