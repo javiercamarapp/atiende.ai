@@ -186,9 +186,14 @@ export async function hasConflict(opts: {
     });
     return overlaps;
   } catch (err) {
-    // Si Google Calendar falla, NO permitimos booking ciego — fallar safe.
-    console.warn('[hasConflict] gcal check failed, blocking booking as safe default:', err instanceof Error ? err.message : err);
-    return true;
+    // Bug fix: si Google Calendar API falla (OAuth expirado, network, etc),
+    // NO bloqueamos el booking. Antes esto era 'return true' (block-safe)
+    // pero significaba que CUALQUIER tenant con Google Calendar mal
+    // configurado quedaba sin poder agendar. Mejor: log + confiar en el
+    // check local. El gcal sync al INSERT igual va a fallar audible si
+    // hay conflict real, y el doctor lo verá en su Google.
+    console.warn('[hasConflict] gcal check failed, falling back to local-only:', err instanceof Error ? err.message : err);
+    return false;
   }
 }
 
