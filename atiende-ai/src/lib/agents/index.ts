@@ -29,6 +29,8 @@ import './doctor-profile';
 import './payment-resolution';
 // Phase 3 — diferenciadores
 import './treatment-coach';
+// Phase 3.C — triaje clínico
+import './triaje';
 
 import type { AgentName, TenantContext, FastRoute } from './types';
 import { AGENT_REGISTRY } from './registry';
@@ -49,6 +51,7 @@ import { getAdministrativePrompt } from './administrative/prompt';
 import { getDoctorProfilePrompt } from './doctor-profile/prompt';
 import { getPaymentResolutionPrompt } from './payment-resolution/prompt';
 import { getTreatmentCoachPrompt } from './treatment-coach/prompt';
+import { getTriagePrompt } from './triaje/prompt';
 
 export type { AgentName, TenantContext, FastRoute, AgentConfig } from './types';
 export { AGENT_REGISTRY } from './registry';
@@ -149,10 +152,9 @@ export function getSystemPrompt(agentName: AgentName, ctx: TenantContext): strin
     case 'doctor-profile':     return getDoctorProfilePrompt(ctx);
     case 'payment-resolution': return getPaymentResolutionPrompt(ctx);
     case 'treatment-coach':    return getTreatmentCoachPrompt(ctx);
+    case 'triaje':             return getTriagePrompt(ctx);
     case 'faq':
       return '(FAQ no usa LLM — los handlers son funciones directas en src/lib/agents/faq/tools.ts)';
-    case 'triaje':
-      return `[Placeholder Phase 3.C] Agente triaje aún no implementado.`;
     default: {
       const _exhaustive: never = agentName;
       return _exhaustive;
@@ -279,6 +281,8 @@ export function initializeAllAgents(): { ok: boolean; tools: string[]; missing: 
     'update_insurance_claim_status',
     // Patient portal (Phase 3)
     'send_patient_portal_link',
+    // Triaje clínico (Phase 3.C)
+    'record_triage_assessment',
   ];
   const missing = required.filter((n) => !registered.includes(n));
   if (missing.length > 0) {

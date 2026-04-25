@@ -90,22 +90,22 @@ export async function createCheckoutSession(tenantId: string, email: string, pla
     metadata: { tenant_id: tenantId, plan },
     currency: 'mxn',
     allow_promotion_codes: true,
-    // Trial universal — TODOS los planes (Esencial, Pro, Ultimate) pagan
-    // el primer mes gratis y Stripe cobra recién al mes siguiente del
-    // signup. Se solicita tarjeta siempre (payment_method_collection:
-    // 'always') para validar al usuario y automatizar el cobro en día 31.
-    // Si el trial termina y la tarjeta falla, Stripe pausa la suscripción
-    // en vez de cancelarla — el dueño puede actualizar su método sin
-    // perder la cuenta.
-    subscription_data: {
-      trial_period_days: STRIPE_TRIAL_DAYS,
-      trial_settings: {
-        end_behavior: {
-          missing_payment_method: 'pause',
+    // Trial restringido — SOLO el plan Esencial (basic) tiene primer mes
+    // gratis. Pro y Ultimate cobran desde el día 1. Se solicita tarjeta
+    // siempre (payment_method_collection: 'always') para validar al usuario
+    // y automatizar el cobro. En basic, si el trial termina y la tarjeta
+    // falla, Stripe pausa la suscripción en vez de cancelarla.
+    subscription_data: plan === 'basic'
+      ? {
+          trial_period_days: STRIPE_TRIAL_DAYS,
+          trial_settings: {
+            end_behavior: { missing_payment_method: 'pause' },
+          },
+          metadata: { tenant_id: tenantId, plan, trial_days: String(STRIPE_TRIAL_DAYS) },
+        }
+      : {
+          metadata: { tenant_id: tenantId, plan, trial_days: '0' },
         },
-      },
-      metadata: { tenant_id: tenantId, plan, trial_days: String(STRIPE_TRIAL_DAYS) },
-    },
     payment_method_collection: 'always',
   });
 }

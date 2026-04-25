@@ -347,9 +347,10 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                 </p>
               </div>
               <p className="text-[11px] text-zinc-600 leading-relaxed">
-                Primer mes gratis en cualquier plan — pedimos tu tarjeta
-                pero no se cobra hasta el mes siguiente del día que te
-                suscribes. Podés cancelar cuando quieras desde esta página.
+                Primer mes gratis en el plan <strong>Esencial</strong>. Pro y
+                Ultimate se cobran desde el primer mes — pedimos tu tarjeta y
+                el cobro corre al día que te suscribes. Podés cancelar cuando
+                quieras desde esta página.
               </p>
             </div>
           ) : (
@@ -474,7 +475,7 @@ export function BillingManager({ tenant }: { tenant: Record<string, unknown> | n
                 <p className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
                   Mensajes ilimitados
                 </p>
-                {isTrialing && !isCurrent && (
+                {isTrialing && !isCurrent && plan.key === 'basic' && (
                   <p className={`text-[11px] mt-1.5 font-medium ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
                     ✨ Primer mes gratis — se requiere tarjeta, se cobra al mes siguiente
                   </p>
