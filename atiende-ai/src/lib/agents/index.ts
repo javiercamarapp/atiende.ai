@@ -189,10 +189,14 @@ const URGENCY_KEYWORDS = [
   'inconsciente', 'crisis', 'me muero',
 ];
 
+// BUG FIX: removidos 'horario', 'hora', 'que dias', 'precio' etc del fast
+// path porque interceptaban antes de llegar al agente agenda. Cuando el
+// paciente pregunta "qué horarios tienen" el bot debe consultar la agenda
+// REAL (check_availability) y ofrecer 3 slots concretos, no responder con
+// el horario genérico del consultorio. Solo dejamos en FAQ las que NO son
+// agendables (dirección, estacionamiento, seguros).
 const FAQ_KEYWORDS = [
-  'horario', 'hora', 'atienden', 'abierto', 'que dias', 'que días',
   'direccion', 'dirección', 'donde estan', 'donde están', 'ubicacion', 'ubicación',
-  'precio', 'precios', 'costo', 'cuanto cuesta', 'cuánto cuesta', 'cobran', 'tarifa',
   'seguro', 'aseguradora', 'insurance', 'issste', 'imss',
   'estacionamiento', 'parking', 'maps',
 ];

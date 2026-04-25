@@ -67,12 +67,23 @@ describe('routeToAgent()', () => {
     expect(routeToAgent('estoy en crisis', ctx)).toBe('urgent');
   });
 
-  it('detecta FAQ con "horario"', () => {
-    expect(routeToAgent('¿cuál es su horario?', ctx)).toBe('faq');
+  it('NO captura "horario" en FAQ — debe ir a agenda para llamar check_availability', () => {
+    // Audit fix: antes 'horario' caía en FAQ fast-path y respondía con
+    // el horario genérico. Ahora deja que el agente agenda use
+    // check_availability y ofrezca 3 slots reales.
+    expect(routeToAgent('¿cuál es su horario?', ctx)).toBeNull();
   });
 
-  it('detecta FAQ con "precio"', () => {
-    expect(routeToAgent('cuánto cuesta una limpieza', ctx)).toBe('faq');
+  it('NO captura "precio" en FAQ — debe ir a agente quoting para get_service_quote', () => {
+    expect(routeToAgent('cuánto cuesta una limpieza', ctx)).toBeNull();
+  });
+
+  it('detecta FAQ con "dirección"', () => {
+    expect(routeToAgent('¿cuál es la dirección?', ctx)).toBe('faq');
+  });
+
+  it('detecta FAQ con "estacionamiento"', () => {
+    expect(routeToAgent('¿hay estacionamiento?', ctx)).toBe('faq');
   });
 
   it('retorna null para mensajes complejos (LLM decide)', () => {
