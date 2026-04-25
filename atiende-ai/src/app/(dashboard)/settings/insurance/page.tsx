@@ -102,15 +102,19 @@ export default async function InsuranceClaimsPage({
     query = query.eq('status', filter);
   }
 
-  const { data: claimsRaw } = await query;
-  const claims = (claimsRaw || []) as unknown as ClaimRow[];
-
-  // Aggregates calculated against ALL claims (otra query liviana)
-  const { data: allRaw } = await supabase
-    .from('insurance_claims')
-    .select('status, amount_claimed_mxn, amount_paid_mxn, direct_billing, submitted_at')
-    .eq('tenant_id', tenant.id);
-  const all = allRaw || [];
+  // Audit fix: paralelizamos las 2 queries (antes secuencial). Y ahora la
+  // segunda solo trae las columnas necesarias para los KPIs, capped a 2000
+  // (más que suficiente para histórico de un consultorio chico/mediano).
+  const [claimsRes, allRes] = await Promise.all([
+    query,
+    supabase
+      .from('insurance_claims')
+      .select('status, amount_claimed_mxn, amount_paid_mxn, direct_billing, submitted_at')
+      .eq('tenant_id', tenant.id)
+      .limit(2000),
+  ]);
+  const claims = (claimsRes.data || []) as unknown as ClaimRow[];
+  const all = allRes.data || [];
 
   const openCount = all.filter((c) => !['paid', 'denied'].includes(c.status as string)).length;
   const overdueCount = all.filter(

@@ -269,7 +269,11 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
   // ── Phase 3.C — Triaje clínico (urgency assessment) ──────────────────────
   triaje: {
     name: 'triaje',
-    model: MODELS.PREMIUM, // medical safety — usar el mejor modelo
+    // Audit fix: bajamos de PREMIUM a ORCHESTRATOR. Triaje hace clasificación
+    // estructurada, no diagnóstico — no necesita el modelo más caro. Para
+    // safety crítica (pharmacovigilance) sí mantenemos PREMIUM. El prompt
+    // tiene reglas duras + sólo clasifica + escala a doctor en duda.
+    model: MODELS.ORCHESTRATOR,
     description: 'Pre-consulta clínica: clasifica urgencia ESI 1-4 sin diagnosticar',
     tools: [
       'record_triage_assessment',

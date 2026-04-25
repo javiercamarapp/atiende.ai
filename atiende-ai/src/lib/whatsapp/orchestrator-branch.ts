@@ -221,13 +221,19 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
       .maybeSingle();
 
     if (pendingAppt) {
+      // Audit fix: optimistic locking — solo update si sigue en 'scheduled'
+      // sin confirmed_at. Si dos webhooks colisionan (paciente manda doble
+      // "sí"), el segundo no sobrescribe estado de cita ya confirmada/movida.
       await supabaseAdmin
         .from('appointments')
         .update({
           status: 'confirmed',
           confirmed_at: new Date().toISOString(),
         })
-        .eq('id', pendingAppt.id);
+        .eq('id', pendingAppt.id)
+        .eq('tenant_id', tenant.id)
+        .eq('status', 'scheduled')
+        .is('confirmed_at', null);
 
       const thankMsg = '¡Perfecto! Su cita está confirmada. Le esperamos con gusto. 😊';
       await sendTextMessage(phoneNumberId, senderPhone, thankMsg);

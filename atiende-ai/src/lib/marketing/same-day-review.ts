@@ -19,7 +19,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { sendTextMessage } from '@/lib/whatsapp/send';
+import { sendTextMessageSafe } from '@/lib/whatsapp/send';
 import { resolveTenantTimezone } from '@/lib/config';
 
 interface MaybeRequestReviewArgs {
@@ -76,13 +76,14 @@ export async function maybeRequestSameDayReview(
   if (!contact || contact.review_requested === true) return false;
 
   // 2. ¿Hay cita completada HOY del paciente?
-  // Filtramos por rango de día en TZ del tenant: gte 00:00 lt 24:00.
-  // Postgres comparará timestamps; el slice del today (YYYY-MM-DD) lo
-  // expandimos a inicio/fin de día UTC-relativo via to_char + tz nativo es
-  // demasiado pesado, alcanza con +/- 24h margin sobre el día local.
-  const dayStart = new Date(`${today}T00:00:00`);
+  // Audit fix: forzamos UTC con sufijo Z. Antes `new Date('${today}T00:00:00')`
+  // se interpretaba en timezone del server (Vercel = UTC pero local dev
+  // podría ser otra), causando drift entre tenant TZ y query window.
+  const dayStart = new Date(`${today}T00:00:00Z`);
   // Margen amplio (36h) para cubrir casos de TZ shift sin sobre-engineer.
-  const windowStart = new Date(dayStart.getTime() - 12 * 3600_000);
+  // El check exacto contra TZ del tenant viene en el step 3 con
+  // Intl.DateTimeFormat.
+  const windowStart = new Date(dayStart.getTime() - 24 * 3600_000);
   const windowEnd = new Date(dayStart.getTime() + 36 * 3600_000);
 
   const { data: aptToday } = await supabaseAdmin
@@ -139,8 +140,24 @@ export async function maybeRequestSameDayReview(
     `${reviewUrl}\n\n` +
     `Toma 1 minuto y nos ayuda a que más pacientes encuentren a ${businessName}. ¡Gracias!`;
 
+  // Audit fix: usar sendTextMessageSafe para chequear 24h-window de WhatsApp
+  // Business. Si el último inbound del paciente es >24h, Meta rechaza el
+  // mensaje libre (error 131047). Aunque acá venimos de un inbound activo,
+  // el chequeo da margen + retry/fallback.
   try {
-    await sendTextMessage(phoneNumberId, senderPhone, text);
+    const r = await sendTextMessageSafe(phoneNumberId, senderPhone, text, {
+      tenantId: tenantId,
+    });
+    if (!r.ok) {
+      // 24h window expirada o send falló — marcamos requested para no
+      // reintentar mañana (ya pasó el momento óptimo).
+      await supabaseAdmin
+        .from('contacts')
+        .update({ review_requested: true, review_requested_at: new Date().toISOString() })
+        .eq('id', contactId)
+        .eq('tenant_id', tenantId);
+      return false;
+    }
   } catch (err) {
     console.warn('[same-day-review] send failed:', err instanceof Error ? err.message : err);
     return false;

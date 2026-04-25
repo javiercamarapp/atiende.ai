@@ -72,5 +72,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     .eq('id', auth.tenantId);
 
   if (error) return NextResponse.json({ error: 'update_failed', detail: error.message }, { status: 500 });
+
+  // Audit fix: invalidar cache 1hr.
+  const { invalidateTenantCache } = await import('@/lib/cache');
+  await invalidateTenantCache(auth.tenantId);
+
   return NextResponse.json({ ok: true });
 }

@@ -77,6 +77,20 @@ registerTool('record_triage_assessment', {
     }).select('id').single();
 
     if (error || !data) return { recorded: false, error: error?.message };
-    return { recorded: true, assessment_id: data.id, urgency_level: args.urgency_level };
+
+    // Audit fix: si urgency_level ≤ 2 (ER o urgente <24h) y el agente NO
+    // marcó escalated_to_doctor, devolvemos warning para que el LLM
+    // re-intente con escalate_urgency. Defense in depth contra prompts
+    // que se olvidan del paso de escalación.
+    const must_escalate = args.urgency_level <= 2 && !args.escalated_to_doctor && !args.redirected_to_er;
+    return {
+      recorded: true,
+      assessment_id: data.id,
+      urgency_level: args.urgency_level,
+      must_escalate,
+      next_step: must_escalate
+        ? 'CRÍTICO: urgency_level ≤2 sin escalación. Llamá escalate_urgency({severity: "high"}) AHORA.'
+        : null,
+    };
   },
 });
