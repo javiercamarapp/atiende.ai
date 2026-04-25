@@ -26,8 +26,18 @@ export async function runPostResponseEffects(
   intent: string,
   content: string,
 ) {
-  // Agentic actions
-  try {
+  // Bug fix: si el tenant tiene tool_calling activo, el orchestrator-branch
+  // (handleWithOrchestrator) ya respondió usando agentes especializados
+  // (intake, triaje, agenda, etc). NO debemos ejecutar también executeAction
+  // del legacy engine, porque dispara handlers competitivos como
+  // handleHumanRequest que setean status='human_handoff' + mandan
+  // 'Le comunico con nuestro equipo' aunque el agente acabe de responder.
+  // El paciente veía DOS replies: la del agente + el handoff erróneo.
+  const features = tenant.features as Record<string, unknown> | undefined;
+  const skipLegacyHandlers = features?.tool_calling === true;
+
+  // Legacy intent handlers (solo si tool_calling está OFF)
+  if (!skipLegacyHandlers) try {
     const { executeAction } = await import('@/lib/actions/engine');
     const actionResult = await executeAction({
       tenantId: tenant.id,
