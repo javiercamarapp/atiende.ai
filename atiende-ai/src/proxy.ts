@@ -36,8 +36,17 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  // Rutas publicas que no necesitan auth
-  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/api/webhook'];
+  // Rutas publicas que no necesitan auth Supabase. Bug fix: api/cron y
+  // api/health NO requieren sesión — usan Bearer CRON_SECRET. Antes el
+  // proxy redirigía /api/cron/* a /login porque no había user, y TODOS
+  // los crons (analytics, no-show, telemed, churn, google-reviews, etc)
+  // fallaban con 307 desde el deploy de Next 16. api/public/* es para
+  // booking público sin auth.
+  const publicPaths = [
+    '/login', '/register', '/forgot-password', '/reset-password',
+    '/api/webhook', '/api/cron', '/api/health', '/api/public',
+    '/portal', '/telemed', '/book',
+  ];
   const isPublic = path === '/' || publicPaths.some(p => path === p || path.startsWith(p + '/'));
 
   if (!user && !isPublic) {
@@ -113,6 +122,6 @@ export const config = {
     // requests for /public files like /hero.mp4 get intercepted by the auth
     // middleware and redirected to /login, so the browser receives HTML
     // instead of the binary file.
-    '/((?!_next/static|_next/image|favicon.ico|api/webhook|.*\\.(?:mp4|webm|mov|m4v|ogg|ogv|png|jpg|jpeg|gif|webp|svg|ico|mp3|wav|pdf|woff|woff2|ttf|eot|otf|txt|xml)).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/webhook|api/cron|api/health|api/public|.*\\.(?:mp4|webm|mov|m4v|ogg|ogv|png|jpg|jpeg|gif|webp|svg|ico|mp3|wav|pdf|woff|woff2|ttf|eot|otf|txt|xml)).*)',
   ],
 };
