@@ -11,14 +11,16 @@ export const MAX_USER_INPUT_CHARS = 4096;
 export const MAX_USER_INPUT_CHARS_GUARDED = 2000; // input-guardrail (más agresivo)
 
 // ─── History para LLM ──────────────────────────────────────────────────────
-// Bug fix: bajamos de 40 a 12 mensajes. Con 40+ mensajes Grok-4.1-fast
-// se confundía y dejaba de llamar tools. 12 mensajes = ~6 turnos
-// recientes (3 user + 3 bot) — suficiente contexto sin saturar al modelo.
-// Si necesitamos más contexto, lo metemos como resumen en el system prompt.
-export const HISTORY_MAX_MESSAGES = 12;
-export const HISTORY_MAX_CHARS = 12_000;
+// Balance: suficiente contexto multi-turn sin saturar a Grok-4.1-fast.
+// 25 mensajes = ~12 turnos recientes (típico flujo de booking dental
+// completo: saludo → intake → propuesta → confirmación → reagendamiento
+// se hace en <12 turnos). Para conversaciones más largas inyectamos
+// estado clave (nombre, citas activas, intake done) directo al system
+// prompt vía buildPatientStateSnapshot().
+export const HISTORY_MAX_MESSAGES = 25;
+export const HISTORY_MAX_CHARS = 25_000;
 export const HISTORY_MAX_TOKENS = Math.floor(HISTORY_MAX_CHARS / 3);
-export const HISTORY_KEEP_RECENT = 6;
+export const HISTORY_KEEP_RECENT = 8;
 
 // ─── LLM orchestrator ──────────────────────────────────────────────────────
 export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 10_000;
