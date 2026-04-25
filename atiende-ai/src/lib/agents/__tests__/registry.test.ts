@@ -48,6 +48,7 @@ describe('routeToAgent()', () => {
     businessHours: {},
     timezone: 'America/Merida',
     services: [],
+    agentName: 'Sofía',
     currentDatetime: '2026-04-14 10:00',
     tomorrowDate: '2026-04-15',
     dayAfterTomorrow: '2026-04-16',

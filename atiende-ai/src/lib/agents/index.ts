@@ -119,6 +119,15 @@ export function buildTenantContext(
     timezone,
     services,
     doctorName: (tenant.doctor_name as string) || undefined,
+    // Usa tenants.bot_name (columna existente). Default 'Asistente' del schema
+    // antiguo se reemplaza por 'Sofía' (más humano, secretaria-like).
+    // NUNCA debe quedar vacío — los prompts asumen que existe.
+    agentName:
+      (() => {
+        const raw = ((tenant.bot_name as string) || '').trim();
+        if (!raw || raw.toLowerCase() === 'asistente') return 'Sofía';
+        return raw;
+      })(),
     emergencyPhone: (tenant.emergency_phone as string) || (tenant.phone as string) || undefined,
     currentDatetime,
     tomorrowDate: getDateInTz(timezone, 1),
