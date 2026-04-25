@@ -19,6 +19,11 @@ const GenerateRequestSchema = z.object({
   // Allow empty — the client may send '' if the conversational agent never
   // captured q1 explicitly. We fall back to "Mi negocio" server-side.
   businessName: z.string().max(255).default(''),
+  // Nombre del agente AI que el dueño elige (ej "Sofía", "Andrea", "Camila").
+  // El bot se presenta con este nombre — el paciente cree estar hablando
+  // con la secretaria. Si no viene o viene vacío, el cliente puede haber
+  // dejado la pregunta en blanco; default "Sofía" es nombre genérico MX.
+  botName: z.string().max(50).default(''),
 });
 
 export async function POST(request: Request) {
@@ -48,6 +53,15 @@ export async function POST(request: Request) {
   }
   const { vertical, answers } = parsed.data;
   const businessName = parsed.data.businessName || answers.q1 || 'Mi negocio';
+  // Bot name — preferimos el campo explícito; sino busqueda en answers
+  // (algunos verticales lo tienen como q_botname); sino "Sofía".
+  const botNameRaw =
+    parsed.data.botName ||
+    answers.bot_name ||
+    answers.botName ||
+    answers.q_botname ||
+    'Sofía';
+  const botName = botNameRaw.trim().slice(0, 50) || 'Sofía';
 
   // ── 3. Build agent config (system prompt + metadata rules) ──
   const config = generateAgentConfig(vertical, answers, businessName);
@@ -63,7 +77,7 @@ export async function POST(request: Request) {
     business_type: dbBusinessType,
     email: user.email ?? null,
     chat_system_prompt: config.systemPrompt,
-    bot_name: 'Asistente',
+    bot_name: botName,
     status: 'active' as const,
     config: {
       vertical, // fine-grained VerticalEnum, preserved for LLM routing
