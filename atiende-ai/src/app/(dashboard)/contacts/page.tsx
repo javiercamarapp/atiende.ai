@@ -73,7 +73,7 @@ function tagFromScore(score: number | null, ltv: number | null): string {
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const filter: FilterKey = (['all', 'at_risk', 'valuable', 'inactive'] as const).includes(
@@ -81,6 +81,8 @@ export default async function ContactsPage({
   )
     ? (params.filter as FilterKey)
     : 'all';
+  const pageNum = Math.max(1, parseInt(params.page || '1', 10) || 1);
+  const PAGE_SIZE = 100;
 
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
@@ -99,9 +101,15 @@ export default async function ContactsPage({
   if (filter === 'at_risk') query = query.gt('churn_probability', 60);
   if (filter === 'valuable') query = query.gt('lifetime_value_mxn', 5000);
 
+  // Pagination: 100/page, range basado en pageNum (1-indexed). Fetch +1 para
+  // saber si hay next page sin un count(*) extra.
+  const rangeStart = (pageNum - 1) * PAGE_SIZE;
+  const rangeEnd = rangeStart + PAGE_SIZE; // PAGE_SIZE+1 rows en el resultado
   const { data: contactsRaw } = await query
     .order('churn_probability', { ascending: false })
-    .limit(200);
+    .range(rangeStart, rangeEnd);
+  const hasNextPage = (contactsRaw?.length ?? 0) > PAGE_SIZE;
+  if (hasNextPage) contactsRaw?.pop();
 
   const phones = ((contactsRaw || []) as ContactRow[]).map((c) => c.phone);
   const { data: lastApts } =
@@ -261,6 +269,29 @@ export default async function ContactsPage({
           </div>
         )}
       </div>
+
+      {/* Pagination — load more / volver */}
+      {(pageNum > 1 || hasNextPage) && (
+        <nav className="flex items-center justify-between mt-4 px-1 text-[12px]" aria-label="Paginación de pacientes">
+          {pageNum > 1 ? (
+            <a
+              href={`/contacts?filter=${filter}&page=${pageNum - 1}`}
+              className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+            >
+              ← Anterior
+            </a>
+          ) : <span />}
+          <span className="text-zinc-500">Página {pageNum}</span>
+          {hasNextPage ? (
+            <a
+              href={`/contacts?filter=${filter}&page=${pageNum + 1}`}
+              className="px-3 py-1.5 rounded-lg bg-[hsl(var(--brand-blue))] text-white hover:opacity-90"
+            >
+              Siguiente →
+            </a>
+          ) : <span />}
+        </nav>
+      )}
     </div>
   );
 }
