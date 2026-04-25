@@ -2,10 +2,20 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 
 /** Patterns that match PII in webhook payloads */
 const PII_KEYS = ['phone', 'phone_number', 'wa_id', 'from', 'to', 'body', 'text', 'message', 'display_phone_number'];
+/** IDs externos (event_id, call_id, appointment_id) que NO son PII pero
+ *  identifican unívocamente la transacción. Si los logs leak, un atacante
+ *  podría correlacionar/replicar eventos. Los enmascaramos a `…last4`. */
+const ID_KEYS = ['event_id', 'eventid', 'call_id', 'callid', 'appointment_id', 'session_id', 'sub_id', 'subscription_id', 'invoice_id'];
+
+function maskIdValue(value: string): string {
+  if (value.length <= 4) return '***';
+  return `…${value.slice(-4)}`;
+}
 
 /**
- * Recursively redact PII fields from a payload object.
- * Phone numbers and message content are replaced with '[REDACTED]'.
+ * Recursively redact PII fields from a payload object. PII values become
+ * `[REDACTED]`; external IDs become `…last4` so que sean correlacionables
+ * en debug pero no replay-safe.
  */
 function redactPII(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
@@ -14,8 +24,11 @@ function redactPII(obj: unknown): unknown {
   if (typeof obj === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      if (PII_KEYS.includes(key.toLowerCase())) {
+      const k = key.toLowerCase();
+      if (PII_KEYS.includes(k)) {
         result[key] = '[REDACTED]';
+      } else if (ID_KEYS.includes(k) && typeof value === 'string') {
+        result[key] = maskIdValue(value);
       } else if (typeof value === 'object' && value !== null) {
         result[key] = redactPII(value);
       } else {
@@ -78,6 +91,25 @@ export function enforceWebhookSize(
   provider: 'whatsapp' | 'stripe' | 'delivery' | 'retell',
   startTime: number,
 ): { ok: true } | { ok: false; response: Response } {
+  // Compression-bomb defense: 4KB de gzip pueden expandirse a 200MB en RAM.
+  // Ningún webhook legítimo (Meta, Stripe, Retell, delivery) usa
+  // Content-Encoding: nuestro stack los recibe como JSON plano. Cualquier
+  // payload comprimido es una bandera roja → rechazo inmediato pre-buffer.
+  const contentEncoding = req.headers.get('content-encoding');
+  if (contentEncoding && contentEncoding.toLowerCase() !== 'identity') {
+    logWebhook({
+      provider,
+      eventType: 'compressed_payload_rejected',
+      statusCode: 415,
+      error: `Content-Encoding "${contentEncoding}" not allowed (compression-bomb defense)`,
+      durationMs: Date.now() - startTime,
+    });
+    return {
+      ok: false,
+      response: new Response('Compressed payloads not accepted', { status: 415 }),
+    };
+  }
+
   const contentLength = Number(req.headers.get('content-length') || '0');
   if (contentLength > 0 && contentLength > maxBytes) {
     logWebhook({

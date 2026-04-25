@@ -1,11 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { z } from 'zod';
 import { Redis } from '@upstash/redis';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
+import { logger } from '@/lib/logger';
 import { trackVoiceCall } from '@/lib/billing/voice-tracker';
 import { sendTextMessageSafe } from '@/lib/whatsapp/send';
 import { VOICE_ALERT_THRESHOLD_PERCENT, VOICE_OVERAGE_PRICE_MXN } from '@/lib/config';
+
+// Schema mínima para defender JSON.parse contra payloads malformados que
+// crashean handlers downstream antes de llegar al logging estructurado.
+// Permitimos campos adicionales (.passthrough()) porque Retell evoluciona el
+// payload sin avisar.
+const RetellEventSchema = z
+  .object({
+    event: z.enum(['call_started', 'call_ended', 'call_analyzed']).optional(),
+    call_id: z.string().min(1).max(200).optional(),
+    direction: z.enum(['inbound', 'outbound']).optional(),
+    from_number: z.string().max(40).optional(),
+    to_number: z.string().max(40).optional(),
+    duration_ms: z.number().nonnegative().optional(),
+    duration_seconds: z.number().nonnegative().optional(),
+    cost: z.union([z.number(), z.string()]).optional(),
+    transcript: z.string().max(200_000).optional(),
+    transcript_object: z.unknown().optional(),
+    recording_url: z.string().url().max(2000).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    call_analysis: z.unknown().optional(),
+  })
+  .passthrough();
 
 // Redis para cooldown de alertas — fail-open si no está configurado.
 let _redis: Redis | null = null;
@@ -84,14 +108,28 @@ export async function POST(req: NextRequest) {
       logWebhook({ provider: 'retell', eventType: 'auth_failed', statusCode: 401, error: 'Invalid API key', durationMs: Date.now() - startTime });
       return new NextResponse('Unauthorized', { status: 401 });
     }
-    console.warn('[retell-webhook] using legacy API key auth — migrate to HMAC signature');
+    logger.warn('[retell-webhook] using legacy API key auth — migrate to HMAC signature');
   }
 
   try {
-    // Parse body from the buffer we already read (don't call req.json() or req.text() again)
-    const body = JSON.parse(rawBuffer.toString('utf-8'));
-    const event = body.event;
-    const tenantId = body.metadata?.tenant_id;
+    // Parse + Zod-validate body (don't call req.json() or req.text() again).
+    // Si el payload es malformado, respondemos 400 con eventType=invalid_payload
+    // antes de tocar handlers downstream.
+    let raw: unknown;
+    try {
+      raw = JSON.parse(rawBuffer.toString('utf-8'));
+    } catch {
+      logWebhook({ provider: 'retell', eventType: 'invalid_json', statusCode: 400, error: 'JSON parse error', durationMs: Date.now() - startTime });
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+    const parsed = RetellEventSchema.safeParse(raw);
+    if (!parsed.success) {
+      logWebhook({ provider: 'retell', eventType: 'invalid_payload', statusCode: 400, error: parsed.error.issues.map((i) => i.path.join('.')).join(','), durationMs: Date.now() - startTime });
+      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+    }
+    const body = parsed.data as Record<string, unknown>;
+    const event = body.event as string | undefined;
+    const tenantId = (body.metadata as Record<string, unknown> | undefined)?.tenant_id as string | undefined;
 
     logWebhook({
       tenantId,
@@ -153,7 +191,7 @@ async function handleCallEnded(body: Record<string, unknown>) {
   const callId = body.call_id as string | undefined;
   if (tenantId && callId && durationSeconds > 0) {
     const usage = await trackVoiceCall(tenantId, callId, durationSeconds).catch((err) => {
-      console.error('[retell-webhook] trackVoiceCall failed:', err);
+      logger.error('[retell-webhook] trackVoiceCall failed', err instanceof Error ? err : new Error(String(err)), { tenantId, callId });
       return null;
     });
 
@@ -198,10 +236,10 @@ async function handleCallEnded(body: Record<string, unknown>) {
               { tenantId },
             );
             if (!r.ok && r.windowExpired) {
-              console.warn('[retell-webhook] alert skipped — 24h window closed for owner');
+              logger.warn('[retell-webhook] alert skipped — 24h window closed for owner', { tenantId });
             }
           } catch (err) {
-            console.warn('[retell-webhook] owner alert failed:', err instanceof Error ? err.message : err);
+            logger.warn('[retell-webhook] owner alert failed', { err: err instanceof Error ? err.message : err, tenantId });
           }
         }
       }

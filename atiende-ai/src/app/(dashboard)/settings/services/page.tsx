@@ -8,7 +8,7 @@ import { Plus, Trash2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 export default function ServicesPage() {
   const[svcs,setSvcs]=useState<{id:string;name:string;price:number;duration_minutes:number;_new?:boolean;[k:string]:unknown}[]>([]);const[tid,setTid]=useState('');
-  useEffect(()=>{(async()=>{const s=createClient();const{data:{user}}=await s.auth.getUser();const{data:t}=await s.from('tenants').select('id').eq('user_id',user!.id).single();setTid(t!.id);const{data}=await s.from('services').select('*').eq('tenant_id',t!.id).order('name');setSvcs(data||[]);})();},[]);
+  useEffect(()=>{(async()=>{const s=createClient();const{data:{user}}=await s.auth.getUser();if(!user)return;const{data:t}=await s.from('tenants').select('id').eq('user_id',user.id).single();if(!t)return;setTid(t.id);const{data}=await s.from('services').select('*').eq('tenant_id',t.id).order('name');setSvcs(data||[]);})();},[]);
   const add=()=>setSvcs([...svcs,{id:'new-'+Date.now(),name:'',price:0,duration_minutes:30,_new:true}]);
   const saveAll=async()=>{try{const s=createClient();for(const sv of svcs){if(sv._new){const{error}=await s.from('services').insert({tenant_id:tid,name:sv.name,price:sv.price,duration_minutes:sv.duration_minutes});if(error)throw error;}else{const{error}=await s.from('services').update({name:sv.name,price:sv.price,duration_minutes:sv.duration_minutes}).eq('id',sv.id);if(error)throw error;}}
     await fetch('/api/knowledge/reingest-services',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenantId:tid})});toast.success('Servicios guardados y bot actualizado');}catch{toast.error('Error al guardar servicios');}};

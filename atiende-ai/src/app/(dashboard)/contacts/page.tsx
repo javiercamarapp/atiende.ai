@@ -86,10 +86,11 @@ export default async function ContactsPage({
 
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return <div>No autorizado</div>;
   const { data: tenant } = await supabase
     .from('tenants')
     .select('id, name')
-    .eq('user_id', user!.id)
+    .eq('user_id', user.id)
     .single();
   if (!tenant) return <div>No tenant found</div>;
 

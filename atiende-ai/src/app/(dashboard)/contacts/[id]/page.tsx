@@ -62,10 +62,11 @@ export default async function PatientDetailPage({
   const { id } = await params;
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return <div>No autorizado</div>;
   const { data: tenant } = await supabase
     .from('tenants')
     .select('id, name, business_type')
-    .eq('user_id', user!.id)
+    .eq('user_id', user.id)
     .single();
   if (!tenant) return <div>No tenant found</div>;
 

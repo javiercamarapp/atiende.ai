@@ -150,16 +150,20 @@ export async function getFreeBusySlots(opts: {
   startDate: string;
   endDate: string;
   timezone?: string;
+  signal?: AbortSignal;
 }) {
   const calendar = await getCalendarApi(opts.staffId);
-  const res = await calendar.freebusy.query({
-    requestBody: {
-      timeMin: opts.startDate,
-      timeMax: opts.endDate,
-      timeZone: opts.timezone || DEFAULT_TIMEZONE,
-      items: [{ id: opts.calendarId }],
+  const res = await calendar.freebusy.query(
+    {
+      requestBody: {
+        timeMin: opts.startDate,
+        timeMax: opts.endDate,
+        timeZone: opts.timezone || DEFAULT_TIMEZONE,
+        items: [{ id: opts.calendarId }],
+      },
     },
-  });
+    opts.signal ? { signal: opts.signal } : undefined,
+  );
   const busy = res.data.calendars?.[opts.calendarId]?.busy || [];
   return busy.map((b) => ({
     start: b.start!,
@@ -237,17 +241,21 @@ export async function listCalendarEvents(opts: {
   timeMin: string; // ISO
   timeMax: string;
   timezone?: string;
+  signal?: AbortSignal;
 }): Promise<GoogleCalendarEventLite[]> {
   const calendar = await getCalendarApi(opts.staffId);
-  const res = await calendar.events.list({
-    calendarId: opts.calendarId,
-    timeMin: opts.timeMin,
-    timeMax: opts.timeMax,
-    singleEvents: true,
-    orderBy: 'startTime',
-    maxResults: 500,
-    timeZone: opts.timezone || DEFAULT_TIMEZONE,
-  });
+  const res = await calendar.events.list(
+    {
+      calendarId: opts.calendarId,
+      timeMin: opts.timeMin,
+      timeMax: opts.timeMax,
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 500,
+      timeZone: opts.timezone || DEFAULT_TIMEZONE,
+    },
+    opts.signal ? { signal: opts.signal } : undefined,
+  );
   return (res.data.items || [])
     .filter((e) => e.id && (e.start?.dateTime || e.start?.date))
     .map((e) => {
