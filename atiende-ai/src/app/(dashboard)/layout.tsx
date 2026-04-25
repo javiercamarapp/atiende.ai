@@ -77,7 +77,8 @@ function getModules(type: string, hasVoice: boolean) {
   const healthTypes = ['dental','medical','nutritionist','psychologist','dermatologist',
     'gynecologist','pediatrician','ophthalmologist','veterinary','optics'];
   const beautyTypes = ['salon','barbershop','spa','gym'];
-  if (healthTypes.includes(type) || beautyTypes.includes(type)) return withContacts;
+  if (healthTypes.includes(type)) return [...withContacts, 'treatments'];
+  if (beautyTypes.includes(type)) return withContacts;
   const mods = [...withAppointments];
   if (hasVoice && !mods.includes('calls')) mods.push('calls');
   return mods;
