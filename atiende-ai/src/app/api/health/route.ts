@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getMetrics, pingRedis } from '@/lib/monitoring';
 
@@ -8,10 +9,18 @@ export const dynamic = 'force-dynamic';
 // Returns minimal status for unauthenticated requests
 // Returns full operational metrics only with valid CRON_SECRET bearer token
 export async function GET(req: NextRequest) {
-  // Minimal public health check
+  // Minimal public health check.
+  // Audit fix: timing-safe constant comparison para CRON_SECRET. El `===`
+  // anterior permitía teóricamente enumeración por timing del secret.
   const authHeader = req.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  const isAuthed = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  let isAuthed = false;
+  if (cronSecret && authHeader) {
+    const expected = `Bearer ${cronSecret}`;
+    const aBuf = Buffer.from(authHeader);
+    const eBuf = Buffer.from(expected);
+    isAuthed = aBuf.length === eBuf.length && timingSafeEqual(aBuf, eBuf);
+  }
 
   if (!isAuthed) {
     return NextResponse.json({ status: 'ok', timestamp: new Date().toISOString() });
