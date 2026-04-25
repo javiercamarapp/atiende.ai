@@ -210,6 +210,26 @@ registerTool('save_intake_data', {
         next_step: `No se encontró el contacto. Verificá que ctx.contactId existe y que el tenant es el correcto. patient_phone="${args.patient_phone}", contact_id="${ctx.contactId ?? 'null'}".`,
       };
     }
+
+    // Bug fix: cuando el bot guarda el nombre, también propagar a
+    // conversations.customer_name para que aparezca en /conversations
+    // (lista de chats) y no se vea el teléfono. encryptPII para mantener
+    // el patrón del resto de la app (decryptPII al leer).
+    if (args.patient_name && ctx.conversationId) {
+      try {
+        const { encryptPII } = await import('@/lib/utils/crypto');
+        const trimmed = args.patient_name.trim();
+        const enc = encryptPII(trimmed) ?? trimmed;
+        await supabaseAdmin
+          .from('conversations')
+          .update({ customer_name: enc })
+          .eq('id', ctx.conversationId)
+          .eq('tenant_id', ctx.tenantId);
+      } catch (err) {
+        console.warn('[save_intake_data] sync customer_name failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
     return {
       saved: true,
       fields_saved_this_turn: Object.keys(newIntakeFields).length + (args.patient_name ? 1 : 0),
