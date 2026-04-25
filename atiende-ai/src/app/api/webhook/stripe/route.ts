@@ -258,8 +258,31 @@ export async function POST(req: NextRequest) {
         (it) => it.price?.recurring?.usage_type === 'metered',
       );
       const isPremium = Boolean(meteredItem);
+      // Audit fix: status mapping completo. Antes solo checkeaba 'active' →
+      // mapeaba todo lo demás a 'past_due', incluso 'trialing'. Esto causaba
+      // race con invoice.payment_succeeded que podía dejar tenant past_due
+      // tras pago exitoso. Ahora mapeamos cada status Stripe explícitamente.
+      const stripeToInternal = (s?: string): string => {
+        switch (s) {
+          case 'active':
+          case 'trialing':
+            return 'active';
+          case 'past_due':
+          case 'unpaid':
+            return 'past_due';
+          case 'canceled':
+          case 'incomplete_expired':
+            return 'cancelled';
+          case 'paused':
+            return 'paused';
+          case 'incomplete':
+            return 'incomplete';
+          default:
+            return 'past_due';
+        }
+      };
       const patch: Record<string, unknown> = {
-        status: sub.status === 'active' ? 'active' : 'past_due',
+        status: stripeToInternal(sub.status),
       };
       if (isPremium) {
         patch.plan = 'premium';

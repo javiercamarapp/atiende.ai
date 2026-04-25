@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { startCalendarWatch, stopCalendarWatch } from '@/lib/calendar/google';
 import { logger } from '@/lib/logger';
+import { requireCronAuth } from '@/lib/agents/internal/cron-helpers';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -15,10 +16,10 @@ export const maxDuration = 60;
  * Called hourly by Vercel cron (see vercel.json).
  */
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get('authorization');
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  // Audit fix: timing-safe comparison via shared helper. El `!==` original
+  // permitía character-by-character timing attacks sobre CRON_SECRET.
+  const unauthorized = requireCronAuth(req);
+  if (unauthorized) return unauthorized;
 
   const horizon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 

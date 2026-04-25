@@ -27,12 +27,15 @@ let _portalKey: Buffer | null | undefined;
 
 function getPortalKey(): Buffer {
   if (_portalKey !== undefined && _portalKey !== null) return _portalKey;
-  const base =
-    process.env.ENCRYPTION_KEY_V1 ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    '';
-  if (!base) {
-    throw new Error('[portal-token] ENCRYPTION_KEY_V1 requerida para firmar tokens');
+  // Audit fix: SOLO ENCRYPTION_KEY_V1. Antes había fallback a
+  // SUPABASE_SERVICE_ROLE_KEY (peligroso si rotás la service-role key porque
+  // invalida tokens existentes) y a string vacío (HMAC predecible).
+  const base = process.env.ENCRYPTION_KEY_V1;
+  if (!base || base.length < 32) {
+    throw new Error(
+      '[portal-token] ENCRYPTION_KEY_V1 requerida (≥32 chars) para firmar tokens del portal. ' +
+      'Sin esta var el portal no funciona — configurá en Vercel env.',
+    );
   }
   _portalKey = Buffer.from(
     crypto.hkdfSync('sha256', Buffer.from(base), 'atiende-portal', 'token-v1', 32),
