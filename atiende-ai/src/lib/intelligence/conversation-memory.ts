@@ -31,11 +31,16 @@ export async function getConversationContext(
   conversationId: string,
   maxMessages = 5
 ): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
+  // BUG FIX CRÍTICO: antes era `.order(asc).limit(5)` que traía los 5
+  // PRIMEROS mensajes — el bot quedaba mirando solo el saludo inicial y
+  // ignoraba los últimos turnos. Ahora ordenamos DESC para tomar los N
+  // más recientes, y reverse() al final para que el LLM los reciba en
+  // orden cronológico.
   const { data: messages } = await supabaseAdmin
     .from('messages')
-    .select('direction, content')
+    .select('direction, content, created_at')
     .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(maxMessages);
 
   if (!messages?.length) return [];
@@ -47,7 +52,8 @@ export async function getConversationContext(
     .map((m: { direction: string; content: string | null }) => ({
       role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
       content: decryptPII(m.content)!,
-    }));
+    }))
+    .reverse(); // chronological order para el LLM
 }
 
 /**
