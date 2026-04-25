@@ -290,38 +290,13 @@ export async function markAsRead(
   }
 }
 
-// Enviar indicador de escritura (best-effort)
-// Antes silenciaba TODOS los errores — si WA_SYSTEM_TOKEN estaba corrupto,
-// nunca nos enterábamos hasta que sendTextMessage fallara. Ahora sí
-// loggeamos auth failures (401 / code 133000) aunque mantenemos el
-// fire-and-forget para no romper el pipeline.
-export async function sendTypingIndicator(phoneNumberId: string, to: string): Promise<SendResult> {
-  to = toMetaRecipient(to);
-  try {
-    await axios.post(
-      `${WA_API}/${phoneNumberId}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to,
-        type: 'reaction',
-        reaction: { message_id: '', emoji: '' },
-      },
-      { headers: getHeaders(), timeout: 5_000 },
-    );
-    return { ok: true };
-  } catch (err) {
-    if (err instanceof AxiosError) {
-      const status = err.response?.status;
-      const code = err.response?.data?.error?.code as number | undefined;
-      // Solo loggeamos si es auth failure o rate-limit — los demás errores
-      // (recipient inválido, emoji mal formado) son ruido para typing.
-      if (status === 401 || code === 133000) {
-        console.error('[whatsapp:sendTypingIndicator] AUTH FAILURE — verificar WA_SYSTEM_TOKEN');
-      } else if (code === 131056) {
-        console.warn('[whatsapp:sendTypingIndicator] rate-limited by Meta');
-      }
-    }
-    return { ok: false };
-  }
+// No-op. La implementación previa POSTeaba una "reaction" con
+// `message_id: ''` y `emoji: ''` lo cual WhatsApp rechaza con 400 — nunca
+// funcionó como typing indicator real. El typing indicator de WA Cloud API
+// requiere PATCH del inbound message_id con `typing_indicator.type=text`,
+// que no estaba wireado. Hasta implementar el camino correcto, dejamos
+// este stub no-op para que los call-sites en processor.ts y orchestrator-
+// branch.ts no necesiten cambiar y los Vercel logs no se ensucien con 400.
+export async function sendTypingIndicator(_phoneNumberId: string, _to: string): Promise<SendResult> {
+  return { ok: true };
 }

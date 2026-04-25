@@ -556,6 +556,12 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
       responseText =
         'Disculpa, hubo un problema procesando tu mensaje. ¿Puedes volver a escribirme en un momento?';
     }
+    // Si el tenant tiene teléfono configurado, lo agregamos como handoff a
+    // humano. Cubre el caso "todo falla" sin dejar al paciente sin opción.
+    const fallbackPhone = (tenant.phone as string) || (tenant.owner_phone as string) || '';
+    if (fallbackPhone) {
+      responseText += `\n\nSi necesitas atención inmediata, puedes llamarnos al ${fallbackPhone}.`;
+    }
   }
 
   const responseTimeMs = Date.now() - startMs;

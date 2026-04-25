@@ -8,6 +8,12 @@ function getOpenAI(): OpenAI {
   return _openai;
 }
 
+// Memoiza si search_knowledge_hybrid existe en la DB del proyecto. Si la
+// primera llamada devuelve 404 (función no aplicada), saltamos directo al
+// legacy en todas las requests posteriores. Antes ensuciábamos Vercel logs
+// con un 404 por cada mensaje inbound.
+let _hybridAvailable: boolean | null = null;
+
 // Buscar conocimiento relevante del negocio (RAG)
 // Esto es lo que PREVIENE alucinaciones
 export async function searchKnowledge(
@@ -30,18 +36,31 @@ export async function searchKnowledge(
   let data: ChunkRow[] | null = null;
   let error: { message: string } | null = null;
 
-  const hybrid = await supabaseAdmin.rpc('search_knowledge_hybrid', {
-    p_tenant: tenantId,
-    p_query: queryEmbedding,
-    p_query_text: query,
-    p_threshold: 0.30,
-    p_limit: 5,
-  });
+  if (_hybridAvailable !== false) {
+    const hybrid = await supabaseAdmin.rpc('search_knowledge_hybrid', {
+      p_tenant: tenantId,
+      p_query: queryEmbedding,
+      p_query_text: query,
+      p_threshold: 0.30,
+      p_limit: 5,
+    });
 
-  const hybridData = hybrid.data as ChunkRow[] | null;
-  if (!hybrid.error && hybridData && hybridData.length > 0) {
-    data = hybridData;
-  } else {
+    // Si la función no existe en DB (404 / PGRST202), marcamos para no
+    // volver a llamarla en este proceso. Otros errores (timeout, etc) no
+    // pivotean el cache — pueden ser transitorios.
+    if (hybrid.error?.code === 'PGRST202' || hybrid.error?.code === '42883') {
+      _hybridAvailable = false;
+    } else {
+      _hybridAvailable = true;
+    }
+
+    const hybridData = hybrid.data as ChunkRow[] | null;
+    if (!hybrid.error && hybridData && hybridData.length > 0) {
+      data = hybridData;
+    }
+  }
+
+  if (!data) {
     // Fallback: vector-only legacy
     const legacy = await supabaseAdmin.rpc('search_knowledge', {
       p_tenant: tenantId,
