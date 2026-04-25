@@ -117,7 +117,10 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
   },
   intake: {
     name: 'intake',
-    model: MODELS.ORCHESTRATOR_FALLBACK,
+    // Bug fix: gpt-4.1-mini (FALLBACK) fallaba en hacer tool calls con
+    // este prompt. Subimos a ORCHESTRATOR (Grok 4 Fast) que maneja mejor
+    // función-calling con muchos tools y prompts largos.
+    model: MODELS.ORCHESTRATOR,
     description: 'Recopila historia médica básica del paciente nuevo',
     tools: [
       'send_intake_form',
