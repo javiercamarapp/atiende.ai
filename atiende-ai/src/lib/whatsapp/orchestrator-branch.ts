@@ -567,6 +567,15 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
 
   await sendTextMessage(phoneNumberId, senderPhone, responseText);
 
+  // BUG DIAG: incluyo info de tools en el intent para que se pueda ver vía
+  // SQL sin tener que escarbar Vercel logs. Format:
+  //   "orchestrator.intake[T:9,C:0]" → 9 tools available, 0 called.
+  //   "orchestrator.agenda[T:18,C:1:check_availability]" → 1 call made.
+  const toolsAvailableCount = tools.length;
+  const toolCallsMade = toolCallsExecuted.length;
+  const toolNamesCalled = toolCallsExecuted.map((c) => c.toolName).join(',');
+  const diagIntent = `orchestrator.${agentName}[T:${toolsAvailableCount},C:${toolCallsMade}${toolNamesCalled ? ':' + toolNamesCalled : ''}]`;
+
   await supabaseAdmin.from('messages').insert({
     conversation_id: conversationId,
     tenant_id: tenant.id,
@@ -574,7 +583,7 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     sender_type: 'bot',
     content: encryptPII(responseText),
     message_type: 'text',
-    intent: `orchestrator.${agentName}`,
+    intent: diagIntent,
     model_used: modelUsed,
     tokens_in: tokensIn,
     tokens_out: tokensOut,
