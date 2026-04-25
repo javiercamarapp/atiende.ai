@@ -19,25 +19,10 @@
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
-import { trackError } from '@/lib/monitoring';
+import { assertContactInTenant } from '@/lib/agents/shared/tenant-guards';
 
-// Helper inline — profile-tools exporta internamente pero no re-exporta.
-// Duplicamos acá (barato, 10 líneas) para evitar cyclic import entre los
-// dos shared files.
-async function assertContact(tenantId: string, contactId: string): Promise<boolean> {
-  if (!tenantId || !contactId) return false;
-  const { data } = await supabaseAdmin
-    .from('contacts')
-    .select('id')
-    .eq('id', contactId)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
-  if (!data) {
-    trackError('conversion_tool_cross_tenant_blocked');
-    return false;
-  }
-  return true;
-}
+const assertContact = (tenantId: string, contactId: string) =>
+  assertContactInTenant(tenantId, contactId, 'conversion');
 
 // ─── Tool 1: get_service_quote ──────────────────────────────────────────────
 // Lee el catálogo de servicios y devuelve detalles (precio + duración + desc)
