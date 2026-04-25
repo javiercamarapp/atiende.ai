@@ -87,7 +87,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       results.length,
       failed,
       results.find((r) => r.error)?.error,
-    ).catch(() => {});
+    ).catch((err) => console.warn("[cron] alertOnCronFailure failed:", err instanceof Error ? err.message : err));
   }
 
   await logCronRun({

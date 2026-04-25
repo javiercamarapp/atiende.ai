@@ -96,7 +96,9 @@ export async function POST(req: NextRequest) {
               `Paciente: ${meta.patient_name || 'sin nombre'} (${meta.patient_phone || ''})\n` +
               `Cita: ${appointmentId}\n` +
               `Monto: $${(((s.amount_total as number) || 0) / 100).toLocaleString('es-MX')} MXN`,
-          }).catch(() => {}),
+          }).catch((err) => {
+            logger.warn('[stripe-webhook] notifyOwner failed', { err: err instanceof Error ? err.message : err, appointmentId });
+          }),
         );
 
         logger.info('[stripe-webhook] appointment payment completed', { appointmentId, tenantId });
