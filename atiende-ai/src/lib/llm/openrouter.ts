@@ -74,16 +74,13 @@ export const MODELS = {
   ONBOARDING_AGENT_FALLBACK: 'meta-llama/llama-3.3-70b-instruct',
 
   // ─── ORQUESTADOR DE TOOL CALLING (Fase 1) ───
-  // Grok 4.1 Fast — modelo primario para el nuevo pipeline agentico que
-  // expone `tools` al LLM y ejecuta el loop hasta una respuesta final.
-  // Elegido por baja latencia + soporte robusto de tool calling vía
-  // OpenRouter. Vivirá detrás del feature flag USE_TOOL_CALLING durante
-  // la migración; cuando el flag está OFF estos modelos no se invocan.
+  // Grok 4.1 Fast — primario por costo + latencia. Para que funcione bien
+  // con tool calling necesitamos: prompts cortos, historial recortado
+  // (HISTORY_MAX_MESSAGES=12), y tool_choice='auto'. Si Grok falla,
+  // GPT-4.1-mini cubre como fallback.
   ORCHESTRATOR: 'x-ai/grok-4.1-fast',
 
   // ─── FALLBACK DEL ORQUESTADOR ───
-  // GPT-4.1 mini — cobertura cuando Grok devuelve error o supera el
-  // presupuesto de tiempo (3s en la implementación actual del orchestrator).
   ORCHESTRATOR_FALLBACK: 'openai/gpt-4.1-mini',
 
   // ─── BATCH NOCTURNO (analytics, digests, intelligence) ───

@@ -11,14 +11,14 @@ export const MAX_USER_INPUT_CHARS = 4096;
 export const MAX_USER_INPUT_CHARS_GUARDED = 2000; // input-guardrail (más agresivo)
 
 // ─── History para LLM ──────────────────────────────────────────────────────
-export const HISTORY_MAX_MESSAGES = 40;
-export const HISTORY_MAX_CHARS = 40_000;
-// Truncado por TOKENS estimados (ratio conservador 3 chars/token para
-// español/mixed-content) en lugar de por chars puros. Evita el edge case
-// donde un mensaje con emojis/acentos inflate tokens y desborde context.
-// 40_000 chars / 3 = ~13,333 tokens safety budget.
+// Bug fix: bajamos de 40 a 12 mensajes. Con 40+ mensajes Grok-4.1-fast
+// se confundía y dejaba de llamar tools. 12 mensajes = ~6 turnos
+// recientes (3 user + 3 bot) — suficiente contexto sin saturar al modelo.
+// Si necesitamos más contexto, lo metemos como resumen en el system prompt.
+export const HISTORY_MAX_MESSAGES = 12;
+export const HISTORY_MAX_CHARS = 12_000;
 export const HISTORY_MAX_TOKENS = Math.floor(HISTORY_MAX_CHARS / 3);
-export const HISTORY_KEEP_RECENT = 5;
+export const HISTORY_KEEP_RECENT = 6;
 
 // ─── LLM orchestrator ──────────────────────────────────────────────────────
 export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 10_000;
