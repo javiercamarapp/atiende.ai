@@ -165,6 +165,25 @@ registerTool('update_insurance_claim_status', {
       .eq('tenant_id', ctx.tenantId);
 
     if (error) return { updated: false, error: error.message };
+
+    // Audit fix: log clinical/financial state change para compliance.
+    try {
+      const { logAudit } = await import('@/lib/audit');
+      await logAudit({
+        tenantId: ctx.tenantId,
+        action: `insurance_claim_${args.status}`,
+        entityType: 'insurance_claim',
+        entityId: args.claim_id,
+        details: {
+          new_status: args.status,
+          amount_paid_mxn: args.amount_paid_mxn,
+          deductible_mxn: args.deductible_mxn,
+          claim_number: args.claim_number,
+          denial_reason: args.denial_reason,
+        },
+      });
+    } catch { /* audit is best-effort */ }
+
     return { updated: true, new_status: args.status };
   },
 });

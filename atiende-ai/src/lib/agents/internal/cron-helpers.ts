@@ -171,6 +171,12 @@ export async function runAgentWorker(opts: {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[cron/${agentName}] tenant ${tenantId} (${tenantName}) failed:`, msg);
+    // Audit fix: counter para alerting cuando un agente cron falla
+    // repetidamente. Antes solo se logueaba a stdout.
+    try {
+      const { trackError } = await import('@/lib/monitoring');
+      trackError(`agent_execution_failed:${agentName}`);
+    } catch { /* monitoring is best-effort */ }
     return {
       tenant_id: tenantId,
       tenant_name: tenantName,

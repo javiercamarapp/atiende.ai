@@ -78,10 +78,34 @@ registerTool('record_triage_assessment', {
 
     if (error || !data) return { recorded: false, error: error?.message };
 
-    // Audit fix: si urgency_level ≤ 2 (ER o urgente <24h) y el agente NO
-    // marcó escalated_to_doctor, devolvemos warning para que el LLM
-    // re-intente con escalate_urgency. Defense in depth contra prompts
-    // que se olvidan del paso de escalación.
+    // Audit fix: log triage assessment para compliance NOM-024 / NOM-004.
+    // Toda decisión clínica (incluyendo "no urgente, agendar normal") debe
+    // tener trail. trackError counter dispara alertas si urgency_level=1
+    // (ER) supera threshold/hora — investigá outbreak local.
+    try {
+      const { logAudit } = await import('@/lib/audit');
+      await logAudit({
+        tenantId: ctx.tenantId,
+        action: `triage_level_${args.urgency_level}`,
+        entityType: 'triage_assessment',
+        entityId: data.id,
+        details: {
+          chief_complaint: args.chief_complaint,
+          pain_scale: args.pain_scale,
+          escalated_to_doctor: args.escalated_to_doctor,
+          redirected_to_er: args.redirected_to_er,
+        },
+      });
+      if (args.urgency_level === 1) {
+        const { trackError } = await import('@/lib/monitoring');
+        trackError('triage_er_level_1');
+      }
+    } catch { /* audit is best-effort */ }
+
+    // Si urgency_level ≤ 2 (ER o urgente <24h) y el agente NO marcó
+    // escalated_to_doctor, devolvemos warning para que el LLM re-intente
+    // con escalate_urgency. Defense in depth contra prompts que se olvidan
+    // del paso de escalación.
     const must_escalate = args.urgency_level <= 2 && !args.escalated_to_doctor && !args.redirected_to_er;
     return {
       recorded: true,

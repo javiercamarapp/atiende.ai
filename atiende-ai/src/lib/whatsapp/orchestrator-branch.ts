@@ -20,7 +20,7 @@ import {
 } from '@/lib/agents';
 import { AGENT_REGISTRY } from '@/lib/agents/registry';
 import { appendMedicalDisclaimer } from '@/lib/guardrails/validate';
-import { getConversationState, type ConversationState } from '@/lib/actions/state-machine';
+import { getConversationState, clearConversationState, type ConversationState } from '@/lib/actions/state-machine';
 import { encryptPII } from '@/lib/utils/crypto';
 import { redactHistoryForLLM } from '@/lib/utils/logger';
 import { HISTORY_MAX_MESSAGES, HISTORY_MAX_TOKENS } from '@/lib/config';
@@ -150,7 +150,9 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     intent,
   } = args;
 
-  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch(() => {}));
+  waitUntil(sendTypingIndicator(phoneNumberId, senderPhone).catch((err) => {
+    console.warn('[orchestrator] typing indicator failed:', err instanceof Error ? err.message : err);
+  }));
 
   // Pasamos el nombre conocido del contacto (profile.name de WhatsApp o el
   // que el cliente se presentó en mensajes previos) al contexto para que el
@@ -401,9 +403,16 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
       return 'pharmacovigilance';
     }
 
-    // Payment resolution — disputas + facturas fiscales.
+    // Payment resolution — disputas + facturas fiscales. Audit fix:
+    // 'cuanto he pagado' / 'historial de pago' eran muy laxas y rutaban
+    // a payment-resolution preguntas inocentes ("cuanto he pagado por mis
+    // citas" → debería ser agenda). Ahora requerimos OR un keyword fuerte
+    // (disputa/factura/RFC) O combinación de "cuanto/historial" + indicador
+    // fiscal.
     if (
-      /\b(disputa|reembolso|me cobraron|cobro indebido|doble cobro|no reconozco|por que me cobran|facturar|factura|recibo cfdi|rfc|historial de pago|cuanto he pagado)\b/i.test(msgNorm)
+      /\b(disputa|reembolso|cobro indebido|doble cobro|no reconozco|por que me cobran|facturar|factura|recibo cfdi|rfc)\b/i.test(msgNorm)
+      || (/\b(historial de pago|cuanto he pagado)\b/i.test(msgNorm)
+          && /\b(impuestos|deducir|deducible|sat|fiscal|contador)\b/i.test(msgNorm))
     ) {
       return 'payment-resolution';
     }
@@ -449,15 +458,26 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   }
 
   let agentName: AgentName = 'agenda';
-  if (convState.state === 'awaiting_survey_response') {
+  // Audit fix: detectTopicAgent() corre PRIMERO porque urgency/triaje deben
+  // ganar incluso si el paciente está en awaiting_X. Antes el state trap
+  // mantenía intake activo si el paciente decía "me duele el pecho" en
+  // medio del flow → emergencia perdida.
+  const topicAgent = detectTopicAgent();
+  const isUrgent = topicAgent === 'triaje' || topicAgent === 'pharmacovigilance';
+
+  if (isUrgent && convState.state) {
+    // Limpio el state — el flow previo (intake/survey/confirm) queda abortado.
+    // El paciente está reportando algo grave; lo otro espera.
+    await clearConversationState(conversationId);
+    agentName = topicAgent;
+  } else if (convState.state === 'awaiting_survey_response') {
     agentName = 'encuesta';
   } else if (convState.state === 'awaiting_appointment_confirmation') {
     agentName = 'no-show';
   } else if (needsIntake) {
     agentName = 'intake';
-  } else {
-    const topicAgent = detectTopicAgent();
-    if (topicAgent) agentName = topicAgent;
+  } else if (topicAgent) {
+    agentName = topicAgent;
   }
 
   const agentConfig = AGENT_REGISTRY[agentName];

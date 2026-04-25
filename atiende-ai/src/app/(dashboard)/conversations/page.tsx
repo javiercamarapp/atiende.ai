@@ -27,11 +27,17 @@ export default async function ConversationsPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: tenant } = await supabase.from('tenants').select('id').eq('user_id', user!.id).single();
 
+  // Audit fix: limitamos los mensajes nested a los 5 más recientes
+  // (suficiente para mostrar last message + unread count). Antes traíamos
+  // TODOS los mensajes de cada conversación → 50 conv × 100 msg avg = 5000
+  // rows + bandwidth waste. Ahora 50 × 5 = 250 rows.
   let query = supabase
     .from('conversations')
     .select('id, customer_name, customer_phone, channel, status, last_message_at, messages(content, direction, sender_type, created_at)')
     .eq('tenant_id', tenant!.id)
     .order('last_message_at', { ascending: false })
+    .order('created_at', { foreignTable: 'messages', ascending: false })
+    .limit(5, { foreignTable: 'messages' })
     .limit(50);
 
   if (search) {
