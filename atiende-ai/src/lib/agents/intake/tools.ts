@@ -120,6 +120,30 @@ registerTool('save_intake_data', {
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = SaveIntakeArgs.parse(rawArgs);
 
+    // Bug fix: el LLM a veces llamaba save_intake_data SOLO con patient_phone
+    // (sin name, age, gender, etc) — eso terminaba haciendo PATCH con
+    // intake_data={} y dejando todo vacío. Ahora rechazamos esa llamada y
+    // devolvemos error claro al LLM para que reintente con los datos.
+    const hasAnyData = Boolean(
+      args.patient_name ||
+      args.age != null ||
+      args.gender ||
+      args.birth_date ||
+      args.allergies ||
+      args.chronic_conditions ||
+      args.current_medications ||
+      args.emergency_contact_name ||
+      args.emergency_contact_phone,
+    );
+    if (!hasAnyData) {
+      return {
+        saved: false,
+        error: 'no_data_provided',
+        next_step:
+          'No incluiste ningún dato del paciente. Llamá save_intake_data SOLO cuando el paciente te haya dado un dato real (nombre, edad, género, alergia, etc) y pasalo en el campo correspondiente — no llames el tool con solo patient_phone.',
+      };
+    }
+
     // Traemos el intake_data existente para hacer merge (no queremos perder
     // alergias guardadas en turno N al volver a llamar la tool en turno N+1
     // solo con el medicamento).
