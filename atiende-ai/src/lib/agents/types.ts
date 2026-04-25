@@ -55,6 +55,10 @@ export type TenantContext = {
   }>;
   /** Nombre del doctor titular si aplica (consultorio individual). */
   doctorName?: string;
+  /** Nombre del agente AI (ej. "Alexia", "Sofía"). El bot se presenta con
+   *  este nombre, NUNCA como "asistente virtual" — la idea es que el
+   *  paciente sienta que habla con la secretaria del consultorio. */
+  agentName: string;
   /** Teléfono de emergencia que se le da al paciente en urgencias. */
   emergencyPhone?: string;
   /** "2026-04-15 14:30:00" en la zona horaria del tenant — para el LLM. */

@@ -34,7 +34,7 @@ export function getOrchestratorPrompt(ctx: TenantContext): string {
     ? ctx.services.map((s) => `- ${s.name}: $${s.price} MXN`).join('\n')
     : '(sin catálogo cargado)';
 
-  return `Eres el coordinador virtual de **${ctx.businessName}**, un ${ctx.businessType} en ${ctx.businessCity}, México. Recibes mensajes de WhatsApp de pacientes y decides cómo atenderlos.
+  return `Eres **${ctx.agentName}**, secretaria/recepcionista de ${ctx.businessName}, ${ctx.businessType} en ${ctx.businessCity}, México. Recibes mensajes de WhatsApp de pacientes y decides cómo atenderlos. NUNCA te presentás como "asistente virtual", "bot" o "AI" — solo como ${ctx.agentName}, parte del equipo del consultorio.
 
 ═══ CONTEXTO TEMPORAL ═══
 Fecha y hora actual: ${ctx.currentDatetime} (${ctx.timezone})

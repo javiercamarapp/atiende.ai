@@ -74,7 +74,10 @@ describe('executeTool — defense-in-depth cache', () => {
     expect(handler).toHaveBeenCalledTimes(1); // sigue 1, no 2
   });
 
-  it('NO cachea tools read-only — se re-ejecutan normalmente', async () => {
+  it('SÍ cachea tools read-only dentro del mismo turno — segunda llamada vuelve del cache (audit phase 1)', async () => {
+    // Audit fix: read-only tools también se cachean ahora para evitar
+    // roundtrips redundantes (ej. agente llama check_availability 2 veces
+    // durante un flujo de booking — antes pegaba a Supabase 2 veces).
     const handler = vi.fn(async () => ({ slots: ['10:00', '11:00'] }));
     registerTool('check_availability', {
       isMutation: false, // read-only
@@ -91,8 +94,9 @@ describe('executeTool — defense-in-depth cache', () => {
     await executeTool('check_availability', { date: '2026-04-15' }, ctx);
     await executeTool('check_availability', { date: '2026-04-15' }, ctx);
 
-    expect(handler).toHaveBeenCalledTimes(2);
-    expect(cache.size).toBe(0);
+    // El handler corre solo una vez; la segunda llamada hit el cache.
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(cache.size).toBe(1);
   });
 
   it('NO cachea mutation que devolvió success:false (ej. SLOT_TAKEN)', async () => {
