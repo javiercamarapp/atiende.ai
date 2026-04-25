@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Search, Plus } from 'lucide-react';
+import { redirect } from 'next/navigation';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { decryptPII } from '@/lib/utils/crypto';
 import { displayPatientName, patientInitials } from '@/lib/utils/patient-display';
@@ -25,7 +26,9 @@ export default async function ConversationsPage({
 
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
-  const { data: tenant } = await supabase.from('tenants').select('id').eq('user_id', user!.id).single();
+  if (!user) redirect('/login');
+  const { data: tenant } = await supabase.from('tenants').select('id').eq('user_id', user.id).single();
+  if (!tenant) redirect('/onboarding');
 
   // Audit fix: limitamos los mensajes nested a los 5 más recientes
   // (suficiente para mostrar last message + unread count). Antes traíamos
@@ -34,7 +37,7 @@ export default async function ConversationsPage({
   let query = supabase
     .from('conversations')
     .select('id, customer_name, customer_phone, channel, status, last_message_at, messages(content, direction, sender_type, created_at)')
-    .eq('tenant_id', tenant!.id)
+    .eq('tenant_id', tenant.id)
     .order('last_message_at', { ascending: false })
     .order('created_at', { foreignTable: 'messages', ascending: false })
     .limit(5, { foreignTable: 'messages' })

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
@@ -8,10 +9,12 @@ import {
 export default async function SettingsHubPage() {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
   const { data: tenant } = await supabase
     .from('tenants')
     .select('id, name, email, phone, business_type, plan, wa_display_phone, has_chat_agent, has_voice_agent')
-    .eq('user_id', user!.id).single();
+    .eq('user_id', user.id).single();
+  if (!tenant) redirect('/onboarding');
 
   const sections = [
     {

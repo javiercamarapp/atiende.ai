@@ -16,13 +16,32 @@ const REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL}/api/calendar/connect`;
 // key. This removes the dependency on cookies surviving the cross-site round
 // trip through Google (which Safari / Brave / Firefox-Strict love to strip).
 
+/**
+ * Strong key para firmar state OAuth. Antes había un fallback débil
+ * a `'atiende-oauth-state-fallback'` (string público) que volvía
+ * el HMAC trivial de falsificar si las env vars desaparecían.
+ *
+ * Ahora: requerimos hex32 de MESSAGES_ENCRYPTION_KEY/PII_ENCRYPTION_KEY,
+ * o un CRON_SECRET de >=32 chars. Si nada cumple, lanza en runtime —
+ * el handler responde 500 antes de iniciar el flujo OAuth (mejor
+ * fallar visible que aceptar state forjable).
+ */
 function stateSecret(): Buffer {
   const hex = process.env.MESSAGES_ENCRYPTION_KEY || process.env.PII_ENCRYPTION_KEY;
-  if (hex) {
-    try { return Buffer.from(hex, 'hex'); } catch { /* fallthrough */ }
+  if (hex && hex.length === 64) {
+    try {
+      const buf = Buffer.from(hex, 'hex');
+      if (buf.length === 32) return buf;
+    } catch { /* fallthrough */ }
   }
-  // Last-resort: derive from NEXTAUTH_SECRET / JWT or just a stable env.
-  return Buffer.from(process.env.CRON_SECRET || 'atiende-oauth-state-fallback');
+  const cron = process.env.CRON_SECRET;
+  if (cron && cron.length >= 32) {
+    return Buffer.from(cron);
+  }
+  throw new Error(
+    'OAuth state requires MESSAGES_ENCRYPTION_KEY (hex32) or CRON_SECRET (>=32 chars). ' +
+      'Configure env vars before enabling Google Calendar integration.',
+  );
 }
 
 interface StatePayload {
@@ -147,7 +166,7 @@ export async function GET(req: NextRequest) {
       return errRedirect('no_tenant');
     }
 
-    let refreshToken: string | null = tokens.refresh_token || null;
+    const refreshToken: string | null = tokens.refresh_token || null;
 
     if (!refreshToken) {
       const { data: staffWithToken } = await supabaseAdmin

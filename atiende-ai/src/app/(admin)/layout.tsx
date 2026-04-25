@@ -8,6 +8,9 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { audit } from '@/lib/audit-trail';
+import { checkApiRateLimit } from '@/lib/api-rate-limit';
+import { logger } from '@/lib/logger';
 
 interface NavItem {
   href: string;
@@ -29,6 +32,15 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  // Rate-limit por user.id sobre acceso a /admin/*. Si alguien con cuenta
+  // legítima intenta probar rutas admin sin tener role, no podrá iterar
+  // a alta velocidad. Ventana 60s, 60 hits — suficiente para uso real, corta
+  // para barrido automatizado.
+  if (await checkApiRateLimit(`admin_access:${user.id}`, 60, 60)) {
+    logger.warn('[admin-layout] rate-limit on admin access', { user_id: user.id });
+    redirect('/home');
+  }
+
   // FIX 11: RBAC dinámico vía tabla admin_users — sin allowlists hardcodeadas.
   // Doble gate: app_metadata.role === 'admin' O fila en admin_users.
   const role = (user.app_metadata as { role?: string } | undefined)?.role;
@@ -41,7 +53,16 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       .maybeSingle();
     allowed = !!adminRow;
   }
-  if (!allowed) redirect('/home');
+  if (!allowed) {
+    // Audit del intento denegado: detecta enumeración / privilege escalation.
+    void audit({
+      actor: user.id,
+      tenantId: null,
+      action: 'admin_access_denied',
+      details: { email: user.email },
+    });
+    redirect('/home');
+  }
 
   return (
     <div className="dashboard-shell min-h-screen">

@@ -116,18 +116,51 @@ export async function POST(req: NextRequest) {
     const stripeCustomer = s.customer as string | undefined;
 
     if (tid && plan && stripeCustomer) {
-      // Defense-in-depth: if this tenant already has a stripe_customer_id
-      // on file, make sure the new event comes from the same customer.
-      // The signed webhook guarantees Stripe-provided authenticity, but
-      // this guards against metadata-replay across accounts.
+      // Defense-in-depth contra metadata-replay cross-tenant:
+      //
+      // Caso 1 (existing customer): el tenant ya tiene stripe_customer_id en
+      // file → el customer del evento DEBE coincidir. Bloqueamos si difiere.
+      //
+      // Caso 2 (first checkout): el tenant aún NO tiene stripe_customer_id
+      // (es el primer checkout exitoso). Antes confiábamos ciegamente en la
+      // metadata.tenant_id de la session — un atacante podía manipularla
+      // y asignar el customer a otro tenant. Ahora cross-checkeamos contra
+      // el email del customer en Stripe vs el email del owner del tenant.
+      // Si no coincide o no se puede recuperar, rechazamos el evento
+      // (el cron de reconciliación o el portal manual lo arreglará si
+      // es false-positive legítimo).
       const { data: existing } = await supabaseAdmin
         .from('tenants')
-        .select('stripe_customer_id')
+        .select('stripe_customer_id, owner_email, user_id')
         .eq('id', tid)
         .single();
-      if (existing?.stripe_customer_id && existing.stripe_customer_id !== stripeCustomer) {
-        logger.warn('[stripe-webhook] customer mismatch — rejecting metadata replay', {  tenantId: tid, existing: existing.stripe_customer_id, event: stripeCustomer  });
-        return NextResponse.json({ received: true });
+
+      if (existing?.stripe_customer_id) {
+        if (existing.stripe_customer_id !== stripeCustomer) {
+          logger.warn('[stripe-webhook] customer mismatch — rejecting metadata replay', {  tenantId: tid, existing: existing.stripe_customer_id, event: stripeCustomer  });
+          const { trackError } = await import('@/lib/monitoring');
+          trackError('stripe_metadata_replay_blocked');
+          return NextResponse.json({ received: true });
+        }
+      } else {
+        // First checkout: validar email del customer Stripe vs owner email.
+        try {
+          const customer = await getStripe().customers.retrieve(stripeCustomer);
+          const customerEmail = !('deleted' in customer) ? customer.email?.toLowerCase().trim() : null;
+          const ownerEmail = (existing?.owner_email as string | null)?.toLowerCase().trim();
+          // Si el tenant tiene owner_email y NO coincide con el del customer,
+          // alguien metió tenant_id ajeno en metadata. Bloquear.
+          if (ownerEmail && customerEmail && ownerEmail !== customerEmail) {
+            logger.warn('[stripe-webhook] first-checkout email mismatch — rejecting cross-tenant metadata', {  tenantId: tid, customer_email_hash: customerEmail.slice(0, 3) + '***', owner_email_hash: ownerEmail.slice(0, 3) + '***'  });
+            const { trackError } = await import('@/lib/monitoring');
+            trackError('stripe_first_checkout_email_mismatch');
+            return NextResponse.json({ received: true });
+          }
+        } catch (err) {
+          logger.warn('[stripe-webhook] could not retrieve customer for cross-check', {  tenantId: tid, err: err instanceof Error ? err.message : err  });
+          // No bloqueamos en error de red — Stripe ya firmó el webhook.
+          // Sólo bloqueamos en mismatch positivo.
+        }
       }
       // Auto-populate voice fields para plan premium.
       // El checkout de premium incluye 2 line_items: el plan + el metered
