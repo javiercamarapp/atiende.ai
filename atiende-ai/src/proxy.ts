@@ -1,8 +1,26 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// CSP nonce: 16 bytes random base64. Se genera por request, se inyecta en
+// `script-src 'nonce-...' 'strict-dynamic'` y se expone al árbol de RSC vía
+// header `x-csp-nonce`. El root layout lo lee con `headers()` y lo pasa a
+// los `<Script nonce={nonce} />` que lo necesiten.
+function generateCspNonce(): string {
+  // Web Crypto en Edge Runtime (no requiere `crypto` import de Node).
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  // Base64 sin padding — válido en CSP.
+  let bin = '';
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/=+$/, '');
+}
+
 export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  const cspNonce = generateCspNonce();
+  // Inyectamos el nonce como request header para que el root layout lo lea.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-csp-nonce', cspNonce);
+  let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,20 +87,34 @@ export async function proxy(request: NextRequest) {
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-  // CSP endurecida. `img-src` ya no permite `http:` ni wildcard `https:`;
-  // solo allowlist específica (Supabase storage + CDNs de WhatsApp para
-  // previews). `media-src` mismo tratamiento. `connect-src` mantiene
-  // comodín `*.sentry.io` porque Sentry usa N ingest URLs según DSN.
+  // Exponer el nonce para que el root layout lo inyecte en `<Script>`.
+  supabaseResponse.headers.set('x-csp-nonce', cspNonce);
+
+  // CSP endurecida. `script-src` migrado a nonce-based + 'strict-dynamic':
+  //   - 'nonce-...' valida los `<Script nonce={...}>` emitidos por el root layout.
+  //   - 'strict-dynamic' permite que esos scripts carguen otros sub-scripts
+  //     sin re-listarlos aquí (Next.js inyecta su runtime así).
+  //   - 'unsafe-inline' se mantiene como fallback PARA NAVEGADORES VIEJOS
+  //     que no entienden 'strict-dynamic' — los nuevos lo ignoran cuando
+  //     hay nonce + strict-dynamic, así que no relaja la política real.
+  // En dev (NODE_ENV === 'development') agregamos 'unsafe-eval' para que
+  // turbopack/webpack HMR no se rompan. En tests (NODE_ENV='test') y prod
+  // queda fuera. Antes el gate era `!== 'production'` lo cual incluía test.
+  const isDev = process.env.NODE_ENV === 'development';
+  const scriptSrc = [
+    "'self'",
+    `'nonce-${cspNonce}'`,
+    "'strict-dynamic'",
+    "'unsafe-inline'",
+    ...(isDev ? ["'unsafe-eval'"] : []),
+    'https://js.stripe.com',
+  ].join(' ');
+
   supabaseResponse.headers.set(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      // 'unsafe-eval' removido — Next.js prod no lo requiere
-      // (solo dev con turbopack/webpack HMR). 'unsafe-inline' se mantiene por
-      // ahora porque los inline scripts de Next generan hashes inestables; ir
-      // a nonce-based requiere propagar el nonce por el árbol de RSC, fuera
-      // de alcance de este fix. Documentado en README roadmap.
-      "script-src 'self' 'unsafe-inline' https://js.stripe.com",
+      `script-src ${scriptSrc}`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https://*.supabase.co https://*.fbcdn.net " +
         "https://*.whatsapp.net https://lookaside.fbsbx.com " +

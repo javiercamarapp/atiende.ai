@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logWebhook, enforceWebhookSize, enforceWebhookSizePostRead, WEBHOOK_MAX_BYTES } from '@/lib/webhook-logger';
 import { parseRappiOrder, parseUberEatsOrder, parseDidiOrder } from '@/lib/integrations/delivery';
@@ -12,20 +13,23 @@ function identifyProvider(req: NextRequest): DeliveryProvider | null {
   return null;
 }
 
+// Constant-time comparison: previene fingerprinting por timing.
+function safeEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 function verifyProviderAuth(req: NextRequest, provider: DeliveryProvider): boolean {
   switch (provider) {
-    case 'rappi': {
-      const sig = req.headers.get('x-rappi-signature');
-      return sig === process.env.RAPPI_WEBHOOK_SECRET;
-    }
-    case 'uber_eats': {
-      const sig = req.headers.get('x-uber-signature');
-      return sig === process.env.UBER_EATS_WEBHOOK_SECRET;
-    }
-    case 'didi_food': {
-      const token = req.headers.get('x-didi-token');
-      return token === process.env.DIDI_WEBHOOK_TOKEN;
-    }
+    case 'rappi':
+      return safeEqual(req.headers.get('x-rappi-signature'), process.env.RAPPI_WEBHOOK_SECRET);
+    case 'uber_eats':
+      return safeEqual(req.headers.get('x-uber-signature'), process.env.UBER_EATS_WEBHOOK_SECRET);
+    case 'didi_food':
+      return safeEqual(req.headers.get('x-didi-token'), process.env.DIDI_WEBHOOK_TOKEN);
     default:
       return false;
   }

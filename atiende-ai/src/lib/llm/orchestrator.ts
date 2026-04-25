@@ -54,6 +54,23 @@ export interface OrchestratorContext {
   tools: OpenAI.Chat.ChatCompletionTool[];
   /** System prompt del sub-agente activo. */
   systemPrompt: string;
+  /**
+   * Snapshot de estado del paciente / contacto inyectado al system prompt.
+   * Sobrevive a la truncación de history (HISTORY_MAX_MESSAGES=25). Si el
+   * paciente tiene 3 citas activas, plan de tratamiento o guardianes
+   * registrados, esos datos se pierden tras ~12 turns sin esto.
+   *
+   * Formato sugerido (multiline string, sin emoji para minimizar tokens):
+   *   PATIENT STATE:
+   *   - Próximas citas: 2025-04-30 10:00 limpieza con Dr. Pérez
+   *   - Tratamiento activo: ortodoncia (8/24 visitas)
+   *   - Guardian registrado: María López (+52 55 1234 5678)
+   *   - Intake completado: sí
+   *
+   * Construir vía `buildPatientStateSnapshot(tenantId, contactId)`. Si no
+   * se provee, el orchestrator funciona como antes (sin snapshot).
+   */
+  patientStateSnapshot?: string;
   /** Nombre del sub-agente (para logging/auditoria). */
   agentName?: string;
 }
@@ -233,6 +250,13 @@ async function runOrchestratorInner(
   // capturarlo y responder al paciente con mensaje amigable.
   await checkOpenRouterRateLimit(ctx.tenantId);
 
+  // System prompt base + snapshot de estado del paciente (si existe).
+  // El snapshot vive en system (no en `messages`) para que NO sea afectado
+  // por la truncación de history a los últimos N turns.
+  const systemPromptWithState = ctx.patientStateSnapshot
+    ? ctx.systemPrompt + '\n\n' + ctx.patientStateSnapshot
+    : ctx.systemPrompt;
+
   // ── Intento 1: modelo primario con timeout + AbortController ──
   const primaryController = new AbortController();
   // Si el timeout global se dispara, propagar al primary inmediatamente.
@@ -242,7 +266,7 @@ async function runOrchestratorInner(
     const result = await withTimeoutAbort(
       generateWithTools({
         model: MODELS.ORCHESTRATOR,
-        system: ctx.systemPrompt,
+        system: systemPromptWithState,
         messages: ctx.messages,
         tools: ctx.tools,
         toolExecutor,
@@ -341,9 +365,10 @@ async function runOrchestratorInner(
 
     // ── Intento 2: modelo fallback CON contexto de mutaciones previas ──
     // Si hay mutaciones ya ejecutadas, inyectamos un mensaje system extra
-    // ordenando NO re-ejecutar (idempotency a nivel prompt).
+    // ordenando NO re-ejecutar (idempotency a nivel prompt). El snapshot de
+    // estado del paciente también se preserva en el fallback.
     const fallbackSystemPrompt = successfulMutations.length > 0
-      ? ctx.systemPrompt + '\n\n' +
+      ? systemPromptWithState + '\n\n' +
         '⚠️ CONTEXTO IMPORTANTE — INTENTO PREVIO PARCIAL:\n' +
         'El modelo anterior YA EJECUTÓ las siguientes tools exitosamente. ' +
         'NO LAS RE-EJECUTES. Solo genera la respuesta final cordial al paciente ' +
@@ -351,7 +376,7 @@ async function runOrchestratorInner(
         successfulMutations.map((tc) =>
           `- ${tc.toolName}(${JSON.stringify(tc.args).slice(0, 200)}) → ${JSON.stringify(tc.result).slice(0, 300)}`,
         ).join('\n')
-      : ctx.systemPrompt;
+      : systemPromptWithState;
 
     // Filter out mutation tools that already succeeded — keep read-only tools
     const mutationToolNames = new Set(successfulMutations.map((tc) => tc.toolName));

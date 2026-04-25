@@ -21,6 +21,8 @@
 
 import type OpenAI from 'openai';
 import { Redis } from '@upstash/redis';
+import { logger } from '@/lib/logger';
+import { trackError } from '@/lib/monitoring';
 
 const MUTATION_DEDUP_TTL_SECONDS = 60;
 
@@ -77,6 +79,20 @@ export interface ToolContext {
    *  defensivo si el LLM intenta meter el teléfono como patient_name. */
   customerName?: string;
   tenant: Record<string, unknown>;
+  /**
+   * AbortSignal compartido para que los handlers que hacen I/O externo
+   * (Stripe, Conekta, Google Calendar, fetch) cancelen requests in-flight
+   * cuando se dispara el timeout de la tool. Sin esto, una tool con 3
+   * `await` secuenciales contra APIs lentas dejaría las últimas requests
+   * huérfanas tras el timeout — fantasma que puede cobrar/escribir.
+   *
+   * Lo setea `executeTool` (timeout signal) o el orchestrator (global
+   * timeout signal). Tool handlers deben pasarlo a fetch/SDK options:
+   *
+   *     await stripe.checkout.sessions.create(args, { signal: ctx.signal });
+   *     await fetch(url, { signal: ctx.signal });
+   */
+  signal?: AbortSignal;
   /**
    * Defense-in-depth contra ghost mutations.
    *
@@ -285,15 +301,34 @@ function truncateToolResult(result: unknown, name: string): unknown {
   }
 }
 
-function withToolTimeout<T>(promise: Promise<T>, ms: number, name: string): Promise<T> {
+/**
+ * Race entre la promesa del handler y un timeout. Cuando se vence el timeout
+ * llamamos `controller.abort()` para que los handlers que reciben
+ * `ctx.signal` cancelen sus requests externas (Stripe/GCal/fetch). Antes el
+ * timeout solo rechazaba la promise; las requests HTTP seguían vivas.
+ */
+function withToolTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  name: string,
+  parentSignal?: AbortSignal,
+): Promise<T> {
+  const controller = new AbortController();
+  // Si el orchestrator aborta (global timeout), heredamos.
+  if (parentSignal) {
+    if (parentSignal.aborted) controller.abort();
+    else parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
   let timer: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`Tool ${name} timeout after ${ms}ms`)),
-      ms,
-    );
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`Tool ${name} timeout after ${ms}ms`));
+    }, ms);
   });
-  return Promise.race([promise, timeoutPromise]).finally(() => {
+
+  return Promise.race([run(controller.signal), timeoutPromise]).finally(() => {
     if (timer) clearTimeout(timer);
   });
 }
@@ -373,15 +408,37 @@ export async function executeTool(
 
   const start = Date.now();
   try {
-    const rawResult = await withToolTimeout(def.handler(args, ctx), TOOL_TIMEOUT_MS, name);
+    const rawResult = await withToolTimeout(
+      (signal) => def.handler(args, { ...ctx, signal }),
+      TOOL_TIMEOUT_MS,
+      name,
+      ctx.signal,
+    );
     const result = truncateToolResult(rawResult, name);
     const execResult: ToolExecutionResult = {
       success: true,
       result,
       durationMs: Date.now() - start,
     };
+    // Logging estructurado: una línea por tool ejecutada. Permite armar
+    // dashboards de p50/p95 latencia por tool, error rate, distribución de
+    // mutaciones bloqueadas por dedup, etc. El `result_status` discrimina
+    // entre "tool exitosa pero respondió success:false" (ej. SLOT_TAKEN)
+    // vs "tool exitosa con success:true" — útil para detectar tools que
+    // siempre devuelven business-failure (síntoma de bug en la lógica
+    // upstream, no en la tool).
+    const r = result as { success?: boolean } | null;
+    const resultStatus = r && r.success === false ? 'business_failure' : 'ok';
+    void track('ok', name);
+    logger.info('[tool-executor] tool_executed', {
+      tool: name,
+      tenant_id: ctx.tenantId,
+      conversation_id: ctx.conversationId,
+      duration_ms: execResult.durationMs,
+      is_mutation: def.isMutation === true,
+      result_status: resultStatus,
+    });
     if (def.isMutation) {
-      const r = result as { success?: boolean } | null;
       if (!r || r.success !== false) {
         const ck = buildToolCallCacheKey(name, args);
         ctx.successfulCallCache?.set(ck, execResult);
@@ -395,12 +452,40 @@ export async function executeTool(
     }
     return execResult;
   } catch (err) {
+    const durationMs = Date.now() - start;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errKind = errMsg.includes('timeout') ? 'timeout' : 'error';
+    void track(errKind, name);
+    trackError(`tool_${errKind}:${name}`);
+    logger.warn('[tool-executor] tool_failed', {
+      tool: name,
+      tenant_id: ctx.tenantId,
+      conversation_id: ctx.conversationId,
+      duration_ms: durationMs,
+      err_kind: errKind,
+      err: errMsg.slice(0, 300),
+    });
     return {
       success: false,
       result: null,
-      error: err instanceof Error ? err.message : String(err),
-      durationMs: Date.now() - start,
+      error: errMsg,
+      durationMs,
     };
+  }
+}
+
+/**
+ * Métrica fire-and-forget. Se trackea en `monitoring` para que el dashboard
+ * de Ops vea volumen por tool sin tener que parsear los logs. La latencia
+ * vive en el log estructurado emitido por executeTool — no la duplicamos
+ * acá para evitar inflar el counter set de Redis.
+ */
+async function track(outcome: 'ok' | 'error' | 'timeout', name: string): Promise<void> {
+  try {
+    const m = await import('@/lib/monitoring');
+    if (outcome !== 'ok') m.trackError(`tool_${outcome}:${name}`);
+  } catch {
+    /* metric track failure is non-fatal */
   }
 }
 
