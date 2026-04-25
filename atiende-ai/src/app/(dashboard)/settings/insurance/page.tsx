@@ -252,17 +252,28 @@ function ClaimCard({ claim }: { claim: ClaimRow }) {
             >
               {patientName}
             </Link>
-            <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${STATUS_TINT[claim.status] || 'bg-zinc-100 text-zinc-700'}`}>
+            <span
+              role="status"
+              aria-label={`Estado del reclamo: ${STATUS_LABEL[claim.status] || claim.status}`}
+              className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${STATUS_TINT[claim.status] || 'bg-zinc-100 text-zinc-700'}`}
+            >
               {STATUS_LABEL[claim.status] || claim.status}
             </span>
             {claim.direct_billing && (
-              <span className="text-[10px] uppercase bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">
+              <span
+                aria-label="Direct billing — el consultorio cobra directo a la aseguradora"
+                className="text-[10px] uppercase bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded"
+              >
                 Direct billing
               </span>
             )}
             {overdue && (
-              <span className="text-[10px] uppercase bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" /> Vencido
+              <span
+                role="status"
+                aria-label="Reclamo vencido, llamar a la aseguradora"
+                className="text-[10px] uppercase bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded flex items-center gap-1"
+              >
+                <AlertCircle className="w-3 h-3" aria-hidden="true" /> Vencido
               </span>
             )}
           </div>

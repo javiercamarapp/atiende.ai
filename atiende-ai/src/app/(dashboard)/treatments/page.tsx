@@ -225,13 +225,21 @@ function PlanCard({
               {PLAN_TYPE_LABEL[plan.plan_type] || plan.plan_type}
             </span>
             {plan.status === 'paused' && (
-              <span className="text-[10px] uppercase bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded">
+              <span
+                role="status"
+                aria-label="Plan pausado"
+                className="text-[10px] uppercase bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded"
+              >
                 Pausado
               </span>
             )}
             {computed.atRisk && (
-              <span className="text-[10px] uppercase bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> En riesgo
+              <span
+                role="status"
+                aria-label="Plan en riesgo de dropout, contactar al paciente"
+                className="text-[10px] uppercase bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded flex items-center gap-1"
+              >
+                <AlertTriangle className="w-3 h-3" aria-hidden="true" /> En riesgo
               </span>
             )}
           </div>
