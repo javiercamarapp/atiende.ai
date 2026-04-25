@@ -97,12 +97,22 @@ export function encryptPII(plaintext: string | null | undefined): string | null 
 /**
  * Descifra. Si el texto NO tiene el prefijo, asume que es texto plano legacy
  * (rollout gradual) y lo devuelve sin cambios.
+ *
+ * Comportamiento ante AEAD failure (auth tag inválido / ciphertext corrupto /
+ * tampering): emite warning, instrumenta `decryption_failure` métrica y
+ * retorna `null`. Antes retornaba el ciphertext crudo como si fuera plano,
+ * lo que filtraba el blob "v1:..." al UI/logs y silenciaba intentos de
+ * tampering. Callers que esperaban string deben tratar `null` como
+ * "no disponible" (igual que cuando el campo no existe).
  */
 export function decryptPII(ciphertext: string | null | undefined): string | null {
   if (ciphertext == null) return null;
   if (!ciphertext.startsWith(PREFIX)) return ciphertext; // legacy plain text
   const key = getKey();
-  if (!key) return ciphertext; // sin key no podemos descifrar
+  if (!key) {
+    notePlaintextFallback('decryptPII:no_key');
+    return null;
+  }
   try {
     const [, ivB64, payloadB64] = ciphertext.split(':');
     const iv = Buffer.from(ivB64, 'base64');
@@ -114,8 +124,14 @@ export function decryptPII(ciphertext: string | null | undefined): string | null
     const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
     return pt.toString('utf8');
   } catch (err) {
-    console.warn('[crypto] decryptPII failed:', err instanceof Error ? err.message : err);
-    return ciphertext;
+    console.warn(
+      '[crypto] decryptPII AEAD failure — possible corruption or tampering:',
+      err instanceof Error ? err.message : err,
+    );
+    void import('@/lib/monitoring')
+      .then((m) => m.trackError('encryption_decrypt_failure'))
+      .catch(() => {});
+    return null;
   }
 }
 
@@ -176,8 +192,9 @@ function decryptWithKey(ciphertext: string, key: Buffer): string | null {
 }
 
 /**
- * Decrypt with key rotation: try v2 key first, then v1. If both fail,
- * return ciphertext unchanged (legacy plaintext or corrupt data).
+ * Decrypt with key rotation: try v2 key first, then v1. If both fail (AEAD
+ * inválido bajo ambas keys → tampering o corrupción real), retorna `null` y
+ * registra métrica. Callers tratan null como "no disponible".
  */
 export function decryptPIIWithRotation(ciphertext: string | null | undefined): string | null {
   if (ciphertext == null) return null;
@@ -195,7 +212,11 @@ export function decryptPIIWithRotation(ciphertext: string | null | undefined): s
     if (result !== null) return result;
   }
 
-  return ciphertext;
+  console.warn('[crypto] decryptPIIWithRotation: AEAD failure under all keys');
+  void import('@/lib/monitoring')
+    .then((m) => m.trackError('encryption_decrypt_failure'))
+    .catch(() => {});
+  return null;
 }
 
 /**

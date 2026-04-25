@@ -58,31 +58,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No tenant found' }, { status: 403 });
     }
 
-    // Pick the first staff of this tenant (with google calendar preferred so
-    // the event actually syncs). Fall back to any staff.
-    const { data: preferredStaff } = await supabaseAdmin
+    // Antes: 2 SELECTs secuenciales contra `staff` (preferred → fallback) +
+    // 1 SELECT contra `services`. Ahora: 1 SELECT staff (preferimos GCal con
+    // ORDER BY google_calendar_id NULLS LAST) en paralelo con services.
+    type StaffRow = { id: string; name: string; default_duration: number | null; google_calendar_id: string | null };
+    type ServiceRow = { id: string; name: string; duration_minutes: number };
+
+    const staffP = supabaseAdmin
       .from('staff')
       .select('id, name, default_duration, google_calendar_id')
       .eq('tenant_id', tenant.id)
-      .not('google_calendar_id', 'is', null)
+      .order('google_calendar_id', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
 
-    let staff = preferredStaff as
-      | { id: string; name: string; default_duration: number | null; google_calendar_id: string | null }
-      | null;
+    const serviceP = service_name
+      ? supabaseAdmin
+          .from('services')
+          .select('id, name, duration_minutes')
+          .eq('tenant_id', tenant.id)
+          .ilike('name', service_name)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null as ServiceRow | null });
 
-    if (!staff) {
-      const { data: anyStaff } = await supabaseAdmin
-        .from('staff')
-        .select('id, name, default_duration, google_calendar_id')
-        .eq('tenant_id', tenant.id)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      staff = anyStaff as typeof staff;
-    }
+    const [{ data: staffData }, { data: svc }] = await Promise.all([staffP, serviceP]);
+    const staff = staffData as StaffRow | null;
 
     if (!staff) {
       return NextResponse.json({ error: 'No staff configured for tenant' }, { status: 400 });
@@ -92,19 +94,10 @@ export async function POST(req: NextRequest) {
     let serviceId: string | null = null;
     let serviceNameResolved = service_name || 'Consulta';
     let durationMinutes = parsed.data.duration_minutes || staff.default_duration || 30;
-    if (service_name) {
-      const { data: svc } = await supabaseAdmin
-        .from('services')
-        .select('id, name, duration_minutes')
-        .eq('tenant_id', tenant.id)
-        .ilike('name', service_name)
-        .limit(1)
-        .maybeSingle();
-      if (svc) {
-        serviceId = svc.id as string;
-        serviceNameResolved = (svc.name as string) || serviceNameResolved;
-        durationMinutes = (svc.duration_minutes as number) || durationMinutes;
-      }
+    if (svc) {
+      serviceId = svc.id as string;
+      serviceNameResolved = (svc.name as string) || serviceNameResolved;
+      durationMinutes = (svc.duration_minutes as number) || durationMinutes;
     }
 
     // Build the series of occurrences (1 = single appointment; N > 1 = weekly)

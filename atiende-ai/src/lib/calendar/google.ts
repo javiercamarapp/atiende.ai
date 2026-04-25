@@ -76,24 +76,33 @@ export async function createCalendarEvent(opts: {
   attendeeEmail?: string;
   attendeeName?: string;
   timezone?: string;
+  /**
+   * AbortSignal opcional para cancelar la request si el orchestrator/tool
+   * timeout se dispara. Sin esto, una creación de evento lenta seguiría
+   * "viva" tras el timeout y podría crear el evento fantasma en GCal.
+   */
+  signal?: AbortSignal;
 }) {
   const calendar = await getCalendarApi(opts.staffId);
-  const event = await calendar.events.insert({
-    calendarId: opts.calendarId,
-    requestBody: {
-      summary: opts.summary,
-      description: opts.description,
-      start: { dateTime: opts.startTime, timeZone: opts.timezone || DEFAULT_TIMEZONE },
-      end: { dateTime: opts.endTime, timeZone: opts.timezone || DEFAULT_TIMEZONE },
-      attendees: opts.attendeeEmail
-        ? [{ email: opts.attendeeEmail, displayName: opts.attendeeName }]
-        : [],
-      reminders: {
-        useDefault: false,
-        overrides: [{ method: 'popup', minutes: 30 }],
+  const event = await calendar.events.insert(
+    {
+      calendarId: opts.calendarId,
+      requestBody: {
+        summary: opts.summary,
+        description: opts.description,
+        start: { dateTime: opts.startTime, timeZone: opts.timezone || DEFAULT_TIMEZONE },
+        end: { dateTime: opts.endTime, timeZone: opts.timezone || DEFAULT_TIMEZONE },
+        attendees: opts.attendeeEmail
+          ? [{ email: opts.attendeeEmail, displayName: opts.attendeeName }]
+          : [],
+        reminders: {
+          useDefault: false,
+          overrides: [{ method: 'popup', minutes: 30 }],
+        },
       },
     },
-  });
+    opts.signal ? { signal: opts.signal } : undefined,
+  );
   return {
     eventId: event.data.id!,
     htmlLink: event.data.htmlLink!,
@@ -109,6 +118,7 @@ export async function updateCalendarEvent(opts: {
   startTime?: string;
   endTime?: string;
   timezone?: string;
+  signal?: AbortSignal;
 }) {
   const calendar = await getCalendarApi(opts.staffId);
   const patch: Record<string, unknown> = {};
@@ -120,11 +130,14 @@ export async function updateCalendarEvent(opts: {
   if (opts.endTime) {
     patch.end = { dateTime: opts.endTime, timeZone: opts.timezone || DEFAULT_TIMEZONE };
   }
-  const event = await calendar.events.patch({
-    calendarId: opts.calendarId,
-    eventId: opts.eventId,
-    requestBody: patch,
-  });
+  const event = await calendar.events.patch(
+    {
+      calendarId: opts.calendarId,
+      eventId: opts.eventId,
+      requestBody: patch,
+    },
+    opts.signal ? { signal: opts.signal } : undefined,
+  );
   return {
     eventId: event.data.id!,
     htmlLink: event.data.htmlLink!,
@@ -259,9 +272,13 @@ export async function cancelCalendarEvent(
   calendarId: string,
   eventId: string,
   staffId?: string,
+  signal?: AbortSignal,
 ) {
   const calendar = await getCalendarApi(staffId);
-  await calendar.events.delete({ calendarId, eventId });
+  await calendar.events.delete(
+    { calendarId, eventId },
+    signal ? { signal } : undefined,
+  );
 }
 
 export function generateAvailableSlots(opts: {

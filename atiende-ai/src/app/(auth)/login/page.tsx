@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/client';
 import { SignInPage } from '@/components/ui/sign-in';
 import { toast } from 'sonner';
 
+// `createClient` se mantiene importado para Google OAuth — el flujo PKCE
+// requiere supabase.auth.signInWithOAuth() desde el browser.
+
 export default function LoginPage() {
   const router = useRouter();
   const [, setLoading] = useState(false);
@@ -18,13 +21,17 @@ export default function LoginPage() {
     const password = formData.get('password') as string;
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      // Server-side login: rate-limited + brute-force protected (login-protection.ts).
+      // Cookies Supabase se setean en el handler vía SSR cookie adapter.
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
 
-      if (error) {
-        toast.error(error.message === 'Invalid login credentials'
-          ? 'Correo o contraseña incorrectos'
-          : error.message);
+      if (!res.ok) {
+        toast.error(json.error || 'Error al iniciar sesión');
       } else {
         router.push('/home');
         router.refresh();

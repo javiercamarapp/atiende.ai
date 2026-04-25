@@ -749,6 +749,7 @@ registerTool('book_appointment', {
           startTime: datetime,
           endTime: endDt,
           attendeeEmail: undefined,
+          signal: ctx.signal,
         });
         if (ev?.eventId) {
           await supabaseAdmin
@@ -1179,6 +1180,7 @@ registerTool('modify_appointment', {
             staffId: apt.staff_id as string,
             calendarId,
             eventId: apt.google_event_id as string,
+            signal: ctx.signal,
             summary: `${serviceName} - ${apt.customer_name || 'Paciente'}`,
             description:
               `WhatsApp: ${apt.customer_phone}${mergedNotes ? `\nNotas: ${mergedNotes}` : ''}` +
@@ -1378,7 +1380,7 @@ registerTool('cancel_appointment', {
         const staffRel = Array.isArray(apt.staff) ? apt.staff[0] : apt.staff;
         const calendarId = (staffRel as { google_calendar_id: string | null } | null)?.google_calendar_id;
         if (calendarId) {
-          await cancelCalendarEvent(calendarId, apt.google_event_id as string, apt.staff_id as string);
+          await cancelCalendarEvent(calendarId, apt.google_event_id as string, apt.staff_id as string, ctx.signal);
         }
       } catch (err) {
         console.warn('[tool:cancel_appointment] Calendar unsync failed:', err);
