@@ -29,10 +29,17 @@ interface ServiceOption {
   category: string | null;
 }
 
+interface LocationOption {
+  id: string;
+  name: string;
+  city: string | null;
+  is_primary: boolean;
+}
+
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; year?: string; calendar?: string; calendar_error?: string; detail?: string }>;
+  searchParams: Promise<{ month?: string; year?: string; calendar?: string; calendar_error?: string; detail?: string; loc?: string }>;
 }) {
   const params = await searchParams;
   const now = new Date();
@@ -41,6 +48,7 @@ export default async function CalendarPage({
   const justConnected = params.calendar === 'connected';
   const connectError = params.calendar_error || null;
   const connectErrorDetail = params.detail || null;
+  const locationFilter = params.loc && params.loc !== 'all' ? params.loc : null;
 
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month + 2, 1);
@@ -152,18 +160,22 @@ export default async function CalendarPage({
     );
   }
 
-  // Fetch local appointments, services, and connected staff in parallel.
-  const [aptsRes, servicesRes, staffRes] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select(
-        'id, datetime, end_datetime, status, customer_name, customer_phone, notes, google_event_id, staff:staff_id(name), services:service_id(name)',
-      )
-      .eq('tenant_id', tenant.id)
-      .gte('datetime', start.toISOString())
-      .lt('datetime', end.toISOString())
-      .order('datetime', { ascending: true })
-      .limit(800),
+  // Fetch local appointments, services, connected staff, and locations in parallel.
+  const [aptsRes, servicesRes, staffRes, locationsRes] = await Promise.all([
+    (() => {
+      let q = supabase
+        .from('appointments')
+        .select(
+          'id, datetime, end_datetime, status, customer_name, customer_phone, notes, google_event_id, location_id, staff:staff_id(name), services:service_id(name)',
+        )
+        .eq('tenant_id', tenant.id)
+        .gte('datetime', start.toISOString())
+        .lt('datetime', end.toISOString())
+        .order('datetime', { ascending: true })
+        .limit(800);
+      if (locationFilter) q = q.eq('location_id', locationFilter);
+      return q;
+    })(),
     supabase
       .from('services')
       .select('id, name, category')
@@ -175,10 +187,18 @@ export default async function CalendarPage({
       .select('id, name, google_calendar_id')
       .eq('tenant_id', tenant.id)
       .not('google_calendar_id', 'is', null),
+    supabase
+      .from('locations')
+      .select('id, name, city, is_primary')
+      .eq('tenant_id', tenant.id)
+      .eq('active', true)
+      .order('is_primary', { ascending: false })
+      .order('name'),
   ]);
   const aptsRaw = aptsRes.data;
   const servicesRaw = servicesRes.data;
   const connectedStaff = staffRes.data as Array<{ id: string; name: string; google_calendar_id: string }> | null;
+  const locations = (locationsRes.data || []) as LocationOption[];
 
   type AptRow = {
     id: string;
@@ -260,6 +280,36 @@ export default async function CalendarPage({
   return (
     <div className="flex flex-col gap-3 md:gap-4">
       <CalendarOnboarding autoOpen={justConnected} />
+      {locations.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span className="text-zinc-500 mr-1">Sucursal:</span>
+          <Link
+            href={`/calendar?month=${month + 1}&year=${year}`}
+            className={`px-2.5 py-1 rounded-full border transition ${
+              !locationFilter
+                ? 'bg-[hsl(var(--brand-blue))] text-white border-[hsl(var(--brand-blue))]'
+                : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'
+            }`}
+          >
+            Todas
+          </Link>
+          {locations.map((l) => (
+            <Link
+              key={l.id}
+              href={`/calendar?month=${month + 1}&year=${year}&loc=${l.id}`}
+              className={`px-2.5 py-1 rounded-full border transition ${
+                locationFilter === l.id
+                  ? 'bg-[hsl(var(--brand-blue))] text-white border-[hsl(var(--brand-blue))]'
+                  : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'
+              }`}
+            >
+              {l.name}
+              {l.city ? <span className="opacity-60 ml-1">· {l.city}</span> : null}
+              {l.is_primary && !locationFilter && <span className="opacity-60 ml-1">★</span>}
+            </Link>
+          ))}
+        </div>
+      )}
       <CalendarView events={events} services={services} initialYear={year} initialMonth={month} />
     </div>
   );

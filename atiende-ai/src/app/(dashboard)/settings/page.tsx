@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import {
   Bot, CreditCard, Store, Users, Sliders, Bell, ShieldCheck, Globe,
-  ChevronRight, Building2, Workflow, Link2, MapPin, Star,
+  ChevronRight, Building2, Workflow, Link2, MapPin, Star, FileText,
 } from 'lucide-react';
 
 export default async function SettingsHubPage() {
@@ -62,6 +62,13 @@ export default async function SettingsHubPage() {
       href: '/settings/reviews',
       icon: Star,
       tint: 'bg-amber-50 text-amber-500',
+    },
+    {
+      title: 'Facturación CFDI',
+      description: 'API key de Facturapi + datos fiscales para emitir CFDI 4.0 automáticamente.',
+      href: '/settings/cfdi',
+      icon: FileText,
+      tint: 'bg-indigo-50 text-indigo-600',
     },
   ];
 
