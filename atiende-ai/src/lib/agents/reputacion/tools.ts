@@ -9,6 +9,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
 void sendTextMessage;
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: send_review_request ────────────────────────────────────────────
 const SendReviewArgs = z
@@ -56,8 +57,10 @@ registerTool('send_review_request', {
       'Solo toma 1 minuto y ayuda a otros pacientes a encontrarnos 🙏',
     ].join('\n');
 
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { sent: false, error: 'invalid patient_phone' };
     try {
-      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      const r = await sendTextMessageSafe(phoneNumberId, phone, text, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
       }
@@ -96,6 +99,8 @@ registerTool('track_review_sent', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = TrackArgs.parse(rawArgs);
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { tracked: false, error: 'invalid patient_phone' };
     const { error } = await supabaseAdmin
       .from('contacts')
       .update({
@@ -103,7 +108,7 @@ registerTool('track_review_sent', {
         review_requested_at: new Date().toISOString(),
       })
       .eq('tenant_id', ctx.tenantId)
-      .eq('phone', args.patient_phone);
+      .eq('phone', phone);
     if (error) return { tracked: false, error: error.message };
     return { tracked: true, appointment_id: args.appointment_id };
   },
