@@ -32,6 +32,10 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       'get_my_appointments',
       'modify_appointment',
       'cancel_appointment',
+      // Waitlist: cuando NO hay slot que le acomode al paciente, se le
+      // agrega a la lista de espera. Cron de marketplace (lista_espera)
+      // notifica cuando otra cita se cancela.
+      'add_to_waitlist',
       // Shared profile tools — el agente agenda ve mensajes libres del
       // paciente y debe poder guardar cualquier dato nuevo que aparezca
       // en medio del flujo (alergia reciente, cambio de dirección,

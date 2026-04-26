@@ -711,7 +711,7 @@ registerTool('book_appointment', {
         error_code: 'SLOT_TAKEN',
         message: 'Ese horario ya no está disponible.',
         next_step:
-          'Llama check_availability de nuevo para obtener slots actualizados y pide al paciente que elija otro.',
+          'Llama check_availability de nuevo para obtener slots actualizados. Si el paciente NO encuentra ninguno que le acomode, ofrécele entrar a la lista de espera con add_to_waitlist (le notificamos cuando se libera un slot).',
       };
     }
 
@@ -1967,5 +1967,146 @@ registerTool('send_telemed_link', {
       .eq('id', apt.id);
 
     return { sent: true, url };
+  },
+});
+
+// ─── Tool: add_to_waitlist ─────────────────────────────────────────────────
+//
+// Captura el lead cuando el paciente quería agendar pero no había slot.
+// Cuando otra cita se cancela, el cron `runOptimizador` (en marketplace)
+// busca matches en esta tabla por preferencias y notifica al primero en
+// FIFO. Esto convierte un "no hay" en una conversión asíncrona.
+const WaitlistArgs = z
+  .object({
+    service_type: z.string().min(1).max(120).optional(),
+    staff_id: z.string().uuid().optional(),
+    preferred_date_from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+      .optional(),
+    preferred_date_to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+      .optional(),
+    // Ventana del día que prefiere — si el paciente dice "en la mañana"
+    // o "después del mediodía", lo capturamos así. Default 'any'.
+    preferred_time_window: z.enum(['morning', 'afternoon', 'evening', 'any']).optional(),
+    notes: z.string().max(500).optional(),
+  })
+  .strict();
+
+registerTool('add_to_waitlist', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'add_to_waitlist',
+      description:
+        'Agrega al paciente a la lista de espera cuando NO hay slot disponible que le acomode. Le notificaremos por WhatsApp si otra cita se libera y matchea sus preferencias. NO usar si hay slots disponibles — primero ofrecer agendar normal con check_availability.',
+      parameters: {
+        type: 'object',
+        properties: {
+          service_type: { type: 'string', description: 'Servicio que quiere (limpieza, ortodoncia, etc.)' },
+          staff_id: { type: 'string', description: 'UUID opcional del doctor preferido.' },
+          preferred_date_from: { type: 'string', description: 'YYYY-MM-DD desde cuándo acepta.' },
+          preferred_date_to: { type: 'string', description: 'YYYY-MM-DD hasta cuándo acepta.' },
+          preferred_time_window: {
+            type: 'string',
+            enum: ['morning', 'afternoon', 'evening', 'any'],
+            description: 'Franja del día preferida.',
+          },
+          notes: { type: 'string', description: 'Cualquier otra preferencia (urgente, flexible, etc.)' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = WaitlistArgs.parse(rawArgs);
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
+
+    if (!ownerPhone) {
+      return {
+        success: false,
+        error_code: 'NO_PHONE',
+        message: 'Necesitamos un número para contactarle cuando se libere el slot.',
+      };
+    }
+
+    // Resolver service_id si pasaron service_type
+    let serviceId: string | null = null;
+    let durationMinutes = 30;
+    if (args.service_type) {
+      const { data: services } = await supabaseAdmin
+        .from('services')
+        .select('id, name, duration_minutes')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('active', true);
+      const match = findMatchingService((services || []) as ServiceRow[], args.service_type);
+      if (match) {
+        serviceId = (match.id as string) || null;
+        durationMinutes = match.duration_minutes || 30;
+      }
+    }
+
+    // Dedup: si ya está en waitlist activa para este servicio, actualizamos
+    // las preferencias en lugar de duplicar.
+    const { data: existing } = await supabaseAdmin
+      .from('waitlist')
+      .select('id, notified_count')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('customer_phone', ownerPhone)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (existing) {
+      await supabaseAdmin
+        .from('waitlist')
+        .update({
+          service_id: serviceId,
+          staff_id: args.staff_id || null,
+          preferred_date_from: args.preferred_date_from || null,
+          preferred_date_to: args.preferred_date_to || null,
+          preferred_time_window: args.preferred_time_window || 'any',
+          duration_minutes: durationMinutes,
+          notes: args.notes || null,
+        })
+        .eq('id', existing.id);
+      return {
+        success: true,
+        already_on_waitlist: true,
+        message: 'Ya está en nuestra lista de espera. Actualizamos sus preferencias.',
+      };
+    }
+
+    const { error } = await supabaseAdmin.from('waitlist').insert({
+      tenant_id: ctx.tenantId,
+      contact_id: ctx.contactId || null,
+      customer_phone: ownerPhone,
+      customer_name: ctx.customerName || null,
+      service_id: serviceId,
+      staff_id: args.staff_id || null,
+      preferred_date_from: args.preferred_date_from || null,
+      preferred_date_to: args.preferred_date_to || null,
+      preferred_time_window: args.preferred_time_window || 'any',
+      duration_minutes: durationMinutes,
+      notes: args.notes || null,
+    });
+
+    if (error) {
+      console.warn('[add_to_waitlist] insert failed', { err: error.message });
+      return {
+        success: false,
+        error_code: 'INSERT_FAILED',
+        message: 'No pude agregarle a la lista en este momento. Por favor intente de nuevo o llámenos.',
+      };
+    }
+
+    return {
+      success: true,
+      message:
+        'Listo, está en la lista de espera. Le avisaremos por aquí apenas se libere un horario que le acomode.',
+    };
   },
 });

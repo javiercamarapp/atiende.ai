@@ -55,8 +55,13 @@ export interface MediaResult {
 // ─── Rate limiting ─────────────────────────────────────────────────────────
 
 const HOUR_S = 3600;
+// Subido audio 20→100/hr: un consultorio con volumen real (>50 pacientes/día)
+// recibe ~30% en audio = ~15 audios/hora pico. 20/hr era defensivo cuando
+// Whisper era caro; ahora con Whisper-Large-v3-Turbo ($0.0001/min, ~30s
+// promedio = $0.00005/audio), 100/hr = $0.005/hr = $0.12 USD/día por tenant.
+// Negligible y previene rejection de pacientes legítimos en horas pico.
 const LIMITS = {
-  audio: 20,
+  audio: 100,
   image: 30,
   document: 10,
   video: 5,
