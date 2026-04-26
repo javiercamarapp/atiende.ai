@@ -101,10 +101,19 @@ export async function proxy(request: NextRequest) {
   // turbopack/webpack HMR no se rompan. En tests (NODE_ENV='test') y prod
   // queda fuera. Antes el gate era `!== 'production'` lo cual incluía test.
   const isDev = process.env.NODE_ENV === 'development';
+  // 'strict-dynamic' + 'nonce-...' removidos: Next.js 16 no propaga el
+  // nonce automáticamente a sus scripts de hidratación, y el root layout
+  // tampoco lo consume vía `headers()`. Resultado anterior: TODO el JS
+  // del cliente quedaba bloqueado por CSP → login UI muerta (botones sin
+  // responder, form sin enviar). Sin strict-dynamic, 'unsafe-inline' +
+  // 'self' aplican y Next hidrata.
+  // TODO(seguridad): migrar a nonce-based real con `<Script nonce>` y
+  // request header `x-nonce` (Next 16 convention) en una iteración
+  // separada — requiere tocar root layout + cualquier <Script> custom.
+  // `generateCspNonce()` y el header `x-csp-nonce` se mantienen como
+  // no-ops porque podrían ser leídos por código futuro.
   const scriptSrc = [
     "'self'",
-    `'nonce-${cspNonce}'`,
-    "'strict-dynamic'",
     "'unsafe-inline'",
     ...(isDev ? ["'unsafe-eval'"] : []),
     'https://js.stripe.com',
