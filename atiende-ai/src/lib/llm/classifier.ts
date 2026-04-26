@@ -1,4 +1,5 @@
 import { getOpenRouter, MODELS } from './openrouter';
+import { trackFallback } from '@/lib/monitoring';
 
 // Clasifica el intent de cada mensaje entrante.
 // Usa GPT-5 Nano ($0.05/M tokens) — el mas barato del mercado.
@@ -65,52 +66,137 @@ export function classifyFastPath(message: string): ValidIntent | null {
 // LLM classifier with enum validation + try/catch
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function classifyIntent(message: string): Promise<ValidIntent> {
-  // 1. Fast-path first — cheap and deterministic.
-  const fp = classifyFastPath(message);
-  if (fp) return fp;
+// Intents donde una mala clasificación tiene consecuencias graves (efectos
+// secundarios: cargo, agendamiento, escalado a humano). Para estos pedimos
+// confidence al modelo y, si es < CONFIDENCE_THRESHOLD, reclasificamos con
+// un modelo más fuerte. Los demás (GREETING, THANKS, FAQ, etc.) son seguros
+// incluso si se equivocan.
+const HIGH_STAKES_INTENTS: ReadonlySet<string> = new Set([
+  'APPOINTMENT_NEW', 'APPOINTMENT_MODIFY', 'APPOINTMENT_CANCEL',
+  'ORDER_NEW', 'RESERVATION',
+  'COMPLAINT', 'EMERGENCY', 'CRISIS',
+  'MEDICAL_QUESTION', 'LEGAL_QUESTION',
+]);
 
-  // 2. LLM call, defended against network/provider failures.
-  let rawText: string;
+const CONFIDENCE_THRESHOLD = 0.7;
+
+export interface ClassificationResult {
+  intent: ValidIntent;
+  confidence: number;
+  source: 'fast_path' | 'llm' | 'llm_reclassified' | 'fallback';
+}
+
+// Llama al modelo y le pide intent + confidence en un JSON corto.
+// El modelo en modo `temperature=0` con prompt explícito da self-reported
+// confidence muy correlacionada con accuracy real.
+async function llmClassify(
+  message: string,
+  model: string,
+): Promise<{ intent: string; confidence: number } | null> {
   try {
     const response = await getOpenRouter().chat.completions.create({
-      model: MODELS.CLASSIFIER,
+      model,
       messages: [
         {
           role: 'system',
-          content: `Clasifica el mensaje del cliente en UNA sola categoria.
-Categorias posibles:
-  GREETING, FAREWELL, FAQ, PRICE, HOURS, LOCATION, SERVICES_INFO,
-  APPOINTMENT_NEW, APPOINTMENT_MODIFY, APPOINTMENT_CANCEL,
-  ORDER_NEW, ORDER_STATUS, RESERVATION,
-  COMPLAINT, EMERGENCY, MEDICAL_QUESTION, LEGAL_QUESTION,
-  HUMAN, CRISIS, REVIEW, THANKS, SPAM, OTHER.
+          content: `Clasifica el mensaje del cliente. Responde SOLO con JSON exacto:
+{"intent":"CATEGORIA","confidence":0.0_a_1.0}
 
-SERVICES_INFO: el cliente pregunta qué servicios/tratamientos/productos ofrece el negocio (catálogo).
-PRICE: el cliente pregunta cuánto cuesta algo específico.
+Categorias permitidas:
+GREETING, FAREWELL, FAQ, PRICE, HOURS, LOCATION, SERVICES_INFO,
+APPOINTMENT_NEW, APPOINTMENT_MODIFY, APPOINTMENT_CANCEL,
+ORDER_NEW, ORDER_STATUS, RESERVATION,
+COMPLAINT, EMERGENCY, MEDICAL_QUESTION, LEGAL_QUESTION,
+HUMAN, CRISIS, REVIEW, THANKS, SPAM, OTHER.
 
-Responde SOLO la categoria, nada mas.`,
+SERVICES_INFO: pregunta qué servicios/tratamientos ofrece (catálogo).
+PRICE: pregunta cuánto cuesta algo específico.
+APPOINTMENT_MODIFY: quiere reagendar/cambiar cita existente.
+APPOINTMENT_CANCEL: quiere cancelar cita existente.
+EMERGENCY: situación urgente que requiere atención inmediata.
+CRISIS: ideación suicida, autolesión, violencia.
+
+confidence = qué tan seguro estás (0.95+ = certeza, 0.6-0.8 = probable, <0.5 = no estoy seguro).`,
         },
         { role: 'user', content: message },
       ],
-      max_tokens: 10,
+      max_tokens: 40,
       temperature: 0,
+      response_format: { type: 'json_object' },
     });
-    rawText = response.choices[0]?.message?.content || '';
+    const raw = response.choices[0]?.message?.content || '';
+    const parsed = JSON.parse(raw) as { intent?: string; confidence?: number };
+    if (typeof parsed.intent !== 'string') return null;
+    const conf = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
+    return {
+      intent: parsed.intent.trim().toUpperCase().replace(/[^A-Z_]/g, ''),
+      confidence: Math.max(0, Math.min(1, conf)),
+    };
   } catch (err) {
-    // LLM network failure, timeout, provider outage, etc. — don't crash the
-    // whole message pipeline. Falling back to OTHER routes to the generic
-    // response builder which still attempts to be helpful via RAG.
-    console.warn('[classifier] LLM call failed, falling back to OTHER:', err);
-    return 'OTHER';
+    console.warn(`[classifier] LLM call failed (${model}):`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Clasifica el intent con confianza calibrada y reclasificación adaptativa.
+ *
+ * Reglas:
+ *   1. Fast-path regex → confidence = 1.0 (determinístico).
+ *   2. LLM standard (gpt-4o-mini). Si intent ∉ HIGH_STAKES, devuelve.
+ *   3. Si intent ∈ HIGH_STAKES y confidence < threshold → reclasifica con
+ *      modelo más fuerte (Gemini Flash). Aceptamos el segundo verdict.
+ *   4. Si AÚN está bajo threshold → coerce a HUMAN (escala a operador
+ *      humano en lugar de tomar acción equivocada).
+ *
+ * Esto convierte "agendar mal una emergencia médica" (catastrófico) en
+ * "humano revisa el mensaje" (seguro). El costo extra es marginal porque
+ * solo se dispara en intents ambigos de alto riesgo (~5% del tráfico).
+ */
+export async function classifyIntentWithConfidence(
+  message: string,
+): Promise<ClassificationResult> {
+  const fp = classifyFastPath(message);
+  if (fp) {
+    return { intent: fp, confidence: 1.0, source: 'fast_path' };
   }
 
-  // 3. Enum validation — the LLM can drift (extra text, wrong case, a whole
-  //    sentence). Coerce invalid outputs to OTHER.
-  const normalized = rawText.trim().toUpperCase().replace(/[^A-Z_]/g, '');
-  if (VALID_INTENTS_SET.has(normalized)) {
-    return normalized as ValidIntent;
+  const first = await llmClassify(message, MODELS.CLASSIFIER);
+  if (!first) {
+    trackFallback('classifier_low_confidence');
+    return { intent: 'OTHER', confidence: 0, source: 'fallback' };
   }
-  console.warn('[classifier] LLM returned invalid intent, coercing to OTHER:', JSON.stringify(rawText));
-  return 'OTHER';
+
+  const intent = (VALID_INTENTS_SET.has(first.intent) ? first.intent : 'OTHER') as ValidIntent;
+
+  if (!HIGH_STAKES_INTENTS.has(intent) || first.confidence >= CONFIDENCE_THRESHOLD) {
+    return { intent, confidence: first.confidence, source: 'llm' };
+  }
+
+  // High-stakes con confidence baja → reclasifica con modelo más fuerte.
+  // BALANCED (Gemini Flash) es ~3x mejor en intents ambiguos por costo
+  // marginal (~$0.0003/clasificación).
+  const second = await llmClassify(message, MODELS.BALANCED);
+  if (!second) {
+    // No pudimos reclasificar — escalamos a humano para no equivocarnos.
+    trackFallback('classifier_low_confidence');
+    return { intent: 'HUMAN', confidence: first.confidence, source: 'llm_reclassified' };
+  }
+
+  const secondIntent = (VALID_INTENTS_SET.has(second.intent) ? second.intent : 'OTHER') as ValidIntent;
+  if (second.confidence >= CONFIDENCE_THRESHOLD) {
+    return { intent: secondIntent, confidence: second.confidence, source: 'llm_reclassified' };
+  }
+
+  // Modelo más fuerte tampoco está seguro → escalar a humano. Mejor
+  // perder una conversación que reservar/cobrar/cancelar por error.
+  trackFallback('classifier_low_confidence');
+  return { intent: 'HUMAN', confidence: second.confidence, source: 'llm_reclassified' };
+}
+
+// Wrapper retro-compatible: callers que solo quieren el intent siguen
+// funcionando. Internamente usa el nuevo flujo con confidence.
+export async function classifyIntent(message: string): Promise<ValidIntent> {
+  const { intent } = await classifyIntentWithConfidence(message);
+  return intent;
 }

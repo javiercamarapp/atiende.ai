@@ -45,12 +45,39 @@ export async function GET(req: NextRequest) {
     redisOk = false;
   }
 
-  // ─── LLM API (OpenAI) ────────────────────────────────────────────────
+  // ─── LLM API (OpenRouter) ────────────────────────────────────────────
+  // Solo verificamos que la key esté presente — un ping live sería caro y
+  // los providers tienen sus propios SLAs. Si la key no está, el webhook
+  // explota al primer mensaje.
   let llmOk = false;
   try {
-    llmOk = !!process.env.OPENAI_API_KEY;
+    llmOk = !!process.env.OPENROUTER_API_KEY;
   } catch {
     llmOk = false;
+  }
+
+  // ─── Calendar sync backlog ───────────────────────────────────────────
+  // Si hay >50 citas pendientes de sincronizar O alguna marcada 'failed'
+  // (5 reintentos agotados), el calendario del staff está fuera de sync.
+  // Esto degrada la confianza del agente: el cliente cree que tiene cita
+  // pero el doctor no la ve en su calendar.
+  let calendarBacklog = { pending: 0, failed: 0, ok: true };
+  try {
+    const { count: pendingCount } = await supabaseAdmin
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .in('calendar_sync_status', ['pending', 'cancel']);
+    const { count: failedCount } = await supabaseAdmin
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('calendar_sync_status', 'failed');
+    calendarBacklog = {
+      pending: pendingCount ?? 0,
+      failed: failedCount ?? 0,
+      ok: (pendingCount ?? 0) < 50 && (failedCount ?? 0) === 0,
+    };
+  } catch {
+    // schema sin columna aún — no es bloqueante
   }
 
   // ─── Cron last-run timestamps ─────────────────────────────────────────
@@ -100,7 +127,9 @@ export async function GET(req: NextRequest) {
         database: dbOk ? 'ok' : 'down',
         redis: redisOk ? 'ok' : 'unavailable',
         llm: llmOk ? 'configured' : 'missing_key',
+        calendarSync: calendarBacklog.ok ? 'ok' : 'degraded',
       },
+      calendarBacklog,
       cronLastRuns,
       metrics,
     },
