@@ -2110,3 +2110,264 @@ registerTool('add_to_waitlist', {
     };
   },
 });
+
+// ─── Tool: book_recurring_series ───────────────────────────────────────────
+//
+// Para citas que se repiten en serie (limpieza dental cada 6 meses,
+// ortodoncia mensual, fisio semanal). Una sola llamada del LLM crea N
+// occurrencias con el mismo `recurrence_group_id`, así cancel/modify puede
+// targetear toda la serie.
+//
+// Estrategia ante conflictos: se bookea lo que se puede; las fechas
+// conflictivas se devuelven en `skipped_dates` para que el LLM pueda
+// preguntar al paciente si quiere alternativas. NO se hace rollback.
+const RecurringArgs = z
+  .object({
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD'),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:MM 24h'),
+    service_type: z.string().min(1).max(120).optional(),
+    staff_id: z.string().uuid().optional(),
+    patient_name: z.string().min(1).max(200),
+    reason: z.string().min(1).max(200),
+    // Cada cuántas semanas se repite. 1=semanal, 4=mensual, 26=semestral.
+    interval_weeks: z.number().int().min(1).max(52),
+    // Cuántas ocurrencias generar (mín 2 = es serie). Cap 24 para evitar
+    // que el LLM cree 1000 citas accidentalmente.
+    occurrences: z.number().int().min(2).max(24),
+  })
+  .strict();
+
+registerTool('book_recurring_series', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'book_recurring_series',
+      description:
+        'Crea una serie de citas recurrentes (ej. limpieza dental cada 6 meses por 2 años, ortodoncia mensual por 1 año). USAR cuando el paciente menciona periodicidad clara como "cada X semanas/meses" o "1 vez al mes por Y meses". Ejemplo: para "limpieza cada 6 meses por 2 años" → interval_weeks=26, occurrences=4. Si hay conflictos en algunas fechas, devuelve `skipped_dates` y el agente debe preguntar al paciente si quiere alternativas para esas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_date: { type: 'string', description: 'YYYY-MM-DD primera cita' },
+          time: { type: 'string', description: 'HH:MM 24h (mismo horario para todas)' },
+          service_type: { type: 'string', description: 'Servicio (limpieza, ajuste, etc.)' },
+          staff_id: { type: 'string', description: 'UUID del doctor (opcional)' },
+          patient_name: { type: 'string' },
+          reason: { type: 'string' },
+          interval_weeks: { type: 'number', description: '1=semanal, 4=mensual, 13=trimestral, 26=semestral, 52=anual' },
+          occurrences: { type: 'number', description: 'Cantidad de citas (entre 2 y 24)' },
+        },
+        required: ['start_date', 'time', 'patient_name', 'reason', 'interval_weeks', 'occurrences'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = RecurringArgs.parse(rawArgs);
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
+    if (!ownerPhone) {
+      return { success: false, error_code: 'NO_PHONE', message: 'No tengo tu número.' };
+    }
+
+    const timezone = resolveTenantTimezone(ctx.tenant);
+    const businessHours = ctx.tenant.business_hours as Record<string, string> | null;
+
+    // Cargar staff + service
+    const { data: staffList } = await supabaseAdmin
+      .from('staff')
+      .select('id, name, default_duration')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+    const staff = findMatchingStaff((staffList || []) as StaffRow[], args.staff_id);
+    if (!staff) {
+      return {
+        success: false,
+        error_code: 'NO_STAFF',
+        message: 'No encontré un profesional disponible para la serie.',
+      };
+    }
+
+    let serviceId: string | null = null;
+    let durationMinutes = staff.default_duration || 30;
+    if (args.service_type) {
+      const { data: services } = await supabaseAdmin
+        .from('services')
+        .select('id, name, duration_minutes, price')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('active', true);
+      const match = findMatchingService((services || []) as ServiceRow[], args.service_type);
+      if (match) {
+        serviceId = (match.id as string) || null;
+        durationMinutes = match.duration_minutes || durationMinutes;
+      }
+    }
+
+    const recurrenceGroupId = crypto.randomUUID();
+    const startBaseTs = new Date(buildLocalIso(args.start_date, args.time, timezone)).getTime();
+    const intervalMs = args.interval_weeks * 7 * 24 * 60 * 60 * 1000;
+
+    const booked: Array<{ id: string; datetime: string }> = [];
+    const skipped: Array<{ date: string; reason: string }> = [];
+
+    for (let i = 0; i < args.occurrences; i++) {
+      const occurDate = new Date(startBaseTs + i * intervalMs);
+      const dateIso = occurDate.toISOString().slice(0, 10);
+      const datetime = buildLocalIso(dateIso, args.time, timezone);
+      const endDt = new Date(new Date(datetime).getTime() + durationMinutes * 60_000).toISOString();
+
+      // Business hours check
+      if (!isWithinBusinessHours(datetime, businessHours, timezone)) {
+        skipped.push({ date: dateIso, reason: 'fuera de horario del consultorio' });
+        continue;
+      }
+
+      // Conflict pre-check (best-effort; el EXCLUDE constraint es la fuente de verdad)
+      const conflict = await hasConflict({
+        tenantId: ctx.tenantId,
+        staffId: staff.id,
+        datetime,
+        durationMinutes,
+      });
+      if (conflict) {
+        skipped.push({ date: dateIso, reason: 'horario ocupado' });
+        continue;
+      }
+
+      const { data: row, error } = await supabaseAdmin
+        .from('appointments')
+        .insert({
+          tenant_id: ctx.tenantId,
+          staff_id: staff.id,
+          service_id: serviceId,
+          contact_id: ctx.contactId,
+          conversation_id: ctx.conversationId,
+          customer_phone: ownerPhone,
+          customer_name: args.patient_name,
+          datetime,
+          end_datetime: endDt,
+          duration_minutes: durationMinutes,
+          status: 'scheduled',
+          source: 'chat',
+          notes: `Serie recurrente (${i + 1}/${args.occurrences}): ${args.reason}`,
+          recurrence_group_id: recurrenceGroupId,
+        })
+        .select('id, datetime')
+        .single();
+
+      if (error || !row) {
+        const isConflict = error?.code === '23P01' ||
+          /exclusion|appointments_no_overlap|overlap/i.test(error?.message ?? '');
+        skipped.push({
+          date: dateIso,
+          reason: isConflict ? 'horario ocupado (race)' : 'error de inserción',
+        });
+        continue;
+      }
+
+      booked.push({ id: row.id as string, datetime: row.datetime as string });
+    }
+
+    if (booked.length === 0) {
+      return {
+        success: false,
+        error_code: 'ALL_CONFLICTS',
+        message: 'Ninguna de las fechas de la serie funcionó. Pediré al paciente alternativas.',
+        skipped_dates: skipped,
+      };
+    }
+
+    return {
+      success: true,
+      recurrence_group_id: recurrenceGroupId,
+      booked_count: booked.length,
+      total_requested: args.occurrences,
+      first_date: booked[0].datetime,
+      last_date: booked[booked.length - 1].datetime,
+      skipped_dates: skipped,
+      message: skipped.length > 0
+        ? `Agendé ${booked.length} de ${args.occurrences} citas. Las ${skipped.length} restantes están en conflicto — pregúntale al paciente si quiere alternativas para esas fechas.`
+        : `✅ Serie completa de ${booked.length} citas agendada.`,
+    };
+  },
+});
+
+// ─── Tool: cancel_recurring_series ─────────────────────────────────────────
+//
+// Cancela TODAS las citas futuras de una serie recurrente (las pasadas se
+// dejan como están). Verifica ownership por customer_phone — nadie puede
+// cancelar la serie de otro paciente.
+const CancelSeriesArgs = z
+  .object({
+    recurrence_group_id: z.string().uuid(),
+    reason: z.string().max(500).optional(),
+  })
+  .strict();
+
+registerTool('cancel_recurring_series', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'cancel_recurring_series',
+      description:
+        'Cancela TODA una serie de citas recurrentes. Solo cancela las citas FUTURAS de la serie (las pasadas quedan como están). USAR cuando el paciente dice "cancela toda la serie" o "ya no quiero seguir con las citas de cada mes". Para cancelar UNA cita individual, usa cancel_appointment.',
+      parameters: {
+        type: 'object',
+        properties: {
+          recurrence_group_id: { type: 'string', description: 'UUID del grupo (devuelto por book_recurring_series o get_my_appointments)' },
+          reason: { type: 'string' },
+        },
+        required: ['recurrence_group_id'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = CancelSeriesArgs.parse(rawArgs);
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
+    if (!ownerPhone) {
+      return { success: false, error_code: 'NO_PHONE', message: 'No tengo tu número.' };
+    }
+
+    // Defense-in-depth: verificar que la serie pertenece al sender
+    const { data: future } = await supabaseAdmin
+      .from('appointments')
+      .select('id, datetime, customer_phone')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('recurrence_group_id', args.recurrence_group_id)
+      .eq('customer_phone', ownerPhone)
+      .gt('datetime', new Date().toISOString())
+      .in('status', ['scheduled', 'confirmed']);
+
+    if (!future || future.length === 0) {
+      return {
+        success: false,
+        error_code: 'NOT_FOUND',
+        message: 'No encontré una serie tuya con citas futuras pendientes.',
+      };
+    }
+
+    const ids = future.map((r) => r.id as string);
+    const { error } = await supabaseAdmin
+      .from('appointments')
+      .update({
+        status: 'cancelled',
+        cancellation_reason: args.reason || 'serie cancelada por el paciente',
+      })
+      .in('id', ids);
+
+    if (error) {
+      // Retry sin cancellation_reason si la columna no existe
+      await supabaseAdmin
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .in('id', ids);
+    }
+
+    return {
+      success: true,
+      cancelled_count: ids.length,
+      message: `✅ Cancelé ${ids.length} citas futuras de tu serie. Las pasadas quedan como están.`,
+    };
+  },
+});

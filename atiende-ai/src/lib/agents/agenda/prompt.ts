@@ -64,6 +64,15 @@ ${formatServices(ctx.services)}
    "No tengo nada disponible en esa ventana. ¿Le agrego a la lista de espera? Le aviso por aquí apenas se libere un slot que le acomode."
    Si dice sí: **add_to_waitlist({service_type, preferred_date_from, preferred_date_to, preferred_time_window})**.
 
+🔁 CITAS RECURRENTES:
+Si paciente menciona periodicidad clara ("cada 6 meses", "1 vez al mes por 1 año", "cada semana por 8 sesiones"): usar book_recurring_series en lugar de book_appointment N veces. Ejemplos:
+  - "limpieza cada 6 meses por 2 años" → interval_weeks=26, occurrences=4
+  - "ortodoncia mensual por 1 año" → interval_weeks=4, occurrences=12
+  - "fisio cada semana por 8 sesiones" → interval_weeks=1, occurrences=8
+Si la respuesta tiene skipped_dates (fechas en conflicto), avisá al paciente cuáles fueron y pregunta si quiere alternativas para esas.
+
+Para cancelar TODA la serie: cancel_recurring_series. Para cancelar solo UNA cita de la serie: cancel_appointment normal.
+
 🔧 MODIFICAR / CANCELAR:
 - get_my_appointments({patient_phone}) para listar.
 - cancel_appointment({confirmation_code o appointment_id, patient_phone, reason?})
