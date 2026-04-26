@@ -36,6 +36,11 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       // agrega a la lista de espera. Cron de marketplace (lista_espera)
       // notifica cuando otra cita se cancela.
       'add_to_waitlist',
+      // Citas recurrentes (limpieza dental cada 6 meses, ortodoncia
+      // mensual, fisio semanal). Una llamada crea N occurrencias con el
+      // mismo recurrence_group_id.
+      'book_recurring_series',
+      'cancel_recurring_series',
       // Shared profile tools — el agente agenda ve mensajes libres del
       // paciente y debe poder guardar cualquier dato nuevo que aparezca
       // en medio del flujo (alergia reciente, cambio de dirección,
