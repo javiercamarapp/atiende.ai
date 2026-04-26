@@ -401,11 +401,15 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
 async function handleModifyAppointment(ctx: ActionContext): Promise<ActionResult> {
   const { data: apt } = await supabaseAdmin.from('appointments').select('id, datetime').eq('tenant_id', ctx.tenantId).eq('customer_phone', ctx.customerPhone).in('status', ['scheduled', 'confirmed']).order('datetime', { ascending: true }).limit(1).single();
   if (!apt) return { actionTaken: true, actionType: 'appointment.not_found', followUpMessage: 'No encontré una cita próxima. ¿Desea agendar una nueva?' };
-  const d = new Date(apt.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  // Bug fix: usar formatDateTimeMx (timezone-aware) en vez de toLocaleDateString
+  // sin timeZone option. En Vercel el host TZ es UTC, así que 10:00 Mérida
+  // (16:00 UTC) salía como "16:00" — confundía al paciente y rompía la UX.
+  const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+  const { dateFmt, timeFmt } = formatDateTimeMx(apt.datetime as string, timezone);
   // Set state for multi-turn modify flow
   const { setConversationState } = await import('@/lib/actions/state-machine');
   await setConversationState(ctx.conversationId, 'awaiting_modify_date');
-  return { actionTaken: true, actionType: 'appointment.modify_prompt', followUpMessage: `Su cita actual es el ${d}.\n\n¿Para qué fecha y hora le gustaría cambiarla?` };
+  return { actionTaken: true, actionType: 'appointment.modify_prompt', followUpMessage: `Su cita actual es el ${dateFmt} a las ${timeFmt}.\n\n¿Para qué fecha y hora le gustaría cambiarla?` };
 }
 
 // ═══ APPOINTMENT: MODIFY CONFIRM (receives new date/time) ═══
@@ -618,8 +622,12 @@ async function handleCancelAppointment(ctx: ActionContext): Promise<ActionResult
   }
   try { const { executeEventAgents } = await import('@/lib/marketplace/engine'); await executeEventAgents('appointment.cancelled', { tenant_id: ctx.tenantId, appointment_id: apt.id }); } catch { /* ok */ }
 
-  const d = new Date(apt.datetime).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-  return { actionTaken: true, actionType: 'appointment.cancelled', details: { appointmentId: apt.id }, followUpMessage: `✅ Su cita del ${d} ha sido cancelada.\n\n¿Le gustaría reagendar para otra fecha?` };
+  // Bug fix: timezone-aware formatting via formatDateTimeMx. Vercel host TZ
+  // es UTC, sin timeZone option daba la fecha en UTC y citas late-night
+  // mexicanas se mostraban como el día siguiente.
+  const timezone = (ctx.tenant.timezone as string) || 'America/Merida';
+  const { dateFmt } = formatDateTimeMx(apt.datetime as string, timezone);
+  return { actionTaken: true, actionType: 'appointment.cancelled', details: { appointmentId: apt.id }, followUpMessage: `✅ Su cita del ${dateFmt} ha sido cancelada.\n\n¿Le gustaría reagendar para otra fecha?` };
 }
 
 // ═══ ORDER: CREATE ═══
