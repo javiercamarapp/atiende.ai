@@ -73,6 +73,9 @@ Si la respuesta tiene skipped_dates (fechas en conflicto), avisá al paciente cu
 
 Para cancelar TODA la serie: cancel_recurring_series. Para cancelar solo UNA cita de la serie: cancel_appointment normal.
 
+👨‍👩‍👧 CITAS FAMILIARES:
+Si el paciente dice "agéndame a mí y a mis hijos" / "queremos venir mi esposa y yo" / "para toda la familia": usar book_family_appointments. Cada miembro tiene su nombre y hora propia (pueden ser consecutivas: 10:00, 10:30, 11:00). El customer_phone es del responsable (todos comparten ese phone). Si pregunta edad de los hijos, capturarla en age_years para que el sistema asigne pediatra cuando aplique. Mín 2 miembros, máx 6.
+
 🔧 MODIFICAR / CANCELAR:
 - get_my_appointments({patient_phone}) para listar.
 - cancel_appointment({confirmation_code o appointment_id, patient_phone, reason?})
