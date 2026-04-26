@@ -18,6 +18,7 @@ import { decryptPII } from '@/lib/utils/crypto';
 export async function buildPatientStateSnapshot(
   tenantId: string,
   contactId: string,
+  timezone = 'America/Merida',
 ): Promise<string> {
   if (!contactId) return '';
 
@@ -79,7 +80,12 @@ export async function buildPatientStateSnapshot(
       const svc = Array.isArray(a.services) ? a.services[0] : a.services;
       const staff = Array.isArray(a.staff) ? a.staff[0] : a.staff;
       const dt = new Date(a.datetime as string);
+      // Bug fix: SIEMPRE pasar timeZone option. Vercel host TZ es UTC, así
+      // que sin esto las citas guardadas en local-time-as-UTC se mostraban
+      // con offset (10am Mérida → 16:00 UTC → el LLM repetía 16:00 al
+      // paciente). Ahora usamos el timezone del tenant.
       const fmt = dt.toLocaleString('es-MX', {
+        timeZone: timezone,
         weekday: 'short', day: 'numeric', month: 'short',
         hour: '2-digit', minute: '2-digit', hour12: false,
       });

@@ -1723,7 +1723,7 @@ registerTool('send_payment_link', {
         patientPhone: apt.customer_phone as string,
         description: svc?.name
           ? `${svc.name} — ${(apt.customer_name as string) || 'Paciente'}`
-          : `Cita ${new Date(apt.datetime as string).toLocaleDateString('es-MX')}`,
+          : `Cita ${new Date(apt.datetime as string).toLocaleDateString('es-MX', { timeZone: resolveTenantTimezone(ctx.tenant) })}`,
       });
       paymentUrl = result.url;
       sessionId = result.sessionId;

@@ -489,8 +489,9 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
   // trunque, el LLM ve el estado canónico desde BD y NO repite preguntas
   // ni ofrece reservar si ya hay cita activa.
   const { buildPatientStateSnapshot } = await import('./patient-state-snapshot');
+  const tenantTz = (tenant.timezone as string) || 'America/Merida';
   const stateSnapshot = contactId
-    ? await buildPatientStateSnapshot(tenant.id, contactId).catch(() => '')
+    ? await buildPatientStateSnapshot(tenant.id, contactId, tenantTz).catch(() => '')
     : '';
 
   // State recovery — si hay state activo (de cualquier tipo) lo inyectamos
