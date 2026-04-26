@@ -74,11 +74,14 @@ export const MODELS = {
   ONBOARDING_AGENT_FALLBACK: 'meta-llama/llama-3.3-70b-instruct',
 
   // ─── ORQUESTADOR DE TOOL CALLING (Fase 1) ───
-  // Grok 4.1 Fast — primario por costo + latencia. Para que funcione bien
-  // con tool calling necesitamos: prompts cortos, historial recortado
-  // (HISTORY_MAX_MESSAGES=12), y tool_choice='auto'. Si Grok falla,
-  // GPT-4.1-mini cubre como fallback.
-  ORCHESTRATOR: 'x-ai/grok-4.1-fast',
+  // Gemini 2.5 Flash — primario por confiabilidad de tool calling +
+  // latencia sub-2s consistente. Antes era `x-ai/grok-4.1-fast` pero Grok
+  // mostraba timeouts de 12-17s en producción (response_time_ms=17070
+  // observado, ambos modelos timeouteando) — sospechamos cold-start del
+  // routing en OpenRouter o latencia variable del provider. Gemini Flash
+  // tiene mejor SLA percibido para tool calling con prompts grandes
+  // (~15 tools en agenda agent). Fallback sigue siendo GPT-4.1-mini.
+  ORCHESTRATOR: 'google/gemini-2.5-flash',
 
   // ─── FALLBACK DEL ORQUESTADOR ───
   ORCHESTRATOR_FALLBACK: 'openai/gpt-4.1-mini',
