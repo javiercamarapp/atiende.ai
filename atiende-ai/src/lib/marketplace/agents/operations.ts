@@ -83,7 +83,7 @@ export async function runOptimizador(ctx: AgentContext) {
   //   - staff_id IS NULL OR matches the freed staff
   // FIFO: ORDER BY created_at ASC, LIMIT 1.
   let q = supabaseAdmin
-    .from('waitlist')
+    .from('appointment_waitlist')
     .select('id, customer_phone, customer_name, notified_count, preferred_time_window')
     .eq('tenant_id', ctx.tenantId)
     .eq('status', 'active')
@@ -140,7 +140,7 @@ export async function runOptimizador(ctx: AgentContext) {
 
   // Marcar notified
   await supabaseAdmin
-    .from('waitlist')
+    .from('appointment_waitlist')
     .update({
       notified_count: ((winner.notified_count as number) || 0) + 1,
       last_notified_at: new Date().toISOString(),
