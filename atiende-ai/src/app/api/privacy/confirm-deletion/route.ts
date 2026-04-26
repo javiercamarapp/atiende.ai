@@ -127,6 +127,58 @@ export async function GET(req: NextRequest) {
       .eq('tenant_id', tenantId)
       .eq('phone_hash', phoneHash);
     summary.leads = leadCount ?? 0;
+
+    // Delete appointment_waitlist (tabla agregada en PR #142). Aún no
+    // tiene phone_hash column, así que filtramos por customer_phone si
+    // existe en alguno de los conversations encontrados arriba — best
+    // effort. Si la tabla no existe en este tenant, supabase devuelve
+    // count=0 sin error (RLS allow-by-tenant).
+    try {
+      const { count: waitlistCount } = await supabaseAdmin
+        .from('appointment_waitlist')
+        .delete({ count: 'exact' })
+        .eq('tenant_id', tenantId)
+        .or(`customer_phone.eq.${phoneHash},customer_phone.like.${phoneHash.slice(0, 8)}%`);
+      summary.appointment_waitlist = waitlistCount ?? 0;
+    } catch {
+      // Tabla no existe en este Supabase aún (migración pendiente)
+    }
+
+    // Delete survey_responses (PII vía patient_phone)
+    try {
+      const { count: surveyCount } = await supabaseAdmin
+        .from('survey_responses')
+        .delete({ count: 'exact' })
+        .eq('tenant_id', tenantId)
+        .like('patient_phone', `${phoneHash.slice(0, 8)}%`);
+      summary.survey_responses = surveyCount ?? 0;
+    } catch {
+      // ok si no existe
+    }
+
+    // Delete scheduled_messages (recordatorios programados al phone)
+    try {
+      const { count: schedCount } = await supabaseAdmin
+        .from('scheduled_messages')
+        .delete({ count: 'exact' })
+        .eq('tenant_id', tenantId)
+        .like('patient_phone', `${phoneHash.slice(0, 8)}%`);
+      summary.scheduled_messages = schedCount ?? 0;
+    } catch {
+      // ok si no existe
+    }
+
+    // Delete payments (vía customer_phone si la tabla la tiene)
+    try {
+      const { count: payCount } = await supabaseAdmin
+        .from('payments')
+        .delete({ count: 'exact' })
+        .eq('tenant_id', tenantId)
+        .like('customer_phone', `${phoneHash.slice(0, 8)}%`);
+      summary.payments = payCount ?? 0;
+    } catch {
+      // ok si no existe
+    }
   } catch (err) {
     logger.error(
       '[arco-s] deletion failed',
