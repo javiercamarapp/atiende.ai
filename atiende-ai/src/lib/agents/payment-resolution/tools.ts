@@ -11,6 +11,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 import { notifyOwner } from '@/lib/actions/notifications';
 import { assertContactInTenant } from '@/lib/agents/shared/tenant-guards';
+import { resolveTenantTimezone } from '@/lib/config';
 
 const assertContact = (tenantId: string, contactId: string) =>
   assertContactInTenant(tenantId, contactId, 'payment');
@@ -127,9 +128,11 @@ registerTool('request_invoice', {
 
     const svc = Array.isArray(apt?.services) ? apt?.services[0] : apt?.services;
     const amountMxn = Number(apt?.payment_amount_mxn ?? svc?.price ?? 0);
+    const tz = resolveTenantTimezone(ctx.tenant);
+    const aptDateFmt = new Date(apt?.datetime as string).toLocaleDateString('es-MX', { timeZone: tz });
     const description = svc?.name
-      ? `${svc.name} — ${new Date(apt?.datetime as string).toLocaleDateString('es-MX')}`
-      : `Consulta ${new Date(apt?.datetime as string).toLocaleDateString('es-MX')}`;
+      ? `${svc.name} — ${aptDateFmt}`
+      : `Consulta ${aptDateFmt}`;
 
     // Insert de la invoice en status 'pending' (o 'generating' si vamos a emitir)
     const { data: inv, error: invErr } = await supabaseAdmin.from('invoices').insert({

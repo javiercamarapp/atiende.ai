@@ -201,7 +201,16 @@ export async function runConfirmacionCita(ctx: AgentContext) {
 
   for (const apt of appointments || []) {
     if (!apt.customer_phone) continue;
-    const time = new Date(apt.datetime).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    // FIX timezone: pasar timeZone del tenant. Sin esto, Vercel host TZ=UTC
+    // y 10:00 Mérida (16:00 UTC) se mostraba como 16:00 al paciente —
+    // exactamente el bug del cron de confirmación de cita.
+    const tenantTz = (ctx.tenant.timezone as string) || 'America/Merida';
+    const time = new Date(apt.datetime).toLocaleTimeString('es-MX', {
+      timeZone: tenantTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
 
     await sendButtonMessage(
       ctx.tenant.wa_phone_number_id as string,
