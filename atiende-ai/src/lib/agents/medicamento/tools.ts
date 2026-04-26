@@ -13,7 +13,10 @@ import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 // ─── Tool 1: parse_prescription_from_notes ──────────────────────────────────
 const ParsePrescriptionArgs = z
   .object({
-    doctor_notes: z.string().min(1).max(5000),
+    // Cap a 2500 chars (era 5000): doctor_notes legítimas suelen ser
+    // <500 chars; 2500 cubre casos extremos (paciente complejo) sin
+    // dejar espacio para LLM hallucinations o token abuse.
+    doctor_notes: z.string().min(1).max(2500),
     patient_phone: z.string().min(6).max(20),
     appointment_id: z.string().uuid(),
   })
@@ -130,10 +133,22 @@ registerTool('schedule_medication_reminders', {
     const args = ScheduleMedRemArgs.parse(rawArgs);
     const startMs = args.start_datetime ? new Date(args.start_datetime).getTime() : Date.now();
 
+    // Cap GLOBAL de inserts: 60 dosis × 5 medicamentos = 300 rows en
+    // un solo INSERT. Eso satura el worker en casos legítimos extremos.
+    // Cap a 100 inserts totales — un paciente con prescripción tan
+    // larga que excede esto debería ser manejado por staff humano.
+    const MAX_TOTAL_INSERTS = 100;
     const inserts: Array<Record<string, unknown>> = [];
+    let truncated = false;
     for (const med of args.medications) {
+      if (inserts.length >= MAX_TOTAL_INSERTS) {
+        truncated = true;
+        break;
+      }
       const totalDoses = Math.ceil((med.duration_days * 24) / med.frequency_hours);
-      for (let i = 0; i < Math.min(totalDoses, 60); i++) {
+      const remaining = MAX_TOTAL_INSERTS - inserts.length;
+      const dosesToSchedule = Math.min(totalDoses, 60, remaining);
+      for (let i = 0; i < dosesToSchedule; i++) {
         const sendAt = new Date(startMs + i * med.frequency_hours * 60 * 60_000);
         inserts.push({
           tenant_id: ctx.tenantId,
@@ -144,6 +159,7 @@ registerTool('schedule_medication_reminders', {
           metadata: { medication: med.name, dose: med.dose, instance_index: i },
         });
       }
+      if (dosesToSchedule < totalDoses) truncated = true;
     }
 
     if (inserts.length === 0) return { reminders_scheduled: 0 };
@@ -151,7 +167,10 @@ registerTool('schedule_medication_reminders', {
     if (error) return { reminders_scheduled: 0, error: error.message };
     return {
       reminders_scheduled: inserts.length,
-      schedule_summary: `${args.medications.length} medicamento(s), ${inserts.length} dosis programadas.`,
+      truncated,
+      schedule_summary: truncated
+        ? `${args.medications.length} medicamento(s), ${inserts.length} dosis programadas (cap de 100 alcanzado — staff humano debe completar el resto).`
+        : `${args.medications.length} medicamento(s), ${inserts.length} dosis programadas.`,
     };
   },
 });
