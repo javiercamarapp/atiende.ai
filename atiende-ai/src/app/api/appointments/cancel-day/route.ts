@@ -109,6 +109,41 @@ export async function POST(req: NextRequest) {
         .in('id', ids);
     }
 
+    // Auto-add cancelled patients to appointment_waitlist with their
+    // original date/staff as preference. Cuando el doctor reagende
+    // (o se libere otro slot), runOptimizador les notifica primero
+    // con prioridad FIFO. Esto convierte el "doctor canceló mi cita"
+    // en "el sistema me avisará apenas haya espacio nuevo".
+    try {
+      const waitlistInserts = rows.map((r) => {
+        const dt = new Date(r.datetime);
+        const hour = dt.getUTCHours();
+        let timeWindow: 'morning' | 'afternoon' | 'evening';
+        if (hour < 12) timeWindow = 'morning';
+        else if (hour < 17) timeWindow = 'afternoon';
+        else timeWindow = 'evening';
+        return {
+          tenant_id: tenant.id,
+          customer_phone: r.customer_phone,
+          customer_name: r.customer_name,
+          staff_id: r.staff_id,
+          // Acepta cualquier fecha desde la cancelada hasta 30 días después
+          preferred_date_from: date,
+          preferred_date_to: new Date(dayStart.getTime() + 30 * 86400000)
+            .toISOString()
+            .slice(0, 10),
+          preferred_time_window: timeWindow,
+          notes: `Auto-añadido tras cancelación masiva${reason ? ': ' + reason : ''}`,
+        };
+      });
+      await supabaseAdmin.from('appointment_waitlist').insert(waitlistInserts);
+    } catch (err) {
+      // No bloquea el flow — la waitlist es nice-to-have
+      logger.warn('[cancel-day] waitlist auto-add failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // For each row: cancel Google event + (optional) notify via WA in parallel,
     // but rate-limited to avoid WA throttling if there are many.
     let notified = 0;
@@ -140,7 +175,8 @@ export async function POST(req: NextRequest) {
             `Hola${r.customer_name ? ` ${r.customer_name}` : ''} 👋\n\n` +
             `Le escribo de ${tenantResolved.name} para avisarle que lamentablemente tenemos que cancelar su cita del *${dateFmt}* a las *${timeFmt}*.` +
             (reason ? `\n\nMotivo: ${reason}` : '') +
-            `\n\n¿Le gustaría reagendar? Responda a este mensaje con el día y hora que le acomoden.` +
+            `\n\nLe agregamos a nuestra lista de espera con prioridad — apenas se libere un horario que le acomode, le aviso por aquí.` +
+            `\n\n¿O prefiere reagendar ahora mismo? Responda con el día y hora que le acomoden y lo agendamos al instante.` +
             `\n\nDisculpe las molestias.`;
           try {
             const res = await sendTextMessage(
