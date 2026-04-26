@@ -26,7 +26,7 @@ const {
     }),
   ),
   mockSelectModel: vi.fn(() => 'test-model'),
-  mockClassifyIntent: vi.fn(() => 'GREETING'),
+  mockClassifyIntent: vi.fn((_msg?: string) => 'GREETING'),
   mockSearchKnowledge: vi.fn(() => ''),
   mockValidateResponse: vi.fn((text: string) => ({ valid: true, text })),
   mockSendTextMessage: vi.fn(() => Promise.resolve()),
@@ -122,6 +122,11 @@ vi.mock('@/lib/llm/openrouter', () => ({
 
 vi.mock('@/lib/llm/classifier', () => ({
   classifyIntent: mockClassifyIntent,
+  classifyIntentWithConfidence: vi.fn(async (msg: string) => ({
+    intent: await mockClassifyIntent(msg),
+    confidence: 0.95,
+    source: 'llm',
+  })),
 }));
 
 vi.mock('@/lib/rag/search', () => ({

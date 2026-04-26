@@ -29,7 +29,7 @@ const {
     cost: 0.001,
   })),
   mockSelectModel: vi.fn(() => 'test-model'),
-  mockClassifyIntent: vi.fn(() => 'GREETING'),
+  mockClassifyIntent: vi.fn((_msg?: string) => 'GREETING'),
   mockSearchKnowledge: vi.fn(() => ''),
   mockValidateResponse: vi.fn(
     (text: string) => ({ valid: true, text })
@@ -156,6 +156,14 @@ vi.mock('@/lib/llm/openrouter', () => ({
 
 vi.mock('@/lib/llm/classifier', () => ({
   classifyIntent: mockClassifyIntent,
+  // Wrapper que delega al mock real y empaqueta confidence sintético.
+  // Tests existentes que verifican `mockClassifyIntent.toHaveBeenCalledWith(msg)`
+  // siguen funcionando porque el msg se pasa al mock interno.
+  classifyIntentWithConfidence: vi.fn(async (msg: string) => ({
+    intent: await mockClassifyIntent(msg),
+    confidence: 0.95,
+    source: 'llm',
+  })),
 }));
 
 vi.mock('@/lib/rag/search', () => ({

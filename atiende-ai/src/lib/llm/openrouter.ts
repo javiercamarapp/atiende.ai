@@ -231,24 +231,31 @@ export function calculateCost(
 }
 
 // Cadena de fallback por familia. Cuando el modelo primario falla con un
-// error transient (5xx, timeout, rate limit), intentamos el siguiente modelo
-// del mismo "tier" para que el usuario nunca reciba un error de proveedor
-// como respuesta — los providers caen, las respuestas de WhatsApp no.
+// error transient (5xx, timeout, rate limit), intentamos UN modelo de
+// respaldo de proveedor distinto para que el usuario nunca reciba un error
+// de proveedor como respuesta — los providers caen, las respuestas de
+// WhatsApp no.
 //
-// Mapping: cualquier modelo de la lista tiene como fallback el siguiente.
+// **Asimetría intencional**: el fallback de un modelo nunca apunta a otro
+// que ya tiene a éste como fallback. Esto evita que si dos modelos
+// mutualmente caídos sean primario+fallback de algún caller, el sistema
+// gaste tokens reintentando el mismo par. Convención: tier alto cae a
+// tier inferior, tier inferior cae a un proveedor distinto (OpenAI ↔
+// Google ↔ Anthropic son siempre cross-provider).
+//
 // Si el caller pasa `fallbackModel` explícito, ese gana sobre el default.
 const DEFAULT_FALLBACK_CHAIN: Record<string, string> = {
-  // Standard tier (chat casual / FAQ)
-  'google/gemini-2.5-flash-lite': 'openai/gpt-4o-mini',
-  // Balanced tier (agendar / reservar / orders)
+  // Standard tier (chat casual / FAQ) — Google → OpenAI cheap
+  'google/gemini-2.5-flash-lite': 'openai/gpt-4.1-mini',
+  // Balanced tier (agendar / reservar / orders) — Google → OpenAI strong
   'google/gemini-2.5-flash': 'openai/gpt-4.1-mini',
-  // Premium tier (medical / crisis / complaint)
+  // Premium tier (medical / crisis / complaint) — Anthropic → Google
   'anthropic/claude-sonnet-4-6': 'google/gemini-2.5-flash',
-  // Classifier (routing barato)
+  // Classifier (routing barato) — OpenAI → Google
   'openai/gpt-4o-mini': 'google/gemini-2.5-flash-lite',
-  // Orquestador tool-calling
+  // Orquestador tool-calling — xAI → OpenAI
   'x-ai/grok-4.1-fast': 'openai/gpt-4.1-mini',
-  // Onboarding
+  // Onboarding — Qwen → Meta
   'qwen/qwen3-235b-a22b-2507': 'meta-llama/llama-3.3-70b-instruct',
 };
 
