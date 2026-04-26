@@ -34,12 +34,20 @@ export const ORCHESTRATOR_FALLBACK_TIMEOUT_MS = 10_000;
  *  execs ≈ 20s). Vercel maxDuration del worker es 300s, así que 25s sigue
  *  siendo seguro. */
 export const ORCHESTRATOR_TOTAL_TIMEOUT_MS = 25_000;
-/** Reducido 5→3: con 5 rondas Grok se quedaba dando vueltas (ej: re-pide
- *  check_availability con args ligeramente distintos) y agotaba el budget
- *  total sin emitir texto final → "Tuvimos un problema técnico". 3 rondas
- *  cubren el flujo típico (intake → check_availability → book_appointment)
- *  sin dejar margen para loops. */
-export const ORCHESTRATOR_MAX_TOOL_ROUNDS = 3;
+/** Subido 3→5 después de migrar el primario a Gemini 2.5 Flash (que ya
+ *  no entra en los loops de re-call que tenía Grok). 3 rondas no
+ *  alcanzaban para flujos multi-step legítimos comunes en consultorios:
+ *    - location selection (≥2 sucursales): NEEDS_LOCATION → user picks
+ *      → re-check → book = 4 rondas mínimo
+ *    - reschedule con verificación: get_my_appointments → confirm con
+ *      paciente → check_availability → modify_appointment = 4 rondas
+ *    - cambios de opinión multi-turno: el paciente pide nuevo slot
+ *      después de ofrecidos los primeros 3 → ronda extra
+ *  El loop guard con dedup cross-round (en generateWithTools) previene
+ *  que 5 rondas se conviertan en loop infinito: si el LLM repite la
+ *  misma read-only call con mismos args, devuelve resultado cacheado
+ *  sin gastar tokens. */
+export const ORCHESTRATOR_MAX_TOOL_ROUNDS = 5;
 export const ORCHESTRATOR_MAX_TOKENS_WITH_TOOLS = 2000;
 export const ORCHESTRATOR_MAX_TOKENS_NO_TOOLS = 800;
 

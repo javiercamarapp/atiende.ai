@@ -211,9 +211,14 @@ registerTool('request_invoice', {
 });
 
 // ─── Tool: dispute_charge ──────────────────────────────────────────────────
+// `.max(500_000)` previene LLM hallucinations con montos absurdos. Cap
+// realista para procedimientos médicos/dentales en MX: $500k MXN (cirugía
+// mayor). Sin esto, un LLM podría pasar `amount_mxn: 999999999` a la tool
+// de notifyOwner → mensaje confuso al dueño. Mantiene `min(0)` para
+// permitir disputas sin monto específico (sólo razón).
 const DisputeArgs = z.object({
   appointment_id: z.string().uuid().optional(),
-  amount_mxn: z.number().min(0).optional(),
+  amount_mxn: z.number().min(0).max(500_000).optional(),
   reason: z.string().min(5).max(1000),
 }).strict();
 

@@ -190,3 +190,42 @@ export const TENANT_COST_THRESHOLDS = {
   softUsd: DAILY_SOFT_USD,
   hardUsd: DAILY_HARD_USD,
 };
+
+/**
+ * Error lanzado cuando un tenant excedió su cap de costo diario hard.
+ * El orchestrator lo captura y muestra al usuario un mensaje calmo
+ * ("estamos al límite del día, intenta mañana") y al owner del tenant
+ * se le notifica para upgrade o investigar el bug que causó el spike.
+ */
+export class TenantCostCapExceededError extends Error {
+  constructor(
+    public readonly tenantId: string,
+    public readonly dailyUsd: number,
+    public readonly hardLimit: number,
+  ) {
+    super(
+      `Tenant ${tenantId} exceeded hard daily cost limit: ${dailyUsd.toFixed(4)} >= ${hardLimit} USD`,
+    );
+    this.name = 'TenantCostCapExceededError';
+  }
+}
+
+/**
+ * Hard-block: lanza `TenantCostCapExceededError` si el tenant ya gastó
+ * `>= DAILY_HARD_USD` hoy. Llamar ANTES de cada LLM call costosa
+ * (orchestrator entry point, response-builder).
+ *
+ * Diferencia con `trackTenantCost`: éste solo loguea ALERTAS post-facto.
+ * `enforceTenantCostCap` previene el siguiente gasto.
+ *
+ * Defense-in-depth: si un bug del LLM mete loop costoso, el cap detiene
+ * sangría. Sin esto, un tenant puede gastar miles de USD en horas antes
+ * de que alguien lea los logs `[cost-alert] HARD`.
+ */
+export async function enforceTenantCostCap(tenantId: string): Promise<void> {
+  if (!tenantId) return;
+  const dailyUsd = await getTenantDailyCost(tenantId);
+  if (dailyUsd >= DAILY_HARD_USD) {
+    throw new TenantCostCapExceededError(tenantId, dailyUsd, DAILY_HARD_USD);
+  }
+}

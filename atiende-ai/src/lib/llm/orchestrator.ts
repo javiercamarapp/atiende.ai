@@ -250,6 +250,15 @@ async function runOrchestratorInner(
   // capturarlo y responder al paciente con mensaje amigable.
   await checkOpenRouterRateLimit(ctx.tenantId);
 
+  // Cost cap hard-block. Si el tenant ya gastó >= DAILY_HARD_USD hoy,
+  // lanzamos TenantCostCapExceededError ANTES de cualquier LLM call
+  // adicional. Defense-in-depth contra runaway loops: sin esto un bug
+  // costoso puede sangrar miles de USD antes de que alguien lea los
+  // logs [cost-alert] HARD que ya emitía metrics.ts.
+  // El orchestrator branch lo captura y muestra mensaje al usuario.
+  const { enforceTenantCostCap } = await import('@/lib/observability/metrics');
+  await enforceTenantCostCap(ctx.tenantId);
+
   // System prompt base + snapshot de estado del paciente (si existe).
   // El snapshot vive en system (no en `messages`) para que NO sea afectado
   // por la truncación de history a los últimos N turns.
