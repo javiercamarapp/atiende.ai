@@ -2,7 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { waitUntil } from '@vercel/functions';
 import { sendTextMessage, markAsRead, sendTypingIndicator } from '@/lib/whatsapp/send';
 // transcribeAudio moved to content-extraction.ts
-import { resolveIntent } from '@/lib/whatsapp/classifier';
+import { resolveIntentWithConfidence } from '@/lib/whatsapp/classifier';
 import { buildRagContext } from '@/lib/whatsapp/rag-context';
 import { generateAndValidateResponse } from '@/lib/whatsapp/response-builder';
 // orchestrator imports moved to orchestrator-branch.ts
@@ -442,8 +442,36 @@ async function handleSingleMessageInner(
     }
   }
 
-  // 9. Classify intent (with state-machine override)
-  const intent = await resolveIntent(content, conv!.id);
+  // 9. Classify intent (with state-machine override) + confidence
+  // El confidence se persiste a `classification_feedback` para auditar
+  // la accuracy del routing. Si el classifier escaló a HUMAN por baja
+  // confianza en un intent de alto riesgo, queda como signal en analytics.
+  const classification = await resolveIntentWithConfidence(content, conv!.id);
+  const intent = classification.intent;
+  // Fire-and-forget: persistir el feedback no bloquea la respuesta al
+  // cliente. Try/catch defensivo porque la tabla puede no existir aún en
+  // entornos de desarrollo (la migración se aplica manualmente en prod).
+  void (async () => {
+    try {
+      const { error } = await supabaseAdmin
+        .from('classification_feedback')
+        .insert({
+          tenant_id: tenant.id,
+          original_intent: intent,
+          confidence: classification.confidence,
+          model_variant: classification.source,
+        });
+      if (error) {
+        logger.warn('[processor] classification_feedback insert failed', {
+          err: error.message,
+        });
+      }
+    } catch (err) {
+      logger.warn('[processor] classification_feedback insert threw', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })();
 
   // 10. Build RAG context + history in parallel
   const { ragContext: rawRagContext, history } = await buildRagContext(tenant.id as string, content, conv!.id);
