@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     // solo expande la superficie de exposición en logs/errores sin aportar.
     const { data: a24 } = await supabaseAdmin
       .from('appointments')
-      .select('*, tenants(wa_phone_number_id, name)')
+      .select('*, tenants(wa_phone_number_id, name, timezone)')
       .gte('datetime', in23.toISOString())
       .lte('datetime', in24.toISOString())
       .eq('status', 'scheduled')
@@ -31,12 +31,13 @@ export async function GET(req: NextRequest) {
 
     for (const appt of a24 || []) {
       try {
-        const tenant = appt.tenants as { wa_phone_number_id: string; name: string };
+        const tenant = appt.tenants as { wa_phone_number_id: string; name: string; timezone: string | null };
+        const tz = tenant.timezone || 'America/Merida';
         await sendTemplate(
           tenant.wa_phone_number_id,
           appt.customer_phone,
           'appointment_reminder_24h',
-          [appt.customer_name || 'Cliente', tenant.name, new Date(appt.datetime).toLocaleString('es-MX')]
+          [appt.customer_name || 'Cliente', tenant.name, new Date(appt.datetime).toLocaleString('es-MX', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, weekday: 'long', day: 'numeric', month: 'long' })]
         );
         await supabaseAdmin
           .from('appointments')
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
     const in1 = new Date(now.getTime() + 60 * 60 * 1000);
     const { data: a1 } = await supabaseAdmin
       .from('appointments')
-      .select('*, tenants(wa_phone_number_id, name)')
+      .select('*, tenants(wa_phone_number_id, name, timezone)')
       .gte('datetime', now.toISOString())
       .lte('datetime', in1.toISOString())
       .in('status', ['scheduled', 'confirmed'])
@@ -64,12 +65,13 @@ export async function GET(req: NextRequest) {
 
     for (const appt of a1 || []) {
       try {
-        const tenant = appt.tenants as { wa_phone_number_id: string; name: string };
+        const tenant = appt.tenants as { wa_phone_number_id: string; name: string; timezone: string | null };
+        const tz = tenant.timezone || 'America/Merida';
         await sendTemplate(
           tenant.wa_phone_number_id,
           appt.customer_phone,
           'appointment_reminder_1h',
-          [appt.customer_name || 'Cliente', tenant.name, new Date(appt.datetime).toLocaleString('es-MX')]
+          [appt.customer_name || 'Cliente', tenant.name, new Date(appt.datetime).toLocaleString('es-MX', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true })]
         );
         await supabaseAdmin
           .from('appointments')
