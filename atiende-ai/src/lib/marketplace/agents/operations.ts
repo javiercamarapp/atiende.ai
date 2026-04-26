@@ -41,38 +41,111 @@ export async function runSeguimiento(ctx: AgentContext) {
   );
 }
 
+/**
+ * Disparado por evento `appointment.cancelled`. Busca pacientes en la
+ * tabla `waitlist` (alimentada por la tool `add_to_waitlist`) cuyas
+ * preferencias matcheen el slot recién liberado, y notifica al primero
+ * en FIFO con prioridad.
+ *
+ * Antes esto era una heurística — leía mensajes de WhatsApp con intent
+ * APPOINTMENT_NEW de los últimos 14 días — porque no había tabla de
+ * waitlist real. La nueva tabla persiste preferencias estructuradas
+ * (date range, time window, service, staff) y permite matching exacto.
+ */
 export async function runOptimizador(ctx: AgentContext) {
   const payload = ctx.config.eventPayload as Record<string, string> | undefined;
   const staffId = payload?.staff_id;
   const datetime = payload?.datetime;
+  const serviceId = payload?.service_id;
   if (!staffId || !datetime) return;
 
-  const { data: waitlist } = await supabaseAdmin
-    .from('messages')
-    .select('conversation_id, content')
+  const slotDate = new Date(datetime);
+  if (isNaN(slotDate.getTime())) return;
+  const slotDateIso = slotDate.toISOString().slice(0, 10); // YYYY-MM-DD
+  const slotHour = slotDate.getUTCHours();
+  // Mapeo hora → ventana del día. Aproximado en UTC; el tenant timezone
+  // lo refinará en futuras iteraciones.
+  let slotWindow: 'morning' | 'afternoon' | 'evening';
+  if (slotHour < 12) slotWindow = 'morning';
+  else if (slotHour < 17) slotWindow = 'afternoon';
+  else slotWindow = 'evening';
+
+  // Query waitlist con FIFO + match de preferencias.
+  // Reglas de match:
+  //   - tenant_id correcto (RLS lo garantiza pero sumamos defense-in-depth)
+  //   - status='active'
+  //   - expires_at > now (no enviar a expirados)
+  //   - notified_count < 3 (no spam — máx 3 ofertas/paciente)
+  //   - preferred_date_from IS NULL OR <= slotDate (acepta esa fecha)
+  //   - preferred_date_to IS NULL OR >= slotDate
+  //   - preferred_time_window = slotWindow OR 'any'
+  //   - service_id IS NULL OR matches OR service_id is preferred staff
+  //   - staff_id IS NULL OR matches the freed staff
+  // FIFO: ORDER BY created_at ASC, LIMIT 1.
+  let q = supabaseAdmin
+    .from('waitlist')
+    .select('id, customer_phone, customer_name, notified_count, preferred_time_window')
     .eq('tenant_id', ctx.tenantId)
-    .eq('direction', 'inbound')
-    .eq('intent', 'APPOINTMENT_NEW')
-    .gte('created_at', new Date(Date.now() - 14 * 86400000).toISOString())
-    .limit(10);
+    .eq('status', 'active')
+    .gt('expires_at', new Date().toISOString())
+    .lt('notified_count', 3)
+    .or(`preferred_date_from.is.null,preferred_date_from.lte.${slotDateIso}`)
+    .or(`preferred_date_to.is.null,preferred_date_to.gte.${slotDateIso}`)
+    .or(`preferred_time_window.eq.any,preferred_time_window.eq.${slotWindow}`)
+    .or(`staff_id.is.null,staff_id.eq.${staffId}`);
+  if (serviceId) {
+    q = q.or(`service_id.is.null,service_id.eq.${serviceId}`);
+  }
+  const { data: matches } = await q
+    .order('created_at', { ascending: true })
+    .limit(1);
 
-  if (!waitlist?.length) return;
-
-  for (const msg of waitlist) {
+  // Fallback: si no hay match por preferencias, fallback al patrón viejo
+  // (cualquier paciente que pidió APPOINTMENT_NEW en últimos 14 días).
+  // Esto preserva la conversión legacy mientras la nueva tabla se llena.
+  if (!matches?.length) {
+    const { data: legacy } = await supabaseAdmin
+      .from('messages')
+      .select('conversation_id')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('direction', 'inbound')
+      .eq('intent', 'APPOINTMENT_NEW')
+      .gte('created_at', new Date(Date.now() - 14 * 86400000).toISOString())
+      .limit(1);
+    if (!legacy?.length) return;
     const { data: conv } = await supabaseAdmin
       .from('conversations')
       .select('customer_phone')
-      .eq('id', msg.conversation_id)
+      .eq('id', legacy[0].conversation_id as string)
       .single();
-
-    if (conv?.customer_phone) {
-      await sendTextMessage(
-        ctx.tenant.wa_phone_number_id as string,
-        conv.customer_phone,
-        `¡Buenas noticias! Se liberó un espacio en ${ctx.tenant.name}. ¿Le gustaría agendar? Responda "Sí" para confirmar.`
-      );
-    }
+    if (!conv?.customer_phone) return;
+    await sendTextMessage(
+      ctx.tenant.wa_phone_number_id as string,
+      conv.customer_phone as string,
+      `¡Buenas noticias! Se liberó un espacio en ${ctx.tenant.name}. ¿Le gustaría agendar? Responda "Sí" para confirmar.`,
+    );
+    return;
   }
+
+  // Match real de waitlist: notificar al primero en FIFO.
+  const winner = matches[0];
+  const phone = winner.customer_phone as string;
+  const name = (winner.customer_name as string) || '';
+
+  await sendTextMessage(
+    ctx.tenant.wa_phone_number_id as string,
+    phone,
+    `¡Buenas noticias${name ? ' ' + name : ''}! 🎉 Se liberó un espacio en ${ctx.tenant.name} que coincide con sus preferencias. Responda "Sí" para que lo agende, o "No" si ya no le interesa.`,
+  );
+
+  // Marcar notified
+  await supabaseAdmin
+    .from('waitlist')
+    .update({
+      notified_count: ((winner.notified_count as number) || 0) + 1,
+      last_notified_at: new Date().toISOString(),
+    })
+    .eq('id', winner.id);
 }
 
 export async function runBilingue(ctx: AgentContext) {
