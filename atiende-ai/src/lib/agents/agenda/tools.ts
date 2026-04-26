@@ -2053,7 +2053,7 @@ registerTool('add_to_waitlist', {
     // Dedup: si ya está en waitlist activa para este servicio, actualizamos
     // las preferencias en lugar de duplicar.
     const { data: existing } = await supabaseAdmin
-      .from('waitlist')
+      .from('appointment_waitlist')
       .select('id, notified_count')
       .eq('tenant_id', ctx.tenantId)
       .eq('customer_phone', ownerPhone)
@@ -2062,7 +2062,7 @@ registerTool('add_to_waitlist', {
 
     if (existing) {
       await supabaseAdmin
-        .from('waitlist')
+        .from('appointment_waitlist')
         .update({
           service_id: serviceId,
           staff_id: args.staff_id || null,
@@ -2080,7 +2080,7 @@ registerTool('add_to_waitlist', {
       };
     }
 
-    const { error } = await supabaseAdmin.from('waitlist').insert({
+    const { error } = await supabaseAdmin.from('appointment_waitlist').insert({
       tenant_id: ctx.tenantId,
       contact_id: ctx.contactId || null,
       customer_phone: ownerPhone,
