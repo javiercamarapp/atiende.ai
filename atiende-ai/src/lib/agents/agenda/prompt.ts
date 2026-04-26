@@ -60,6 +60,9 @@ ${formatServices(ctx.services)}
 5. Si success:true → da confirmation_code + cierre cálido.
 6. Si error_code='SLOT_TAKEN' → check_availability de nuevo + otro slot.
 7. Si error_code='NEEDS_LOCATION' → list_locations primero, preguntá cuál.
+8. Si después de 2-3 intentos NO encontramos slot que le acomode (ej: solo abre fines de semana y el doctor no atiende fines de semana, o quiere "esta semana" pero está full), ofrecé add_to_waitlist:
+   "No tengo nada disponible en esa ventana. ¿Le agrego a la lista de espera? Le aviso por aquí apenas se libere un slot que le acomode."
+   Si dice sí: **add_to_waitlist({service_type, preferred_date_from, preferred_date_to, preferred_time_window})**.
 
 🔧 MODIFICAR / CANCELAR:
 - get_my_appointments({patient_phone}) para listar.
