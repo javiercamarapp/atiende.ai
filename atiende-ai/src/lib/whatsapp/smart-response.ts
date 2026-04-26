@@ -399,58 +399,20 @@ export async function sendSmartResponse(opts: SmartResponseOpts) {
     language,
   });
 
-  // APPOINTMENT intents -> interactive buttons
-  if (['APPOINTMENT_NEW', 'APPOINTMENT_MODIFY', 'APPOINTMENT_CANCEL'].includes(intent)) {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
+  // Decisión UX: NO usamos quick-reply buttons. El usuario quiere respuestas
+  // como las escribiría una persona real (texto plano, conversacional).
+  // `quickReplies` se mantiene calculado por si en el futuro lo queremos
+  // re-habilitar para algún intent específico, pero todas las ramas caen al
+  // path de texto plano con split.
+  //
+  // El usuario reportó: "no quiero que salgan dos mensajes me contesta uno
+  // con botones y 3 opciones y luego otro quiero que no salga el de las 3
+  // opciones que sea como una persona". Antes este código mandaba buttons
+  // para APPOINTMENT_*, PRICE, SERVICES_INFO, ORDER, HOURS, GREETING,
+  // HUMAN, COMPLAINT, EMERGENCY — todos ahora van por el default plain.
+  void quickReplies; // suprime unused-var hasta que re-introduzcamos buttons
 
-  // PRICE/SERVICES -> buttons
-  if (['PRICE', 'SERVICES_INFO'].includes(intent)) {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
-
-  // ORDER (restaurants) -> buttons
-  if (['ORDER_NEW', 'ORDER_STATUS'].includes(intent)) {
-    const isFood = ['restaurant', 'taqueria', 'cafe'].includes(tenant.business_type || '');
-    if (isFood) {
-      await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-      return;
-    }
-  }
-
-  // HOURS -> with location button
-  if (intent === 'HOURS') {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
-
-  // GREETING -> welcome with quick options per industry
-  if (intent === 'GREETING') {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
-
-  // HUMAN -> transfer confirmation
-  if (intent === 'HUMAN') {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
-
-  // COMPLAINT -> connect to human
-  if (intent === 'COMPLAINT') {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
-
-  // EMERGENCY -> immediate action buttons
-  if (intent === 'EMERGENCY') {
-    await sendWithSplitAndButtons(phoneNumberId, to, text, quickReplies);
-    return;
-  }
-
-  // Default -> smart split plain text (no buttons for general messages)
+  // Default → texto plano, dividido si excede límite de WhatsApp
   const chunks = splitMessage(text);
   for (const chunk of chunks) {
     await sendTextMessage(phoneNumberId, to, chunk);
