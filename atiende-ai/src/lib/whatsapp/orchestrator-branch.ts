@@ -538,9 +538,19 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     tokensIn = result.tokensIn;
     tokensOut = result.tokensOut;
   } catch (err) {
+    // Lazy import para no introducir circular dep (metrics depende de logger).
+    const { TenantCostCapExceededError } = await import('@/lib/observability/metrics');
     if (err instanceof CircuitOpenError) {
       console.warn('[orchestrator] circuit breaker OPEN; retry_after=', err.retryAfter);
       responseText = CIRCUIT_OPEN_USER_MESSAGE;
+    } else if (err instanceof TenantCostCapExceededError) {
+      // Defense-in-depth: el tenant excedió su cap diario. Le mostramos un
+      // mensaje neutro al paciente (no le decimos que el consultorio está
+      // "sin presupuesto" — es responsabilidad del owner). El owner del
+      // tenant recibe una notificación separada vía cron de cost monitoring.
+      console.error('[orchestrator] tenant cost cap exceeded:', err.message);
+      responseText =
+        'Estamos terminando de actualizar el sistema. En unos minutos podemos atenderte. Si es urgente, por favor llámanos directamente.';
     } else if (err instanceof RateLimitError) {
       console.warn('[orchestrator] rate limited:', err.scope, 'retry_after=', err.retryAfter);
       responseText = RATE_LIMIT_USER_MESSAGE;

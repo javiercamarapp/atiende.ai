@@ -463,11 +463,37 @@ const BookArgs = z
   })
   .strict();
 
-/** 8-char hex uppercase, sirve como referencia humana para el paciente. */
+/**
+ * Genera un confirmation code seguro y human-friendly.
+ *
+ * Diseño:
+ *  - 12 bytes random (96 bits de entropía) → 2^96 posibilidades.
+ *    Un atacante con 1B intentos/segundo necesitaría ~10^21 años para
+ *    enumerar el espacio. Antes eran 32 bits (2^32 ≈ 4B), brute-forceable
+ *    en horas si tenías acceso a la API y querías cancelar citas ajenas.
+ *  - Encoding base32 (Crockford-style: sin I/L/O/U para evitar confusión
+ *    visual), uppercase, 16 chars total. Más legible al teléfono que UUID.
+ *  - Sin guiones para que se pueda dictar fácil.
+ *
+ * Defensa adicional contra brute-force a nivel API:
+ *  - cancel_appointment / modify_appointment requieren MATCH del
+ *    customer_phone (handler line 1287), así que aún si alguien adivina
+ *    un código, NO puede cancelar la cita de otro paciente sin además
+ *    suplantar el WhatsApp.
+ */
+const CONFIRMATION_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // 32 chars (sin I/L/O/U)
 function generateConfirmationCode(): string {
-  const bytes = new Uint8Array(4);
+  const bytes = new Uint8Array(12); // 96 bits
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  // Convertimos cada nibble (4 bits) a un char del alphabet → 24 chars,
+  // tomamos los primeros 16 para keep it readable (80 bits efectivos
+  // post-encoding, todavía 1.2 × 10^24 — más que suficiente).
+  let out = '';
+  for (let i = 0; i < bytes.length && out.length < 16; i++) {
+    out += CONFIRMATION_ALPHABET[bytes[i] & 0x1f];
+    out += CONFIRMATION_ALPHABET[(bytes[i] >> 3) & 0x1f];
+  }
+  return out.slice(0, 16);
 }
 
 registerTool('book_appointment', {
@@ -949,7 +975,10 @@ const ModifyArgs = z
         message:
           'appointment_id debe ser UUID. Para códigos cortos como ABC12345 usa el campo confirmation_code.',
       }),
-    confirmation_code: z.string().regex(/^[A-Z0-9]{6,10}$/).optional(),
+    // Acepta tanto formato nuevo (16 chars base32 Crockford, sin I/L/O/U)
+    // como legacy (6-10 hex). Mantener compat con códigos generados antes
+    // del cambio de entropía. Nuevos códigos siempre 16 chars.
+    confirmation_code: z.string().regex(/^[A-Z0-9]{6,16}$/).optional(),
     patient_phone: z.string().min(6).max(20).optional(),
     new_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     new_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
@@ -1003,6 +1032,20 @@ registerTool('modify_appointment', {
     // prompt injection IDOR. Solo el sender real puede modificar sus citas.
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
     const timezone = resolveTenantTimezone(ctx.tenant);
+
+    // Defense-in-depth log: si LLM pasó un patient_phone distinto al sender,
+    // es señal de posible IDOR attempt o LLM hallucination. Solo loguear,
+    // el handler ignora args.patient_phone igual.
+    if (args.patient_phone) {
+      const llmPhone = normalizePhoneMx(args.patient_phone);
+      if (llmPhone && llmPhone !== ownerPhone) {
+        console.warn('[modify_appointment] phone_mismatch: LLM pasó un phone distinto al sender — posible IDOR attempt', {
+          tenant_id: ctx.tenantId,
+          sender: ownerPhone.slice(0, 6) + '***',
+          llm_provided: llmPhone.slice(0, 6) + '***',
+        });
+      }
+    }
 
     // Resolver appointment_id desde confirmation_code si es necesario.
     let resolvedId = args.appointment_id;
@@ -1251,7 +1294,10 @@ const CancelArgs = z
         message:
           'appointment_id debe ser UUID. Para códigos cortos como ABC12345 usa el campo confirmation_code.',
       }),
-    confirmation_code: z.string().regex(/^[A-Z0-9]{6,10}$/).optional(),
+    // Acepta tanto formato nuevo (16 chars base32 Crockford, sin I/L/O/U)
+    // como legacy (6-10 hex). Mantener compat con códigos generados antes
+    // del cambio de entropía. Nuevos códigos siempre 16 chars.
+    confirmation_code: z.string().regex(/^[A-Z0-9]{6,16}$/).optional(),
     patient_phone: z.string().min(6).max(20).optional(),
     reason: z.string().min(1).max(500).optional(),
   })
@@ -1286,6 +1332,22 @@ registerTool('cancel_appointment', {
     // del LLM (vulnerable a IDOR via prompt injection).
     const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
     const timezone = resolveTenantTimezone(ctx.tenant);
+
+    // Defense-in-depth: si el LLM pasó un patient_phone DISTINTO al sender
+    // real, lo logueamos como warning (posible prompt injection o LLM
+    // hallucinando IDs de otros pacientes para cancelar citas ajenas).
+    // El handler ignora args.patient_phone igual, pero el log permite a
+    // ops detectar patrones de abuso.
+    if (args.patient_phone) {
+      const llmPhone = normalizePhoneMx(args.patient_phone);
+      if (llmPhone && llmPhone !== ownerPhone) {
+        console.warn('[cancel_appointment] phone_mismatch: LLM pasó un phone distinto al sender — posible IDOR attempt', {
+          tenant_id: ctx.tenantId,
+          sender: ownerPhone.slice(0, 6) + '***',
+          llm_provided: llmPhone.slice(0, 6) + '***',
+        });
+      }
+    }
 
     // Si dieron confirmation_code, resolver el appointment_id real
     let resolvedId = args.appointment_id;

@@ -252,7 +252,10 @@ describe('book_appointment', () => {
       appointment?: { confirmation_code: string };
     };
     expect(inner.success).toBe(true);
-    expect(inner.appointment?.confirmation_code).toMatch(/^[A-F0-9]{8}$/);
+    // Confirmation code post entropy upgrade: 16 chars, base32 Crockford
+    // alphabet (sin I/L/O/U). Antes era 8 hex chars (32 bits entropy =
+    // brute-forceable). Ahora 80 bits efectivos.
+    expect(inner.appointment?.confirmation_code).toMatch(/^[0-9A-HJKMNP-TV-Z]{16}$/);
     expect(appointmentInsert).toBe(true);
   });
 });

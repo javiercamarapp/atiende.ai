@@ -267,20 +267,42 @@ export function getToolSchemas(names?: string[] | null): OpenAI.Chat.ChatComplet
 
 import { TOOL_TIMEOUT_MS, TOOL_RESULT_MAX_CHARS as MAX_TOOL_RESULT_CHARS } from '@/lib/config';
 
+/**
+ * Trunca un tool result preservando JSON válido para que el LLM pueda
+ * parsear sin romperse. Casos:
+ *
+ *   1. Array directo → truncamos item-por-item (safe, ya estaba)
+ *   2. Objeto con UNA propiedad array (ej. `{ appointments: [...] }`) →
+ *      truncamos esa array preservando el resto del shape. Esto cubre el
+ *      patrón típico de las tools del proyecto (success+items o
+ *      success+appointments+count). ANTES caía al "object preview" que
+ *      hacía `json.slice(0, X)` cortando a mitad de string/escape →
+ *      JSON inválido para el LLM. Ahora el shape es siempre parseable.
+ *   3. Objeto con múltiples arrays grandes → fallback a preview seguro
+ *      (re-serializamos solo claves cortas + meta).
+ */
 function truncateToolResult(result: unknown, name: string): unknown {
   try {
     const json = JSON.stringify(result);
     if (json.length <= MAX_TOOL_RESULT_CHARS) return result;
-    // Si el resultado es un array, recortamos al primer N items + meta.
-    if (Array.isArray(result)) {
-      const truncated: unknown[] = [];
-      let acc = 2; // brackets
-      for (const item of result) {
+
+    // Helper: truncar un array de unknowns midiendo CADA item por su
+    // JSON length antes de incluirlo, así NUNCA cortamos a mitad.
+    const truncateArrayItems = (arr: unknown[], budget: number) => {
+      const out: unknown[] = [];
+      let acc = 2; // [ ]
+      for (const item of arr) {
         const itemJson = JSON.stringify(item);
-        if (acc + itemJson.length + 1 > MAX_TOOL_RESULT_CHARS - 200) break;
-        truncated.push(item);
+        if (acc + itemJson.length + 1 > budget) break;
+        out.push(item);
         acc += itemJson.length + 1;
       }
+      return out;
+    };
+
+    // Caso 1: array directo
+    if (Array.isArray(result)) {
+      const truncated = truncateArrayItems(result, MAX_TOOL_RESULT_CHARS - 200);
       return {
         _truncated: true,
         _original_count: result.length,
@@ -289,12 +311,62 @@ function truncateToolResult(result: unknown, name: string): unknown {
         items: truncated,
       };
     }
-    // Si es objeto, devolvemos un wrapper con preview.
+
+    // Caso 2: objeto con UNA propiedad array dominante
+    if (typeof result === 'object' && result !== null) {
+      const obj = result as Record<string, unknown>;
+      const arrayKeys = Object.keys(obj).filter((k) => Array.isArray(obj[k]));
+      if (arrayKeys.length === 1) {
+        const arrayKey = arrayKeys[0];
+        const arr = obj[arrayKey] as unknown[];
+        // Construir un esqueleto del objeto SIN el array para medir
+        // overhead (incluye claves + valores no-array + el wrapper meta).
+        const skeleton = { ...obj, [arrayKey]: [] };
+        const skeletonJson = JSON.stringify({
+          ...skeleton,
+          _truncated: true,
+          _original_count: arr.length,
+          _kept_count: 0,
+          _note: `Resultado de ${name} truncado por exceder ${MAX_TOOL_RESULT_CHARS} chars.`,
+        });
+        const budget = MAX_TOOL_RESULT_CHARS - skeletonJson.length - 50;
+        const keptItems = budget > 0 ? truncateArrayItems(arr, budget) : [];
+        return {
+          ...obj,
+          [arrayKey]: keptItems,
+          _truncated: true,
+          _original_count: arr.length,
+          _kept_count: keptItems.length,
+          _note: `Resultado de ${name} truncado: ${keptItems.length}/${arr.length} items en "${arrayKey}".`,
+        };
+      }
+    }
+
+    // Caso 3: fallback. Devolvemos solo claves escalares (no arrays/objetos
+    // anidados) + meta. NO usamos json.slice() porque corta a mitad de
+    // strings escapadas → JSON inválido para el LLM.
+    if (typeof result === 'object' && result !== null) {
+      const obj = result as Record<string, unknown>;
+      const scalarKeys: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v === null) {
+          scalarKeys[k] = v;
+        }
+      }
+      return {
+        ...scalarKeys,
+        _truncated: true,
+        _original_chars: json.length,
+        _note: `Resultado de ${name} demasiado grande (${json.length} chars). Solo se devolvieron campos escalares; los anidados se omitieron.`,
+      };
+    }
+
+    // Primitivo string demasiado largo (raro): truncar conservando longitud
+    // medible y avisar.
     return {
       _truncated: true,
       _original_chars: json.length,
-      _note: `Resultado de ${name} truncado por exceder ${MAX_TOOL_RESULT_CHARS} chars.`,
-      preview: json.slice(0, MAX_TOOL_RESULT_CHARS - 300),
+      _note: `Resultado de ${name} demasiado grande para devolver.`,
     };
   } catch {
     return result;
