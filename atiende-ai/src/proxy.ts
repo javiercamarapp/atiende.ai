@@ -60,8 +60,16 @@ export async function proxy(request: NextRequest) {
   // los crons (analytics, no-show, telemed, churn, google-reviews, etc)
   // fallaban con 307 desde el deploy de Next 16. api/public/* es para
   // booking público sin auth.
+  //
+  // BUG FIX CRÍTICO 2026-04-26: agregamos `/api/auth` a publicPaths.
+  // Antes el proxy redirigía POST /api/auth/login → /login (HTML) cuando
+  // el usuario NO estaba autenticado (que es el estado normal al loguearse).
+  // El frontend hacía fetch + res.json() → JSON parse failed sobre HTML →
+  // json={} → toast genérico "Error al iniciar sesión" sin info diagnóstica.
+  // Chicken-and-egg: la API de login requería estar logueado para funcionar.
   const publicPaths = [
     '/login', '/register', '/forgot-password', '/reset-password',
+    '/api/auth', // login, mfa, signup, password reset endpoints
     '/api/webhook', '/api/cron', '/api/health', '/api/public',
     '/portal', '/telemed', '/book',
   ];

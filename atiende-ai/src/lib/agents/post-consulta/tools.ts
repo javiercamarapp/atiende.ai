@@ -11,6 +11,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
 void sendTextMessage;
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: get_appointment_details ─────────────────────────────────────────
 const GetApptArgs = z.object({ appointment_id: z.string().uuid() }).strict();
@@ -112,8 +113,10 @@ registerTool('send_post_visit_instructions', {
     lines.push('', 'Si tiene cualquier duda, estamos para servirle.');
     const text = lines.join('\n');
 
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { sent: false, error: 'invalid patient_phone' };
     try {
-      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      const r = await sendTextMessageSafe(phoneNumberId, phone, text, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
       }
@@ -159,11 +162,13 @@ registerTool('schedule_next_appointment_reminder', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = ScheduleReminderArgs.parse(rawArgs);
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { scheduled: false, error: 'invalid patient_phone' };
     const sendAt = new Date(Date.now() + args.days_until_next * 24 * 60 * 60_000);
     const message = `Hola, ya pasaron ${args.days_until_next} días desde su última visita. ¿Le gustaría agendar su seguimiento de ${args.service_type}?`;
     const { error } = await supabaseAdmin.from('scheduled_messages').insert({
       tenant_id: ctx.tenantId,
-      patient_phone: args.patient_phone,
+      patient_phone: phone,
       message_type: 'retention',
       message_content: message,
       scheduled_at: sendAt.toISOString(),
@@ -206,9 +211,11 @@ registerTool('request_payment_if_pending', {
     const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
     if (!phoneNumberId) return { sent: false, error: 'no wa_phone_number_id' };
 
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { sent: false, error: 'invalid patient_phone' };
     const text = `Le recordamos amablemente que tiene un saldo pendiente de $${args.amount_due} MXN por su consulta. Si ya realizó el pago, ignore este mensaje. Para cualquier duda estamos a sus órdenes 🙏`;
     try {
-      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      const r = await sendTextMessageSafe(phoneNumberId, phone, text, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
       }
