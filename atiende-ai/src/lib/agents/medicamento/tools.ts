@@ -9,6 +9,7 @@ import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
 void sendTextMessage;
 import { generateResponse, generateStructured, MODELS } from '@/lib/llm/openrouter';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: parse_prescription_from_notes ──────────────────────────────────
 const ParsePrescriptionArgs = z
@@ -131,6 +132,8 @@ registerTool('schedule_medication_reminders', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = ScheduleMedRemArgs.parse(rawArgs);
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { reminders_scheduled: 0, error: 'invalid patient_phone' };
     const startMs = args.start_datetime ? new Date(args.start_datetime).getTime() : Date.now();
 
     // Cap GLOBAL de inserts: 60 dosis × 5 medicamentos = 300 rows en
@@ -152,7 +155,7 @@ registerTool('schedule_medication_reminders', {
         const sendAt = new Date(startMs + i * med.frequency_hours * 60 * 60_000);
         inserts.push({
           tenant_id: ctx.tenantId,
-          patient_phone: args.patient_phone,
+          patient_phone: phone,
           message_type: 'medication_reminder',
           message_content: `💊 Recordatorio: Es hora de tomar su ${med.name} (${med.dose}). ${med.instructions ?? ''}`.trim(),
           scheduled_at: sendAt.toISOString(),
@@ -210,6 +213,9 @@ registerTool('send_medication_reminder', {
     const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
     if (!phoneNumberId) return { sent: false, error: 'no wa_phone_number_id' };
 
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { sent: false, error: 'invalid patient_phone' };
+
     const text = [
       `💊 Recordatorio: Es hora de tomar su ${args.medication_name} (${args.dose}).`,
       args.special_instructions || '',
@@ -219,7 +225,7 @@ registerTool('send_medication_reminder', {
       .join('\n');
 
     try {
-      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      const r = await sendTextMessageSafe(phoneNumberId, phone, text, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
       }
