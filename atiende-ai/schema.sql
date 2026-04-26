@@ -4,6 +4,11 @@
 -- 1. EXTENSIONES
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- btree_gist habilita combinar tipos B-tree (UUID, text) con tstzrange en
+-- EXCLUDE constraints. Lo usamos en `appointments` para garantizar que dos
+-- citas del mismo staff_id NO puedan solaparse en el tiempo, a nivel DB —
+-- la única defensa correcta contra race conditions de doble-booking.
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 -- 2. TIPOS ENUMERADOS
 CREATE TYPE business_type AS ENUM (
 'dental','medical','nutritionist','dermatologist','psychologist',
@@ -201,6 +206,53 @@ created_at TIMESTAMPTZ DEFAULT now()
 CREATE INDEX idx_apt_tenant ON appointments(tenant_id);
 CREATE INDEX idx_apt_datetime ON appointments(tenant_id, datetime);
 CREATE INDEX idx_apt_status ON appointments(tenant_id, status);
+
+-- Estado de sincronización con Google Calendar. Permite que un cron
+-- reintente sin escanear toda la tabla.
+--   'synced'    → google_event_id presente y vigente
+--   'pending'   → cita necesita ser sincronizada (creada o modificada)
+--   'cancel'    → cita cancelada localmente, falta borrar evento remoto
+--   'skip'      → staff sin calendar conectado; ignorar
+--   'failed'    → varios reintentos fallaron; marcar para revisión manual
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT DEFAULT 'pending';
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS calendar_sync_attempts INT DEFAULT 0;
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS calendar_sync_last_error TEXT;
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS calendar_sync_next_retry_at TIMESTAMPTZ;
+
+-- Index parcial: el cron solo escanea filas que necesitan trabajo.
+CREATE INDEX IF NOT EXISTS idx_apt_sync_pending
+  ON appointments(calendar_sync_next_retry_at)
+  WHERE calendar_sync_status IN ('pending', 'cancel');
+
+-- Anti-doble-booking a nivel base de datos. La pareja `hasConflict()` +
+-- `INSERT` en application code NO es atómica: dos webhooks paralelos pueden
+-- pasar el check al mismo tiempo y luego insertar ambos. Este EXCLUDE
+-- garantiza que, para un mismo staff_id, dos citas activas no pueden
+-- solapar en `[datetime, end_datetime)` — Postgres falla el segundo INSERT
+-- con SQLSTATE 23P01 (`exclusion_violation`) que el código de aplicación
+-- (engine.ts) detecta por `error.code === '23P01'` y muestra como conflict.
+--
+-- Citas canceladas/no-show NO bloquean el slot: el WHERE filtra por status.
+-- Citas sin staff_id (reservaciones de restaurante, sin recurso compartido)
+-- tampoco entran al constraint.
+--
+-- El constraint se aplica también en UPDATEs (reagendar): si la nueva
+-- ventana solapa con OTRA cita activa, el UPDATE falla con el mismo código.
+ALTER TABLE appointments
+  ADD CONSTRAINT appointments_no_overlap
+  EXCLUDE USING gist (
+    staff_id WITH =,
+    tstzrange(datetime, end_datetime, '[)') WITH &&
+  )
+  WHERE (
+    staff_id IS NOT NULL
+    AND end_datetime IS NOT NULL
+    AND status IN ('scheduled', 'confirmed')
+  );
 -- 11. PEDIDOS (restaurantes, taquerias, cafeterias)
 CREATE TABLE orders (
 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -416,6 +468,25 @@ AS $$
 SELECT id FROM public.tenants
 WHERE user_id = auth.uid()
 LIMIT 1;
+$$;
+
+-- Versión plural usada por las policies RLS de todas las tablas tenant-scoped.
+-- Devuelve un UUID[] para soportar usuarios que sean owners de múltiples
+-- tenants (multi-business owner). `= ANY(...)` en la policy iguala contra
+-- cualquier id del array. Si el usuario no es dueño de ningún tenant
+-- devolvemos un array vacío (no NULL) para que `= ANY` se evalúe como FALSE
+-- de forma determinística — NULL en RLS rompe el aislamiento.
+CREATE OR REPLACE FUNCTION get_user_tenant_ids()
+RETURNS UUID[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+SELECT COALESCE(
+  (SELECT ARRAY_AGG(id) FROM public.tenants WHERE user_id = auth.uid()),
+  ARRAY[]::UUID[]
+);
 $$;
 -- ═══════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY

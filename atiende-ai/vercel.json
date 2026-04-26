@@ -31,6 +31,7 @@
     { "path": "/api/cron/medication-processing", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/google-reviews-sync", "schedule": "0 8 * * 1" },
     { "path": "/api/cron/churn-recompute", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/telemed-link-presend", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/telemed-link-presend", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/calendar-reconcile", "schedule": "*/5 * * * *" }
   ]
 }

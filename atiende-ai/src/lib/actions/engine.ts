@@ -224,7 +224,10 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
     };
   }
 
-  // (A) Conflict check
+  // (A) Pre-check de conflicto: barato, mejora la UX cuando hay conflicto
+  // claro, pero NO es la fuente de verdad — el RPC atómico de abajo es la
+  // única defensa real contra race conditions (dos webhooks paralelos
+  // pasando este check al mismo tiempo y luego insertando ambos).
   const conflict = await hasConflict({
     tenantId: ctx.tenantId,
     staffId: staffMember.id,
@@ -242,7 +245,11 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
     };
   }
 
-  // INSERT
+  // INSERT directo. La atomicidad real la provee el EXCLUDE constraint
+  // `appointments_no_overlap` definido en schema.sql: dos INSERTs paralelos
+  // para el mismo staff_id+rango temporal hacen que el segundo falle con
+  // SQLSTATE 23P01 (exclusion_violation). Sin RPC wrapper para mantener
+  // la lógica de error visible aquí y los mocks de tests simples.
   const { data: appointment, error } = await supabaseAdmin
     .from('appointments')
     .insert({
@@ -263,6 +270,24 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
     .single();
 
   if (error || !appointment) {
+    // SQLSTATE 23P01 = exclusion_violation = nuestro EXCLUDE constraint
+    // disparó por overlap concurrente. supabase-js expone el código en
+    // `error.code`. Distinguimos para mostrar mensaje de conflicto en lugar
+    // de error genérico.
+    const isConflict =
+      error?.code === '23P01' ||
+      /exclusion|appointments_no_overlap|overlap/i.test(error?.message ?? '');
+    if (isConflict) {
+      await setConversationState(ctx.conversationId, 'awaiting_appointment_date', {
+        ...merged, time: undefined,
+      });
+      return {
+        actionTaken: true,
+        actionType: 'appointment.conflict',
+        followUpMessage: `Esa hora ya no está disponible con ${staffMember.name}. ¿Le propongo otra hora el mismo día u otra fecha?`,
+      };
+    }
+    console.warn('[appointment] insert failed:', error);
     await clearConversationState(ctx.conversationId);
     return {
       actionTaken: true,
@@ -275,10 +300,20 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
   // Booking succeeded — clear state
   await clearConversationState(ctx.conversationId);
 
-  // (G) Google Calendar sync — track whether it failed so we can inform the user
+  // (G) Google Calendar sync — best-effort en banda. Si falla, marcamos
+  // `calendar_sync_status = 'pending'` y el cron `/api/cron/calendar-reconcile`
+  // (cada 5min) reintenta hasta 5 veces con backoff exponencial. Esto
+  // garantiza que la cita NUNCA queda sin sincronizar silenciosamente.
   let calSynced = false;
   let calSyncFailed = false;
-  if (staffMember.google_calendar_id) {
+  if (!staffMember.google_calendar_id) {
+    // Staff sin calendar conectado → no hay nada que sincronizar
+    await supabaseAdmin
+      .from('appointments')
+      .update({ calendar_sync_status: 'skip' })
+      .eq('id', appointment.id);
+  } else {
+    let syncError: unknown = null;
     try {
       const { createCalendarEvent } = await import('@/lib/calendar/google');
       const ev = await createCalendarEvent({
@@ -293,15 +328,36 @@ async function handleNewAppointment(ctx: ActionContext): Promise<ActionResult> {
       if (ev?.eventId) {
         await supabaseAdmin
           .from('appointments')
-          .update({ google_event_id: ev.eventId })
+          .update({
+            google_event_id: ev.eventId,
+            calendar_sync_status: 'synced',
+            calendar_sync_attempts: 1,
+          })
           .eq('id', appointment.id);
         calSynced = true;
       } else {
         calSyncFailed = true;
+        syncError = new Error('createCalendarEvent returned no eventId');
       }
     } catch (err) {
       calSyncFailed = true;
+      syncError = err;
       console.warn('[appointment] Google Calendar sync failed:', err);
+    }
+    if (calSyncFailed) {
+      // Marca la cita como pendiente para que el cron la reintente.
+      // Primer reintento en 60s; el cron aplica backoff progresivo.
+      const errMsg =
+        syncError instanceof Error ? syncError.message.slice(0, 500) : 'sync failed';
+      await supabaseAdmin
+        .from('appointments')
+        .update({
+          calendar_sync_status: 'pending',
+          calendar_sync_attempts: 1,
+          calendar_sync_last_error: errMsg,
+          calendar_sync_next_retry_at: new Date(Date.now() + 60_000).toISOString(),
+        })
+        .eq('id', appointment.id);
     }
   }
 
@@ -428,37 +484,11 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
     };
   }
 
-  // (A) Conflict check — but exclude the current appointment from matches
-  const conflict = await hasConflict({
-    tenantId: ctx.tenantId,
-    staffId: apt.staff_id,
-    datetime: newDatetime,
-    durationMinutes: duration,
-  });
-  if (conflict) {
-    // Query the conflicting row explicitly, excluding `apt.id`, to avoid
-    // flagging the appointment-being-modified as a conflict with itself.
-    const newStart = new Date(newDatetime).toISOString();
-    const { count } = await supabaseAdmin
-      .from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', ctx.tenantId)
-      .neq('id', apt.id)
-      .in('status', ['scheduled', 'confirmed'])
-      .eq('staff_id', apt.staff_id)
-      .lt('datetime', newEnd)
-      .gt('end_datetime', newStart);
-    if ((count ?? 0) > 0) {
-      return {
-        actionTaken: true,
-        actionType: 'appointment.modify_conflict',
-        followUpMessage:
-          'Esa hora ya está ocupada. ¿Le propongo otra hora el mismo día u otra fecha?',
-      };
-    }
-  }
-
-  // Update appointment
+  // Update directo. El EXCLUDE constraint de schema.sql también valida
+  // overlaps en UPDATEs — una cita reagendada que choca con otra activa
+  // del mismo staff dispara SQLSTATE 23P01. PG aplica la restricción
+  // contra el estado nuevo de la fila, por lo que el row no choca consigo
+  // mismo (su rango anterior ya no existe en el momento del check).
   const { error } = await supabaseAdmin.from('appointments').update({
     datetime: newDatetime,
     end_datetime: newEnd,
@@ -466,6 +496,18 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
   }).eq('id', apt.id);
 
   if (error) {
+    const isConflict =
+      error.code === '23P01' ||
+      /exclusion|appointments_no_overlap|overlap/i.test(error.message ?? '');
+    if (isConflict) {
+      return {
+        actionTaken: true,
+        actionType: 'appointment.modify_conflict',
+        followUpMessage:
+          'Esa hora ya está ocupada. ¿Le propongo otra hora el mismo día u otra fecha?',
+      };
+    }
+    console.warn('[appointment.modify] update failed:', error);
     return {
       actionTaken: true,
       actionType: 'appointment.modify_failed',
@@ -473,11 +515,13 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
     };
   }
 
-  // (G) Google Calendar — patch existing event in place (preserves event id and attendees)
+  // (G) Google Calendar — patch existing event in place (preserves event id and attendees).
+  // Si falla, marcamos sync_status=pending y el cron retry hace el patch después.
   const staffRel = Array.isArray(apt.staff) ? apt.staff[0] : apt.staff;
   const calendarId = staffRel?.google_calendar_id;
   let calSyncFailed = false;
   if (apt.google_event_id && calendarId) {
+    let syncError: unknown = null;
     try {
       const { updateCalendarEvent } = await import('@/lib/calendar/google');
       await updateCalendarEvent({
@@ -488,9 +532,26 @@ async function handleModifyConfirm(ctx: ActionContext): Promise<ActionResult> {
         endTime: newEnd,
         timezone,
       });
+      await supabaseAdmin
+        .from('appointments')
+        .update({ calendar_sync_status: 'synced' })
+        .eq('id', apt.id);
     } catch (err) {
       calSyncFailed = true;
+      syncError = err;
       console.warn('[appointment.modify] Google Calendar update failed:', err);
+    }
+    if (calSyncFailed) {
+      const errMsg =
+        syncError instanceof Error ? syncError.message.slice(0, 500) : 'sync failed';
+      await supabaseAdmin
+        .from('appointments')
+        .update({
+          calendar_sync_status: 'pending',
+          calendar_sync_last_error: errMsg,
+          calendar_sync_next_retry_at: new Date(Date.now() + 60_000).toISOString(),
+        })
+        .eq('id', apt.id);
     }
   }
 
@@ -534,7 +595,25 @@ async function handleCancelAppointment(ctx: ActionContext): Promise<ActionResult
       try {
         const { cancelCalendarEvent } = await import('@/lib/calendar/google');
         await cancelCalendarEvent(calendarId, apt.google_event_id, apt.staff_id);
-      } catch { /* ok */ }
+        await supabaseAdmin
+          .from('appointments')
+          .update({ calendar_sync_status: 'synced' })
+          .eq('id', apt.id);
+      } catch (err) {
+        // Marcamos para que el cron borre el evento remoto después.
+        // No bloquea al cliente: la cita ya está cancelada en DB.
+        const errMsg =
+          err instanceof Error ? err.message.slice(0, 500) : 'cancel sync failed';
+        console.warn('[appointment.cancel] Google Calendar delete failed:', err);
+        await supabaseAdmin
+          .from('appointments')
+          .update({
+            calendar_sync_status: 'cancel',
+            calendar_sync_last_error: errMsg,
+            calendar_sync_next_retry_at: new Date(Date.now() + 60_000).toISOString(),
+          })
+          .eq('id', apt.id);
+      }
     }
   }
   try { const { executeEventAgents } = await import('@/lib/marketplace/engine'); await executeEventAgents('appointment.cancelled', { tenant_id: ctx.tenantId, appointment_id: apt.id }); } catch { /* ok */ }

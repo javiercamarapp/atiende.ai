@@ -230,53 +230,109 @@ export function calculateCost(
   return (tokensIn * rateIn + tokensOut * rateOut) / 1_000_000;
 }
 
-// Helper: generar respuesta con OpenRouter
+// Cadena de fallback por familia. Cuando el modelo primario falla con un
+// error transient (5xx, timeout, rate limit), intentamos el siguiente modelo
+// del mismo "tier" para que el usuario nunca reciba un error de proveedor
+// como respuesta — los providers caen, las respuestas de WhatsApp no.
+//
+// Mapping: cualquier modelo de la lista tiene como fallback el siguiente.
+// Si el caller pasa `fallbackModel` explícito, ese gana sobre el default.
+const DEFAULT_FALLBACK_CHAIN: Record<string, string> = {
+  // Standard tier (chat casual / FAQ)
+  'google/gemini-2.5-flash-lite': 'openai/gpt-4o-mini',
+  // Balanced tier (agendar / reservar / orders)
+  'google/gemini-2.5-flash': 'openai/gpt-4.1-mini',
+  // Premium tier (medical / crisis / complaint)
+  'anthropic/claude-sonnet-4-6': 'google/gemini-2.5-flash',
+  // Classifier (routing barato)
+  'openai/gpt-4o-mini': 'google/gemini-2.5-flash-lite',
+  // Orquestador tool-calling
+  'x-ai/grok-4.1-fast': 'openai/gpt-4.1-mini',
+  // Onboarding
+  'qwen/qwen3-235b-a22b-2507': 'meta-llama/llama-3.3-70b-instruct',
+};
+
+// Errores que indican fallo del proveedor (no del prompt). Para estos
+// vale la pena intentar el fallback. Errores de validación/permisos no.
+function isTransientProviderError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  // Status codes 5xx, timeouts, rate limits, network drops.
+  // OpenAI SDK incluye `status` en el error pero también el mensaje.
+  return (
+    /\b(5\d\d|429|408|502|503|504)\b/.test(msg) ||
+    /timeout|timed out|fetch failed|network|econnreset|enotfound|rate.?limit|overloaded|capacity/i.test(msg)
+  );
+}
+
+// Helper: generar respuesta con OpenRouter (con fallback automático).
+//
+// El fallback se dispara solo en errores transient del proveedor. Errores
+// del prompt (400, 422, content filter) no se reintenten porque el segundo
+// modelo va a fallar igual y solo gastamos tokens.
 export async function generateResponse(opts: {
   model: string;
   system: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
   maxTokens?: number;
   temperature?: number;
+  /**
+   * Modelo de respaldo cuando el primario falla con error transient. Si no
+   * se pasa, usamos `DEFAULT_FALLBACK_CHAIN[opts.model]`. Para deshabilitar
+   * el fallback explícitamente, pasar `fallbackModel: null`.
+   */
+  fallbackModel?: string | null;
 }) {
-  const response = await getOpenRouter().chat.completions.create({
-    model: opts.model,
-    messages: [
-      { role: 'system', content: opts.system },
-      ...opts.messages,
-    ],
-    max_tokens: opts.maxTokens || 400,
-    temperature: opts.temperature || 0.5,
-  });
+  const fallback =
+    opts.fallbackModel === null
+      ? null
+      : opts.fallbackModel ?? DEFAULT_FALLBACK_CHAIN[opts.model] ?? null;
 
-  const rawContent = response.choices[0]?.message?.content;
-  const text = (rawContent ?? '').trim();
-
-  // Observabilidad: si el LLM devolvió null/empty (política de seguridad,
-  // respuesta malformada, filtro del proveedor) lo loggeamos para que el
-  // caller decida qué hacer. No lanzamos para mantener backward-compat con
-  // callers que no envuelven en try/catch.
-  if (!text) {
-    console.warn('[openrouter] LLM returned empty content', {
-      model: opts.model,
-      rawIsNull: rawContent === null,
-      rawIsUndefined: rawContent === undefined,
-      finishReason: response.choices[0]?.finish_reason,
-      tokensOut: response.usage?.completion_tokens || 0,
+  const callOnce = async (model: string) => {
+    const response = await getOpenRouter().chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: opts.system },
+        ...opts.messages,
+      ],
+      max_tokens: opts.maxTokens || 400,
+      temperature: opts.temperature || 0.5,
     });
-    trackFallback('llm_empty_content');
-  }
-
-  return {
-    text,
-    model: response.model || opts.model,
-    tokensIn: response.usage?.prompt_tokens || 0,
-    tokensOut: response.usage?.completion_tokens || 0,
-    cost: calculateCost(
-      opts.model,
-      response.usage?.prompt_tokens || 0,
-      response.usage?.completion_tokens || 0
-    ),
+    const rawContent = response.choices[0]?.message?.content;
+    const text = (rawContent ?? '').trim();
+    if (!text) {
+      console.warn('[openrouter] LLM returned empty content', {
+        model,
+        rawIsNull: rawContent === null,
+        rawIsUndefined: rawContent === undefined,
+        finishReason: response.choices[0]?.finish_reason,
+        tokensOut: response.usage?.completion_tokens || 0,
+      });
+      trackFallback('llm_empty_content');
+    }
+    return {
+      text,
+      model: response.model || model,
+      tokensIn: response.usage?.prompt_tokens || 0,
+      tokensOut: response.usage?.completion_tokens || 0,
+      cost: calculateCost(
+        model,
+        response.usage?.prompt_tokens || 0,
+        response.usage?.completion_tokens || 0
+      ),
+    };
   };
+
+  try {
+    return await callOnce(opts.model);
+  } catch (err) {
+    if (!fallback || !isTransientProviderError(err)) throw err;
+    console.warn(
+      `[openrouter] primary model ${opts.model} failed (${err instanceof Error ? err.message : 'unknown'}), falling back to ${fallback}`
+    );
+    trackFallback('llm_primary_failed');
+    return await callOnce(fallback);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

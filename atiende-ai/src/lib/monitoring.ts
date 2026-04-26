@@ -124,6 +124,8 @@ export function trackError(errorType: string): void {
 export type FallbackReason =
   | 'llm_empty_content'         // openrouter devolvió null/empty
   | 'llm_generation_failed'      // LLM timeout / HTTP error / network
+  | 'llm_primary_failed'         // primario falló transient → cayó al fallback model
+  | 'classifier_low_confidence'  // classifier emitió intent con confidence baja
   | 'validation_empty'           // validateResponse devolvió text vacío
   | 'guardrail_empty_input'      // validateResponse recibió response vacío
   | 'processor_last_resort'      // catch final en processor
