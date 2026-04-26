@@ -8,6 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
 void sendTextMessage; // referenced for typing; cron path uses sendTextMessageSafe
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: get_pending_payments ───────────────────────────────────────────
 const GetPendingArgs = z.object({ tenant_id: z.string().uuid() }).strict();
@@ -179,6 +180,41 @@ registerTool('mark_payment_received', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = MarkPaidArgs.parse(rawArgs);
+
+    // FIX P0 ownership: el LLM puede pasar un appointment_id arbitrario
+    // (alucinación o IDOR). Antes solo verificábamos tenant_id; ahora
+    // también verificamos que la cita pertenezca al sender real
+    // (ctx.customerPhone). Sin esto, paciente A podía marcar como
+    // pagada la cita de paciente B del mismo tenant.
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
+    if (!ownerPhone) {
+      return { marked: false, error: 'no_authenticated_phone' };
+    }
+
+    // Verificación de ownership ANTES del UPDATE — fail closed si no
+    // matchea el customer_phone.
+    const { data: apt } = await supabaseAdmin
+      .from('appointments')
+      .select('id, customer_phone')
+      .eq('id', args.appointment_id)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('customer_phone', ownerPhone)
+      .maybeSingle();
+
+    if (!apt) {
+      // Log defensivo — posible IDOR attempt o LLM hallucination
+      console.warn('[mark_payment_received] ownership_check_failed', {
+        tenant_id: ctx.tenantId,
+        appointment_id: args.appointment_id,
+        sender: ownerPhone.slice(0, 6) + '***',
+      });
+      return {
+        marked: false,
+        error_code: 'NOT_OWNER',
+        message: 'No encontré una cita tuya con ese código.',
+      };
+    }
+
     const { error } = await supabaseAdmin
       .from('appointments')
       .update({
@@ -187,26 +223,20 @@ registerTool('mark_payment_received', {
         payment_received_at: new Date().toISOString(),
       })
       .eq('id', args.appointment_id)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('customer_phone', ownerPhone);
     if (error) return { marked: false, error: error.message };
 
-    // Insertar registro en payments
-    const { data: apt } = await supabaseAdmin
-      .from('appointments')
-      .select('customer_phone')
-      .eq('id', args.appointment_id)
-      .single();
-    if (apt) {
-      await supabaseAdmin.from('payments').insert({
-        tenant_id: ctx.tenantId,
-        appointment_id: args.appointment_id,
-        customer_phone: apt.customer_phone as string,
-        amount: args.amount_paid,
-        currency: 'MXN',
-        status: 'completed',
-        provider: args.payment_method,
-      });
-    }
+    // Insertar registro en payments con tenant_id explícito
+    await supabaseAdmin.from('payments').insert({
+      tenant_id: ctx.tenantId,
+      appointment_id: args.appointment_id,
+      customer_phone: ownerPhone,
+      amount: args.amount_paid,
+      currency: 'MXN',
+      status: 'completed',
+      provider: args.payment_method,
+    });
     return { marked: true };
   },
 });

@@ -8,6 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
 void sendTextMessage;
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
 
 // ─── Tool 1: get_patients_at_risk ───────────────────────────────────────────
@@ -164,9 +165,14 @@ registerTool('send_retention_message', {
     const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
     if (!phoneNumberId) return { sent: false, error: 'no wa_phone_number_id' };
 
+    // Normaliza el phone para que la query a contacts matchee (LLM lo
+    // puede pasar con +52 / 52 / con guiones).
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { sent: false, error: 'invalid patient_phone' };
+
     try {
       // Valida ventana 24h
-      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, args.message, { tenantId: ctx.tenantId });
+      const r = await sendTextMessageSafe(phoneNumberId, phone, args.message, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
       }
@@ -180,7 +186,7 @@ registerTool('send_retention_message', {
         .from('contacts')
         .select('id, retention_contact_count')
         .eq('tenant_id', ctx.tenantId)
-        .eq('phone', args.patient_phone)
+        .eq('phone', phone)
         .single();
       if (contact) {
         await supabaseAdmin
@@ -195,12 +201,17 @@ registerTool('send_retention_message', {
       /* best effort */
     }
 
+    // Audit log con phone HASHEADO en vez de plano. Compliance LFPDPPP/INAI
+    // exige PII cifrada at-rest. El hash permite analytics (count distinct
+    // pacientes contactados) sin exponer el número.
     try {
+      const { createHash } = await import('node:crypto');
+      const phoneHash = createHash('sha256').update(phone).digest('hex').slice(0, 16);
       await supabaseAdmin.from('audit_log').insert({
         tenant_id: ctx.tenantId,
         action: 'retention.message_sent',
         entity_type: 'contact',
-        details: { patient_phone: args.patient_phone },
+        details: { patient_phone_hash: phoneHash, masked: phone.slice(0, 6) + '***' },
       });
     } catch {
       /* best effort */
@@ -237,11 +248,13 @@ registerTool('mark_patient_reactivated', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = MarkReactivatedArgs.parse(rawArgs);
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { marked: false, error: 'invalid patient_phone' };
     const { error } = await supabaseAdmin
       .from('contacts')
       .update({ churn_probability: 10, reactivated_at: new Date().toISOString() })
       .eq('tenant_id', ctx.tenantId)
-      .eq('phone', args.patient_phone);
+      .eq('phone', phone);
     if (error) return { marked: false, error: error.message };
     return { marked: true, appointment_id: args.appointment_id };
   },

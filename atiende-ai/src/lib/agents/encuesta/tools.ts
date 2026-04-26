@@ -9,6 +9,7 @@ import { sendTextMessage, sendTextMessageSafe } from '@/lib/whatsapp/send';
 void sendTextMessage;
 import { generateResponse, MODELS } from '@/lib/llm/openrouter';
 import { registerTool, type ToolContext } from '@/lib/llm/tool-executor';
+import { normalizePhoneMx } from '@/lib/whatsapp/normalize-phone';
 
 // ─── Tool 1: send_satisfaction_survey ────────────────────────────────────────
 const SendSurveyArgs = z
@@ -45,6 +46,11 @@ registerTool('send_satisfaction_survey', {
     const phoneNumberId = (ctx.tenant.wa_phone_number_id as string) || '';
     if (!phoneNumberId) return { sent: false, error: 'no wa_phone_number_id' };
 
+    // Normalizar el phone del paciente antes de enviar — el LLM puede
+    // pasar formatos variados (+52, 52, 521, con/sin guiones).
+    const targetPhone = normalizePhoneMx(args.patient_phone);
+    if (!targetPhone) return { sent: false, error: 'invalid patient_phone' };
+
     const text = [
       `Hola ${args.patient_name}, esperamos que su cita con ${args.doctor_name} haya sido de su agrado 😊`,
       '',
@@ -55,21 +61,27 @@ registerTool('send_satisfaction_survey', {
       '3️⃣ ¿Tiene algún comentario o duda sobre su tratamiento?',
     ].join('\n');
 
+    // FIX P0: enviar primero, marcar state SOLO si el send fue exitoso.
+    // Antes el state se ponía siempre — si el send fallaba (windowExpired,
+    // network error), la conversación quedaba marcada AWAITING_SURVEY_RESPONSE
+    // sin que el paciente hubiera recibido la encuesta → cualquier mensaje
+    // suyo se ruteaba al agente encuesta equivocado.
+    let sendOk = false;
     try {
-      const r = await sendTextMessageSafe(phoneNumberId, args.patient_phone, text, { tenantId: ctx.tenantId });
+      const r = await sendTextMessageSafe(phoneNumberId, targetPhone, text, { tenantId: ctx.tenantId });
       if (!r.ok && r.windowExpired) {
         return { sent: false, error: 'OUTSIDE_24H_WINDOW' };
       }
+      sendOk = r.ok;
     } catch (err) {
       return { sent: false, error: err instanceof Error ? err.message : String(err) };
     }
 
-    // Marcamos la conversación como "esperando respuesta a encuesta" para
-    // que el orchestrator-branch rutee el próximo mensaje inbound al
-    // agente `encuesta` (y no al default `agenda`). El save_survey_response
-    // limpia este state tras guardar. Si la conversación no existe (worker
-    // cron-only sin conversación previa), el upsert falla silencioso —
-    // no queremos bloquear el envío del survey por eso.
+    if (!sendOk) {
+      return { sent: false, error: 'SEND_FAILED' };
+    }
+
+    // Solo si el send fue OK marcamos AWAITING_SURVEY_RESPONSE.
     if (ctx.conversationId) {
       try {
         const { setConversationState, ConversationStateEnum } = await import('@/lib/actions/state-machine');
@@ -78,7 +90,7 @@ registerTool('send_satisfaction_survey', {
           doctor_name: args.doctor_name,
         });
       } catch {
-        /* best effort */
+        /* best effort — el state es nice-to-have */
       }
     }
     return { sent: true, appointment_id: args.appointment_id };
@@ -121,11 +133,15 @@ registerTool('save_survey_response', {
   },
   handler: async (rawArgs: unknown, ctx: ToolContext) => {
     const args = SaveSurveyArgs.parse(rawArgs);
+    // Normalizar el phone para que la query a contacts matchee aunque el
+    // LLM lo pase con +52 / 52 / con guiones / etc.
+    const phone = normalizePhoneMx(args.patient_phone);
+    if (!phone) return { saved: false, error: 'invalid patient_phone' };
 
     const { error } = await supabaseAdmin.from('survey_responses').insert({
       tenant_id: ctx.tenantId,
       appointment_id: args.appointment_id,
-      patient_phone: args.patient_phone,
+      patient_phone: phone,
       rating: args.rating,
       would_recommend: args.would_recommend,
       comment: args.comment ?? null,
@@ -138,7 +154,7 @@ registerTool('save_survey_response', {
       .from('contacts')
       .update({ last_satisfaction_rating: args.rating })
       .eq('tenant_id', ctx.tenantId)
-      .eq('phone', args.patient_phone);
+      .eq('phone', phone);
 
     // Si insatisfecho: notificar al doctor de inmediato
     const isUnhappy =
@@ -149,7 +165,7 @@ registerTool('save_survey_response', {
         await notifyOwner({
           tenantId: ctx.tenantId,
           event: 'complaint',
-          details: `⚠️ Paciente insatisfecho: ${args.patient_phone}\nRating: ${args.rating}\n${args.comment ? `Comentario: ${args.comment}` : ''}`,
+          details: `⚠️ Paciente insatisfecho: ${phone.slice(0, 6)}***\nRating: ${args.rating}\n${args.comment ? `Comentario: ${args.comment}` : ''}`,
         });
       } catch {
         /* best effort */
@@ -162,7 +178,7 @@ registerTool('save_survey_response', {
       const sendAt = new Date(Date.now() + 24 * 60 * 60_000);
       await supabaseAdmin.from('scheduled_messages').insert({
         tenant_id: ctx.tenantId,
-        patient_phone: args.patient_phone,
+        patient_phone: phone,
         message_type: 'follow_up',
         message_content: '__REPUTACION_TRIGGER__',
         scheduled_at: sendAt.toISOString(),
