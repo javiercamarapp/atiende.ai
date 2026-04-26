@@ -41,6 +41,10 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       // mismo recurrence_group_id.
       'book_recurring_series',
       'cancel_recurring_series',
+      // Familia: agendar múltiples miembros el mismo día (típico en
+      // pediatría dental, médico general familiar). Una llamada bookea
+      // todos compartiendo el customer_phone del responsable.
+      'book_family_appointments',
       // Shared profile tools — el agente agenda ve mensajes libres del
       // paciente y debe poder guardar cualquier dato nuevo que aparezca
       // en medio del flujo (alergia reciente, cambio de dirección,

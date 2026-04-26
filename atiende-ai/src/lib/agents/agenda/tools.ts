@@ -2371,3 +2371,209 @@ registerTool('cancel_recurring_series', {
     };
   },
 });
+
+// ─── Tool: book_family_appointments ────────────────────────────────────────
+//
+// Para escenarios típicos de pediatría / dental familiar / médico general:
+// "agéndame a mí y a mis 2 hijos el mismo día". Una sola llamada bookea
+// múltiples citas para diferentes pacientes (mismo phone de contacto, distintos
+// nombres). Cada cita queda con su own row en appointments pero comparten
+// el customer_phone del responsable, así cancel/modify pueden encontrarlas
+// fácil con ese phone.
+//
+// Estrategia: igual que recurring — bookea lo que puede, devuelve
+// skipped_members con razones para que el LLM pregunte alternativas.
+const FamilyMemberSchema = z.object({
+  patient_name: z.string().min(1).max(120),
+  // Cada miembro puede tener su propia hora si las quieren consecutivas,
+  // o usar el `default_time` del tool si todas en el mismo slot (raro).
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:MM'),
+  service_type: z.string().min(1).max(120).optional(),
+  staff_id: z.string().uuid().optional(),
+  reason: z.string().min(1).max(200),
+  // Edad opcional para que se asigne staff pediátrico vs adulto si aplica
+  age_years: z.number().int().min(0).max(120).optional(),
+});
+
+const FamilyArgs = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD'),
+    members: z.array(FamilyMemberSchema).min(2).max(6), // mínimo 2 (es familia), máx 6
+    notes: z.string().max(500).optional(),
+  })
+  .strict();
+
+registerTool('book_family_appointments', {
+  isMutation: true,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'book_family_appointments',
+      description:
+        'Bookea citas para múltiples miembros de una familia el mismo día. USAR cuando el paciente dice "agéndame a mí y a mis hijos el martes" o "queremos venir mi esposa y yo el viernes". Cada miembro tiene su propio nombre y hora; el customer_phone es del responsable (todos comparten el mismo número de contacto). Si algún miembro no se puede agendar (conflicto, fuera de horario), se devuelve en skipped_members.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'YYYY-MM-DD (mismo día para toda la familia)' },
+          members: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                patient_name: { type: 'string', description: 'Nombre del miembro' },
+                time: { type: 'string', description: 'HH:MM 24h. Pueden ser consecutivos (10:00, 10:30, 11:00) o no.' },
+                service_type: { type: 'string' },
+                staff_id: { type: 'string' },
+                reason: { type: 'string', description: 'Motivo de cita (limpieza, revisión, etc.)' },
+                age_years: { type: 'number', description: 'Edad en años (útil para asignar staff pediátrico)' },
+              },
+              required: ['patient_name', 'time', 'reason'],
+              additionalProperties: false,
+            },
+            description: 'Entre 2 y 6 miembros (mín 2 para que sea familia)',
+          },
+          notes: { type: 'string', description: 'Notas para el grupo (alergias compartidas, etc.)' },
+        },
+        required: ['date', 'members'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = FamilyArgs.parse(rawArgs);
+    const ownerPhone = normalizePhoneMx(ctx.customerPhone || '');
+    if (!ownerPhone) {
+      return { success: false, error_code: 'NO_PHONE', message: 'No tengo tu número.' };
+    }
+
+    const timezone = resolveTenantTimezone(ctx.tenant);
+    const businessHours = ctx.tenant.business_hours as Record<string, string> | null;
+
+    const { data: staffList } = await supabaseAdmin
+      .from('staff')
+      .select('id, name, default_duration')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+    if (!staffList || staffList.length === 0) {
+      return {
+        success: false,
+        error_code: 'NO_STAFF',
+        message: 'No hay profesionales activos para agendar.',
+      };
+    }
+
+    const { data: services } = await supabaseAdmin
+      .from('services')
+      .select('id, name, duration_minutes, price')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('active', true);
+
+    const booked: Array<{ patient_name: string; appointment_id: string; time: string }> = [];
+    const skipped: Array<{ patient_name: string; reason: string }> = [];
+
+    for (const member of args.members) {
+      // Resolver staff (puede ser distinto por miembro)
+      const memberStaff = findMatchingStaff(staffList as StaffRow[], member.staff_id);
+      if (!memberStaff) {
+        skipped.push({ patient_name: member.patient_name, reason: 'no encontré staff disponible' });
+        continue;
+      }
+
+      // Resolver service
+      let serviceId: string | null = null;
+      let durationMinutes = memberStaff.default_duration || 30;
+      if (member.service_type) {
+        const match = findMatchingService((services || []) as ServiceRow[], member.service_type);
+        if (match) {
+          serviceId = (match.id as string) || null;
+          durationMinutes = match.duration_minutes || durationMinutes;
+        }
+      }
+
+      const datetime = buildLocalIso(args.date, member.time, timezone);
+      const endDt = new Date(new Date(datetime).getTime() + durationMinutes * 60_000).toISOString();
+
+      // Business hours
+      if (!isWithinBusinessHours(datetime, businessHours, timezone)) {
+        skipped.push({ patient_name: member.patient_name, reason: `${member.time} fuera de horario` });
+        continue;
+      }
+
+      // Conflict check
+      const conflict = await hasConflict({
+        tenantId: ctx.tenantId,
+        staffId: memberStaff.id,
+        datetime,
+        durationMinutes,
+      });
+      if (conflict) {
+        skipped.push({ patient_name: member.patient_name, reason: `${member.time} ya está ocupado` });
+        continue;
+      }
+
+      const { data: row, error } = await supabaseAdmin
+        .from('appointments')
+        .insert({
+          tenant_id: ctx.tenantId,
+          staff_id: memberStaff.id,
+          service_id: serviceId,
+          contact_id: ctx.contactId,
+          conversation_id: ctx.conversationId,
+          customer_phone: ownerPhone, // todos los miembros comparten el phone del responsable
+          customer_name: member.patient_name,
+          datetime,
+          end_datetime: endDt,
+          duration_minutes: durationMinutes,
+          status: 'scheduled',
+          source: 'chat',
+          notes: [
+            `Cita familiar: ${member.reason}`,
+            member.age_years != null ? `Edad: ${member.age_years} años` : '',
+            args.notes || '',
+          ].filter(Boolean).join(' | '),
+        })
+        .select('id, datetime')
+        .single();
+
+      if (error || !row) {
+        const isConflict = error?.code === '23P01' ||
+          /exclusion|appointments_no_overlap|overlap/i.test(error?.message ?? '');
+        skipped.push({
+          patient_name: member.patient_name,
+          reason: isConflict ? 'horario ocupado (race condition)' : 'error de inserción',
+        });
+        continue;
+      }
+
+      booked.push({
+        patient_name: member.patient_name,
+        appointment_id: row.id as string,
+        time: member.time,
+      });
+    }
+
+    if (booked.length === 0) {
+      return {
+        success: false,
+        error_code: 'ALL_CONFLICTS',
+        message: 'No pude agendar a ningún miembro. Pediré al paciente alternativas.',
+        skipped_members: skipped,
+      };
+    }
+
+    const summary = booked
+      .map((b) => `  • ${b.patient_name} a las ${b.time}`)
+      .join('\n');
+
+    return {
+      success: true,
+      booked_count: booked.length,
+      total_requested: args.members.length,
+      booked_members: booked,
+      skipped_members: skipped,
+      message: skipped.length > 0
+        ? `Agendé a ${booked.length} de ${args.members.length} miembros:\n${summary}\n\nNo pude agendar a: ${skipped.map((s) => `${s.patient_name} (${s.reason})`).join(', ')}. Pregunta al paciente si quiere alternativas.`
+        : `✅ Familia completa agendada para el ${args.date}:\n${summary}`,
+    };
+  },
+});
