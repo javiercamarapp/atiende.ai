@@ -23,17 +23,21 @@ export const HISTORY_MAX_TOKENS = Math.floor(HISTORY_MAX_CHARS / 3);
 export const HISTORY_KEEP_RECENT = 8;
 
 // ─── LLM orchestrator ──────────────────────────────────────────────────────
-// Subimos primary 10→12s: Grok 4.1 Fast con tools complejas (intake + agenda
-// + 22 tools schema) puede tardar hasta ~9s en una sola ronda; 10s era muy
-// ajustado y disparaba TimeoutError antes de que el modelo terminara.
-export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 12_000;
-export const ORCHESTRATOR_FALLBACK_TIMEOUT_MS = 10_000;
+// Subimos primary 12→15s tras observar 1 outlier de Gemini Flash a 17s en
+// producción que disparó fallback (ambos modelos timeoutearon = "tardé un
+// poco" al usuario). Gemini Flash p95 normal es 1814ms (excelente), pero
+// hay tail outliers raros >12s. 15s cubre el 99.5% de casos sin saltar al
+// fallback caro y también lento.
+export const ORCHESTRATOR_PRIMARY_TIMEOUT_MS = 15_000;
+// Fallback timeout subido también — si Gemini falló y caemos a GPT-4.1-mini
+// con tools complejas, vale la pena darle 12s (vs 10s) antes de tirar
+// "OrchestratorBothFailed" definitivo.
+export const ORCHESTRATOR_FALLBACK_TIMEOUT_MS = 12_000;
 /** Wall-clock ceiling para TODO el turno (primary + fallback + tools).
- *  Subido 18→25s tras observar `OrchestratorTimeoutError/PartialExecutionError`
- *  en producción cuando Grok hacía 5 rondas de tools (5 LLM calls + 5 tool
- *  execs ≈ 20s). Vercel maxDuration del worker es 300s, así que 25s sigue
- *  siendo seguro. */
-export const ORCHESTRATOR_TOTAL_TIMEOUT_MS = 25_000;
+ *  Subido a 30s para cubrir primary 15s + fallback 12s + buffer 3s.
+ *  Vercel maxDuration del worker es 300s, así que 30s sigue siendo seguro
+ *  y damos suficiente budget para flujos multi-step legítimos. */
+export const ORCHESTRATOR_TOTAL_TIMEOUT_MS = 30_000;
 /** Subido 3→5 después de migrar el primario a Gemini 2.5 Flash (que ya
  *  no entra en los loops de re-call que tenía Grok). 3 rondas no
  *  alcanzaban para flujos multi-step legítimos comunes en consultorios:
