@@ -38,6 +38,13 @@ export interface ChatAgentInput {
   scrapeError?: string;
   /** Content already extracted from files the user uploaded in this turn. */
   uploadedContent?: UploadedContentItem[];
+  /**
+   * 'personal' = un solo doctor independiente.
+   * 'consultorio' = consultorio con varios doctores.
+   * Cambia el system prompt: en 'consultorio' Valeria pregunta cuántos
+   * doctores hay y sus especialidades (para invitarlos después).
+   */
+  accountType?: 'personal' | 'consultorio';
 }
 
 export interface ChatAgentResult {
@@ -93,6 +100,7 @@ const VerticalDetectionSchema = z.object({
 export function buildAgentSystemPrompt(
   vertical: VerticalEnum | null,
   capturedFields: Record<string, string>,
+  accountType: 'personal' | 'consultorio' = 'personal',
 ): string {
   const header = vertical
     ? `NEGOCIO DETECTADO: ${vertical} (${getVerticalDisplayName(vertical)})`
@@ -105,6 +113,24 @@ export function buildAgentSystemPrompt(
   const activeVerticalList = ACTIVE_VERTICALS.join(', ');
   const futureVerticalList = ALL_VERTICALS.filter((v) => !isActiveVertical(v)).join(', ');
   const verticalIsActive = vertical ? isActiveVertical(vertical) : null;
+
+  // account_type modula el flujo de preguntas. Lo capturó el usuario al
+  // arranque (selector de tarjetas). 'consultorio' agrega preguntas sobre
+  // el equipo (cuántos doctores, especialidades) que se usan para invitarlos
+  // después desde Configuración. 'personal' las omite — el dueño ES el doctor.
+  const accountTypeBlock =
+    accountType === 'consultorio'
+      ? `TIPO DE CUENTA: CONSULTORIO (varios doctores)
+El dueño está armando el agente para un consultorio donde trabajan VARIOS doctores. Tras capturar los campos básicos del schema, hacé estas preguntas extra (en orden, una por turno, antes de bot_name):
+  1. "¿Cuántos doctores trabajan en el consultorio (incluyéndote)?"
+     → guardalo como team_size (número entero, ej "3")
+  2. "¿Cada doctor maneja su propia agenda o comparten una sola?"
+     → guardalo como agenda_model ("individual" | "compartida")
+  3. "¿Qué especialidades tienen? (ej: ortodoncia, endodoncia, estética)"
+     → guardalo como team_specialties (texto libre)
+NO les pidas los nombres ni emails de los doctores acá — eso lo hacen después desde Configuración → Equipo → Invitar. Solo te interesa el contexto para armar el system prompt del bot ("trabajamos los doctores X, Y y Z, agenda compartida"). Después de estas 3 preguntas pasá a bot_name normalmente.`
+      : `TIPO DE CUENTA: PERSONAL (un solo doctor independiente)
+El dueño ES el doctor — atiende sus propias consultas. NO preguntés nada sobre equipo, otros doctores ni especialidades múltiples. El bot habla SIEMPRE en singular ("la Dra. ___" / "el Dr. ___"). Saltate cualquier pregunta del schema que asuma equipo.`;
 
   return `Eres Valeria, la agente de pre-conversación de useatiende.ai. Tu trabajo es conocer el negocio del cliente mediante una charla natural (NO un cuestionario) para configurar su agente AI de reservas. Hablas español mexicano, cálido, breve y profesional. Te presentas como Valeria cuando es natural hacerlo.
 
@@ -124,6 +150,8 @@ En ese caso, marca done=true, vertical=(el que detectaste aunque sea futuro), up
 
 ${header}
 ${vertical ? `VERTICAL ACTIVO: ${verticalIsActive ? 'SI — continua con el flujo normal' : 'NO — aplica la REGLA DE RECHAZO FORMAL arriba'}` : ''}
+
+${accountTypeBlock}
 
 TU OBJETIVO: capturar TODOS los campos marcados [REQ] en el schema de abajo. No marcas done=true hasta que cada campo [REQ] tenga valor concreto.
 
@@ -240,7 +268,11 @@ function buildMessagesForAgent(input: ChatAgentInput): {
  * (defense-in-depth against the model inventing keys).
  */
 export async function runChatAgent(input: ChatAgentInput): Promise<ChatAgentResult> {
-  const system = buildAgentSystemPrompt(input.vertical, input.capturedFields);
+  const system = buildAgentSystemPrompt(
+    input.vertical,
+    input.capturedFields,
+    input.accountType ?? 'personal',
+  );
   const messages = buildMessagesForAgent(input);
 
   const result = await generateStructured<AgentOutput>({

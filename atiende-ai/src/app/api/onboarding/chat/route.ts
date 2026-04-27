@@ -59,6 +59,10 @@ const ChatRequestSchema = z.object({
     )
     .max(5)
     .optional(),
+  // accountType (Wave 5 PR 4): condiciona el system prompt de Valeria.
+  // 'consultorio' habilita preguntas sobre el equipo (cuántos doctores,
+  // especialidades). 'personal' las omite. Si no viene, default 'personal'.
+  accountType: z.enum(['personal', 'consultorio']).nullable().optional(),
 });
 
 // Pre-validation history trim. The agent emits up to 3 bubbles per turn, so a
@@ -107,6 +111,7 @@ export async function POST(request: Request) {
 
   const { userMessage, history, capturedFields, uploadedContent } = parsed.data;
   const incomingVertical = parsed.data.vertical ?? null;
+  const accountType = parsed.data.accountType ?? 'personal';
 
   // ── 1. Detect URL in the user message and scrape it (best-effort) ──
   let scrapedMarkdown: string | undefined;
@@ -141,6 +146,7 @@ export async function POST(request: Request) {
       scrapedMarkdown,
       scrapeError,
       uploadedContent,
+      accountType,
     });
 
     // ── 3. Merge captured fields (only valid keys, filtered by runChatAgent) ──
