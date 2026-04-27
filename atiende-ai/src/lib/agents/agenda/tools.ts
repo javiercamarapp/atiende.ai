@@ -2577,3 +2577,110 @@ registerTool('book_family_appointments', {
     };
   },
 });
+
+// ─── Tool: disambiguate_patient ────────────────────────────────────────────
+//
+// Caso de uso médico CRÍTICO: el agente busca un paciente por nombre y
+// encuentra MÚLTIPLES contactos que matchean (ej. dos "María García"
+// en el tenant). Hoy el LLM podría elegir ciegamente — riesgo de hacer
+// una operación sobre el paciente equivocado (cancelar cita ajena,
+// asignar prescripción a otro, etc).
+//
+// Esta tool fuerza al LLM a STOP + presentar opciones al usuario antes
+// de proceder. Devuelve hasta 5 candidatos con campos diferenciadores
+// (último contacto, edad si la tenemos, teléfono parcial enmascarado,
+// nombre completo).
+const DisambiguateArgs = z
+  .object({
+    name_query: z.string().min(1).max(200),
+  })
+  .strict();
+
+registerTool('disambiguate_patient', {
+  // No es mutación — solo lee. Pero con isMutation:false el dedup cross-round
+  // del tool-executor evitará llamadas repetidas con mismo nombre.
+  isMutation: false,
+  schema: {
+    type: 'function',
+    function: {
+      name: 'disambiguate_patient',
+      description:
+        'USAR cuando hay AMBIGÜEDAD sobre cuál paciente referir. Por ejemplo: el agente pregunta "¿con qué nombre agendamos?" y el sender dice "para María García" pero hay 2 Marías García en el sistema. Esta tool devuelve hasta 5 candidatos del tenant con campos diferenciadores. El agente DEBE presentar las opciones al usuario para que elija ANTES de cualquier mutación. NO usar como búsqueda general — solo para resolver ambigüedad concreta.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name_query: { type: 'string', description: 'Nombre o fragmento a buscar (case-insensitive, fuzzy match)' },
+        },
+        required: ['name_query'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: async (rawArgs: unknown, ctx: ToolContext) => {
+    const args = DisambiguateArgs.parse(rawArgs);
+    const senderPhone = normalizePhoneMx(ctx.customerPhone || '');
+
+    // ILIKE para case-insensitive partial match. RLS garantiza tenant scope
+    // (tenant_id check vía .eq + RLS).
+    const { data: candidates } = await supabaseAdmin
+      .from('contacts')
+      .select('id, name, phone, last_contact_at, intake_data')
+      .eq('tenant_id', ctx.tenantId)
+      .ilike('name', `%${args.name_query.replace(/[%_]/g, '\\$&')}%`)
+      .order('last_contact_at', { ascending: false, nullsFirst: false })
+      .limit(5);
+
+    if (!candidates || candidates.length === 0) {
+      return {
+        found: 0,
+        message: `No encontré pacientes con nombre "${args.name_query}" en el sistema. Pídele al sender que confirme el nombre o si es paciente nuevo.`,
+      };
+    }
+
+    // Si hay solo 1 match, no hay ambigüedad
+    if (candidates.length === 1) {
+      const c = candidates[0];
+      const intake = (c.intake_data as Record<string, unknown> | null) || {};
+      return {
+        found: 1,
+        unique_match: {
+          contact_id: c.id as string,
+          name: c.name as string,
+          age: intake.age as number | undefined,
+          // Phone enmascarado por privacidad — el LLM no necesita el completo
+          phone_masked: typeof c.phone === 'string'
+            ? c.phone.slice(0, 3) + '***' + c.phone.slice(-3)
+            : null,
+          last_contact_at: c.last_contact_at as string | null,
+        },
+        message: 'Match único — podés proceder sin disambiguar.',
+      };
+    }
+
+    // Múltiples matches: hay que disambiguar con el usuario
+    const items = candidates.map((c, i) => {
+      const intake = (c.intake_data as Record<string, unknown> | null) || {};
+      const isSender = typeof c.phone === 'string' && normalizePhoneMx(c.phone) === senderPhone;
+      return {
+        index: i + 1,
+        contact_id: c.id as string,
+        name: c.name as string,
+        age: intake.age as number | undefined,
+        phone_masked: typeof c.phone === 'string'
+          ? c.phone.slice(0, 3) + '***' + c.phone.slice(-3)
+          : null,
+        is_sender: isSender,
+        last_contact_at: c.last_contact_at as string | null,
+      };
+    });
+
+    return {
+      found: candidates.length,
+      candidates: items,
+      next_step:
+        'AMBIGÜEDAD detectada — hay ' +
+        candidates.length +
+        ' pacientes que coinciden. Presentá las opciones al sender (nombre + edad si la tenés + último contacto) y pedile que elija. NO procedas con ninguna mutación hasta que confirme cuál.',
+    };
+  },
+});
