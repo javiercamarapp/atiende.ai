@@ -154,6 +154,9 @@ export default async function BillingPage() {
                   </span>
                   <span className="text-xs text-zinc-500">MXN/mes</span>
                 </div>
+                <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] text-[11px] font-semibold">
+                  Primer mes gratis · 30 días de prueba
+                </div>
               </div>
 
               <div className="flex-1 px-5 overflow-y-auto">
