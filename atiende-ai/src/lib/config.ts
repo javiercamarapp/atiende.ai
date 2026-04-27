@@ -75,10 +75,8 @@ export const WA_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const WA_SEND_TIMEOUT_MS = 10_000;
 
 // ─── Plan pricing + limits (MXN/mes) ──────────────────────────────────────
-// Fuente de verdad única para los precios de plan. Los dashboards de ROI/KPI
-// deben leer de aquí, no hardcodear números distintos — auditoría encontró
-// que kpi-calculator y roi tenían $499 hardcoded mientras billing usaba $599,
-// desalineando los números mostrados a los tenants vs lo que Stripe cobraba.
+// Fuente de verdad única para precios de plan. Los dashboards de ROI/KPI
+// deben leer de aquí — nunca hardcodear números en otros archivos.
 export const PLAN_PRICES_MXN: Record<string, number> = {
   free_trial: 0,
   basic: 599,

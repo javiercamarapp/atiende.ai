@@ -59,7 +59,7 @@ const ChatRequestSchema = z.object({
     )
     .max(5)
     .optional(),
-  // accountType (Wave 5 PR 4): condiciona el system prompt de Valeria.
+  // accountType condiciona el system prompt de Valeria.
   // 'consultorio' habilita preguntas sobre el equipo (cuántos doctores,
   // especialidades). 'personal' las omite. Si no viene, default 'personal'.
   accountType: z.enum(['personal', 'consultorio']).nullable().optional(),

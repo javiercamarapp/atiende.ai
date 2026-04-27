@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// PER-DOCTOR BILLING — Wave 5 PR 3
+// PER-DOCTOR BILLING
 //
 // Modelo: cada doctor tiene su propia suscripción Stripe (1 customer Stripe
 // por doctor, 1 subscription por doctor). El owner del consultorio NO paga
