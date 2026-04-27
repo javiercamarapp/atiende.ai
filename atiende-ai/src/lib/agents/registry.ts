@@ -45,6 +45,10 @@ export const AGENT_REGISTRY: Record<AgentName, AgentConfig> = {
       // pediatría dental, médico general familiar). Una llamada bookea
       // todos compartiendo el customer_phone del responsable.
       'book_family_appointments',
+      // Disambiguation: cuando hay 2+ pacientes con mismo nombre. El
+      // LLM DEBE llamar esta tool antes de hacer mutaciones para evitar
+      // operar sobre el paciente equivocado (riesgo médico crítico).
+      'disambiguate_patient',
       // Shared profile tools — el agente agenda ve mensajes libres del
       // paciente y debe poder guardar cualquier dato nuevo que aparezca
       // en medio del flujo (alergia reciente, cambio de dirección,
