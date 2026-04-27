@@ -312,7 +312,13 @@ export async function POST(req: NextRequest) {
         // Publicación falló — fallback a waitUntil para no perder el mensaje.
         logger.warn('[whatsapp-webhook] QStash publish failed, fallback to waitUntil', {  reason: pub.reason  });
         waitUntil(
-          processIncomingMessage(validated as never).catch((err) => {
+          (async () => {
+            const { runWithRequestContext } = await import('@/lib/observability/tracing');
+            await runWithRequestContext(
+              { requestId: crypto.randomUUID() },
+              () => processIncomingMessage(validated as never),
+            );
+          })().catch((err) => {
             logger.error('[whatsapp-webhook] process error (fallback)', undefined, {  err: err instanceof Error ? err.message : err  });
             logWebhook({ provider: 'whatsapp', eventType: 'process_error', error: err instanceof Error ? err.message : 'Unknown error' });
           }),
