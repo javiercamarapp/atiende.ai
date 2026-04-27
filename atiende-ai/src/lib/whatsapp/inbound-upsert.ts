@@ -226,6 +226,8 @@ async function legacyPath(input: InboundUpsertInput): Promise<InboundUpsertResul
     ? input.messageType
     : null;
 
+  const { getRequestId } = await import('@/lib/observability/tracing');
+  const requestId = getRequestId();
   const { error: msgErr } = await supabaseAdmin.from('messages').insert({
     conversation_id: conv!.id,
     tenant_id: input.tenantId,
@@ -237,6 +239,7 @@ async function legacyPath(input: InboundUpsertInput): Promise<InboundUpsertResul
     media_type: mediaType,
     media_transcription: encryptPII(input.mediaTranscription),
     media_description: encryptPII(input.mediaDescription),
+    ...(requestId ? { request_id: requestId } : {}),
   });
 
   let messageInserted = !msgErr;

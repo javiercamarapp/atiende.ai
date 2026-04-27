@@ -36,7 +36,32 @@ function formatDev(entry: LogEntry): string {
   return `${ts} [${lvl}] ${entry.message}${ctx}${err}`;
 }
 
+/**
+ * Auto-inyecta request_id (y conversationId/tenantId si existen) desde
+ * el AsyncLocalStorage del módulo `tracing` ANTES de emitir. Si no hay
+ * contexto activo (ej. cron sin runWithRequestContext), no se modifica
+ * el entry. Lazy import para evitar import cycle si tracing.ts logueara.
+ */
+function injectTraceContext(entry: LogEntry): void {
+  try {
+    // Lazy require para evitar circular dep en cold start.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const tracing = require('./observability/tracing') as typeof import('./observability/tracing');
+    const ctx = tracing.getRequestContext();
+    if (!ctx) return;
+    entry.context = {
+      ...(entry.context || {}),
+      request_id: ctx.requestId,
+      ...(ctx.tenantId ? { tenant_id: ctx.tenantId } : {}),
+      ...(ctx.conversationId ? { conversation_id: ctx.conversationId } : {}),
+    };
+  } catch {
+    // Tracing module no disponible (test env, etc) — silent skip
+  }
+}
+
 function emit(entry: LogEntry): void {
+  injectTraceContext(entry);
   const output = isProduction ? JSON.stringify(entry) : formatDev(entry);
 
   switch (entry.level) {
