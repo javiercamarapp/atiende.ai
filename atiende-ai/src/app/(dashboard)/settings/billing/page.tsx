@@ -82,8 +82,8 @@ export default async function BillingPage() {
             Tu plan y facturación
           </h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Cada doctor del consultorio paga su propia suscripción. El primer
-            mes es gratis.
+            Cada doctor del consultorio paga su propia suscripción. El plan
+            Esencial incluye 30 días de prueba gratis.
           </p>
         </div>
 
@@ -154,9 +154,15 @@ export default async function BillingPage() {
                   </span>
                   <span className="text-xs text-zinc-500">MXN/mes</span>
                 </div>
-                <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] text-[11px] font-semibold">
-                  Primer mes gratis · 30 días de prueba
-                </div>
+                {plan === 'esencial' ? (
+                  <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-blue-soft))] text-[hsl(var(--brand-blue))] text-[11px] font-semibold">
+                    Primer mes gratis · 30 días de prueba
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-zinc-500">
+                    Cobro desde el primer mes
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 px-5 overflow-y-auto">

@@ -138,11 +138,11 @@ export async function createDoctorCheckout(opts: {
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
     subscription_data: {
-      // 30 días gratis ("primer mes gratis sin tarjeta NO — Stripe pide
-      // tarjeta para garantizar conversión sin friction al final del trial").
-      // Si querés permitir trial sin tarjeta, hay que usar el flag
-      // `payment_method_collection: 'if_required'` y trial separado.
-      trial_period_days: 30,
+      // Trial 30 días SOLO en Esencial — Pro y Ultimate cobran desde mes 1.
+      // Decisión de negocio: el plan de entrada (Esencial) tiene trial para
+      // bajar la fricción de prueba; los upgrades a Pro/Ultimate son una
+      // decisión consciente de inversión y no requieren incentivo extra.
+      ...(opts.plan === 'esencial' ? { trial_period_days: 30 } : {}),
       metadata: {
         staff_id: opts.staffId,
         tenant_id: opts.tenantId,
@@ -157,9 +157,6 @@ export async function createDoctorCheckout(opts: {
     },
     success_url: `${APP_URL}/settings/billing?subscription=success&plan=${opts.plan}`,
     cancel_url: `${APP_URL}/settings/billing?subscription=cancelled`,
-    // No requerir tarjeta durante el trial — Stripe igual la pide pero
-    // sin cobro inmediato. El doctor confía más cuando NO hay cobro.
-    // payment_method_collection: 'if_required', // descomenta si querés esto
   });
 
   if (!session.url) {
