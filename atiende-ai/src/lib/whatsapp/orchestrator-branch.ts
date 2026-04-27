@@ -494,13 +494,22 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
     ? await buildPatientStateSnapshot(tenant.id, contactId, tenantTz).catch(() => '')
     : '';
 
+  // Conversation summary persistente (PR Phase J): cubre conversaciones
+  // largas donde el historial truncado a 12 msgs hace que el LLM olvide
+  // turnos previos. El summary se actualiza cada 5 turnos vía cheap LLM
+  // y vive en `conversations.summary`.
+  const { getConversationSummary } = await import('./conversation-summary');
+  const conversationSummary = conversationId
+    ? await getConversationSummary(conversationId).catch(() => '')
+    : '';
+
   // State recovery — si hay state activo (de cualquier tipo) lo inyectamos
   // al system prompt para que el agente sepa qué datos ya tiene.
   const stateContext = convState.state
     ? formatStateContext(convState.state, convState.context)
     : '';
 
-  const systemPrompt = [baseSystemPrompt, stateSnapshot, stateContext]
+  const systemPrompt = [baseSystemPrompt, stateSnapshot, conversationSummary, stateContext]
     .filter(Boolean)
     .join('\n\n');
 
@@ -622,6 +631,22 @@ export async function handleWithOrchestrator(args: OrchestratorBranchArgs): Prom
       console.warn('[orchestrator] tool_call_logs insert failed:', logErr);
     }
   }
+
+  // Conversation summary persistente (Phase J): cada 5 turnos actualiza
+  // el summary persistido en conversations.summary. Fire-and-forget — no
+  // bloquea el flow del bot. El próximo turno usará el summary nuevo.
+  void (async () => {
+    try {
+      const { maybeUpdateSummary } = await import('./conversation-summary');
+      await maybeUpdateSummary({
+        tenantId: tenant.id as string,
+        conversationId,
+        customerName,
+      });
+    } catch {
+      /* best effort */
+    }
+  })();
 
   await runPostResponseEffects(
     tenant,
