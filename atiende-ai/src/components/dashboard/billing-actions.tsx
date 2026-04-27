@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 import type { DoctorPlan } from '@/lib/billing/per-doctor';
 
 type Props =
-  | { mode: 'checkout'; plan: DoctorPlan }
+  | { mode: 'checkout'; plan: DoctorPlan; popular?: boolean }
   | { mode: 'portal'; plan?: DoctorPlan };
 
 export function BillingActions(props: Props) {
@@ -55,7 +55,7 @@ export function BillingActions(props: Props) {
       <button
         onClick={handleClick}
         disabled={loading}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-200 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[hsl(var(--brand-blue)/0.3)] text-sm font-medium text-[hsl(var(--brand-blue))] bg-white hover:bg-[hsl(var(--brand-blue-soft))] hover:border-[hsl(var(--brand-blue))] disabled:opacity-50 transition-all duration-200"
       >
         {loading && <Loader2 className="w-4 h-4 animate-spin" />}
         Gestionar suscripción
@@ -63,23 +63,20 @@ export function BillingActions(props: Props) {
     );
   }
 
-  // mode === 'checkout'
-  const isPro = props.plan === 'pro';
+  // mode === 'checkout' — siempre azul brand. El plan "popular" (pro) tiene
+  // un glow extra para destacarlo del resto.
+  const popular = props.popular;
   return (
     <button
       onClick={handleClick}
       disabled={loading}
-      className={`w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50 transition-colors ${
-        isPro
-          ? 'bg-blue-600 text-white hover:bg-blue-700'
-          : 'bg-zinc-900 text-white hover:bg-zinc-800'
+      className={`w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white bg-[hsl(var(--brand-blue))] hover:bg-[hsl(var(--brand-blue)/0.9)] disabled:opacity-50 transition-all duration-200 ${
+        popular
+          ? 'shadow-md shadow-[hsl(var(--brand-blue)/0.3)] hover:shadow-lg hover:shadow-[hsl(var(--brand-blue)/0.4)] hover:-translate-y-0.5'
+          : 'hover:shadow-md hover:shadow-[hsl(var(--brand-blue)/0.2)]'
       }`}
     >
-      {loading ? (
-        <Loader2 className="w-4 h-4 animate-spin" />
-      ) : (
-        'Suscribirse'
-      )}
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Suscribirse'}
     </button>
   );
 }
