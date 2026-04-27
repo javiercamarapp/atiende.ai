@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     durationMs: Date.now() - startTime,
   });
 
-  // ─── Per-doctor subscription events (Wave 5 PR 3) ─────────────────────
+  // ─── Per-doctor subscription events ───────────────────────────────────
   // Detectamos por metadata.billing_type='per_doctor' que seteamos en
   // createDoctorCheckout. Estos NO van por la lógica de tenant-level
   // billing — cada doctor tiene su propia subscription.

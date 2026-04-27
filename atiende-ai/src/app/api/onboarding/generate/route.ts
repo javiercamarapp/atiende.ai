@@ -24,7 +24,7 @@ const GenerateRequestSchema = z.object({
   // con la secretaria. Si no viene o viene vacío, el cliente puede haber
   // dejado la pregunta en blanco; default "Sofía" es nombre genérico MX.
   botName: z.string().max(50).default(''),
-  // accountType (Wave 5 PR 4): se persiste a tenants.account_type. Define
+  // accountType se persiste a tenants.account_type. Define
   // si el tenant es 1-doctor ('personal') o multi-doctor ('consultorio') —
   // el flujo de billing per-doctor (Stripe) y el de invitaciones de equipo
   // lo usan para gating. Default 'personal' por compatibilidad con clientes

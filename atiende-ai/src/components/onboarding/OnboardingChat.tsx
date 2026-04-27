@@ -10,7 +10,7 @@ import { ProgressIndicator } from './ProgressIndicator';
 import type { VerticalEnum } from '@/lib/verticals/types';
 
 type MessageRole = 'ai' | 'user';
-// account_type es la PRIMERA decisión del onboarding (Wave 5 PR 4): define
+// account_type es la PRIMERA decisión del onboarding: define
 // si el agente AI es para un solo doctor (personal) o un consultorio con
 // varios doctores. Cambia el flujo de captura (Valeria pregunta o no por el
 // equipo), el copy de los CTAs finales y el plan de billing default.
@@ -419,7 +419,7 @@ export function OnboardingChat() {
     [addUserMessage, processOneItem],
   );
 
-  // ── Account type selection (FIRST step, Wave 5 PR 4) ──
+  // ── Account type selection (primer paso del onboarding) ──
   // Si el usuario tenía un onboarding en curso (v3 persisted) saltamos
   // directo a 'conversation' y rehidratamos. Sino vamos a 'channel'.
   const handleAccountTypeSelect = useCallback(
@@ -536,7 +536,7 @@ export function OnboardingChat() {
             </p>
           </div>
 
-          {/* Account type selector — primer paso (Wave 5 PR 4) */}
+          {/* Account type selector — primer paso */}
           {phase === 'account_type' && (
             <AccountTypeSelector onSelect={handleAccountTypeSelect} />
           )}
@@ -617,7 +617,7 @@ export function OnboardingChat() {
             </div>
           )}
 
-          {/* Done state — CTAs cambian según account_type (Wave 5 PR 4) */}
+          {/* Done state — CTAs cambian según account_type */}
           {phase === 'done' && (
             <div className="text-center py-8 animate-element animate-delay-100">
               <div className="text-5xl mb-4">🎉</div>

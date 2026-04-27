@@ -31,11 +31,8 @@ export async function getConversationContext(
   conversationId: string,
   maxMessages = 5
 ): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
-  // BUG FIX CRÍTICO: antes era `.order(asc).limit(5)` que traía los 5
-  // PRIMEROS mensajes — el bot quedaba mirando solo el saludo inicial y
-  // ignoraba los últimos turnos. Ahora ordenamos DESC para tomar los N
-  // más recientes, y reverse() al final para que el LLM los reciba en
-  // orden cronológico.
+  // Tomamos los N mensajes más recientes (DESC + reverse) para que el LLM
+  // reciba el contexto en orden cronológico.
   const { data: messages } = await supabaseAdmin
     .from('messages')
     .select('direction, content, created_at')

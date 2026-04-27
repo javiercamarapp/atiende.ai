@@ -54,19 +54,12 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  // Rutas publicas que no necesitan auth Supabase. Bug fix: api/cron y
-  // api/health NO requieren sesión — usan Bearer CRON_SECRET. Antes el
-  // proxy redirigía /api/cron/* a /login porque no había user, y TODOS
-  // los crons (analytics, no-show, telemed, churn, google-reviews, etc)
-  // fallaban con 307 desde el deploy de Next 16. api/public/* es para
-  // booking público sin auth.
-  //
-  // BUG FIX CRÍTICO 2026-04-26: agregamos `/api/auth` a publicPaths.
-  // Antes el proxy redirigía POST /api/auth/login → /login (HTML) cuando
-  // el usuario NO estaba autenticado (que es el estado normal al loguearse).
-  // El frontend hacía fetch + res.json() → JSON parse failed sobre HTML →
-  // json={} → toast genérico "Error al iniciar sesión" sin info diagnóstica.
-  // Chicken-and-egg: la API de login requería estar logueado para funcionar.
+  // Rutas públicas que no requieren sesión Supabase:
+  //   - /api/cron y /api/health usan Bearer CRON_SECRET en lugar de cookie
+  //   - /api/public/* es booking sin login
+  //   - /api/auth es el endpoint de login en sí (chicken-and-egg evitado)
+  //   - /accept-invite y /api/staff/accept-invite son pre-auth (invitado
+  //     todavía no tiene cuenta cuando llega al link del email)
   const publicPaths = [
     '/login', '/register', '/forgot-password', '/reset-password',
     '/accept-invite', // landing page para invitados (pre-auth)

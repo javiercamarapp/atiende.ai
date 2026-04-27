@@ -18,9 +18,9 @@ export function getStripe(): Stripe {
 // para poder rotar precios sin redeployar. Fallback legacy a los placeholders
 // originales para que los tests/dev sigan funcionando.
 //
-// Planes actuales (2026-04):
+// Planes tenant-level:
 //   - basic   ($599 MXN)   WhatsApp Básico, sin voz
-//   - pro     ($999 MXN)   Legacy — mantener solo para tenants existentes
+//   - pro     ($999 MXN)
 //   - premium ($1,499 MXN) WhatsApp + Voz con 300 min incluidos + $5 MXN/min overage
 const PLAN_PRICES: Record<string, string> = {
   basic: process.env.STRIPE_PRICE_BASIC || 'price_basic_599_mxn',
