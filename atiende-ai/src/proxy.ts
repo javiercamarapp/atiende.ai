@@ -69,7 +69,9 @@ export async function proxy(request: NextRequest) {
   // Chicken-and-egg: la API de login requería estar logueado para funcionar.
   const publicPaths = [
     '/login', '/register', '/forgot-password', '/reset-password',
+    '/accept-invite', // landing page para invitados (pre-auth)
     '/api/auth', // login, mfa, signup, password reset endpoints
+    '/api/staff/accept-invite', // POST endpoint del invite — invitado NO está logueado todavía
     '/api/webhook', '/api/cron', '/api/health', '/api/public',
     '/portal', '/telemed', '/book',
   ];
