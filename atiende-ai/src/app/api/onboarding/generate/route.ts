@@ -24,6 +24,12 @@ const GenerateRequestSchema = z.object({
   // con la secretaria. Si no viene o viene vacío, el cliente puede haber
   // dejado la pregunta en blanco; default "Sofía" es nombre genérico MX.
   botName: z.string().max(50).default(''),
+  // accountType (Wave 5 PR 4): se persiste a tenants.account_type. Define
+  // si el tenant es 1-doctor ('personal') o multi-doctor ('consultorio') —
+  // el flujo de billing per-doctor (Stripe) y el de invitaciones de equipo
+  // lo usan para gating. Default 'personal' por compatibilidad con clientes
+  // viejos (pre-PR4) que no envían el campo.
+  accountType: z.enum(['personal', 'consultorio']).default('personal'),
 });
 
 export async function POST(request: Request) {
@@ -51,7 +57,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { vertical, answers } = parsed.data;
+  const { vertical, answers, accountType } = parsed.data;
   const businessName = parsed.data.businessName || answers.q1 || 'Mi negocio';
   // Bot name — preferimos el campo explícito; sino busqueda en answers
   // (algunos verticales lo tienen como q_botname); sino "Sofía".
@@ -78,6 +84,7 @@ export async function POST(request: Request) {
     email: user.email ?? null,
     chat_system_prompt: config.systemPrompt,
     bot_name: botName,
+    account_type: accountType,
     status: 'active' as const,
     config: {
       vertical, // fine-grained VerticalEnum, preserved for LLM routing
@@ -172,6 +179,7 @@ export async function POST(request: Request) {
     tenantId,
     vertical,
     dbBusinessType,
+    accountType,
     answerCount: Object.keys(answers).length,
     promptLength: config.systemPrompt.length,
   });

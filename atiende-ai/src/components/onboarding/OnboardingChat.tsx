@@ -4,12 +4,17 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { TypewriterMessage } from './TypewriterMessage';
 import { ChannelSelector } from './ChannelSelector';
+import { AccountTypeSelector, type AccountType } from './AccountTypeSelector';
 import { ChatInput } from './ChatInput';
 import { ProgressIndicator } from './ProgressIndicator';
 import type { VerticalEnum } from '@/lib/verticals/types';
 
 type MessageRole = 'ai' | 'user';
-type Phase = 'channel' | 'conversation' | 'generating' | 'done';
+// account_type es la PRIMERA decisión del onboarding (Wave 5 PR 4): define
+// si el agente AI es para un solo doctor (personal) o un consultorio con
+// varios doctores. Cambia el flujo de captura (Valeria pregunta o no por el
+// equipo), el copy de los CTAs finales y el plan de billing default.
+type Phase = 'account_type' | 'channel' | 'conversation' | 'generating' | 'done';
 
 interface ChatMessage {
   id: string;
@@ -23,7 +28,8 @@ interface HistoryTurn {
 }
 
 interface PersistedState {
-  version: 2;
+  version: 3;
+  accountType: AccountType | null;
   vertical: VerticalEnum | null;
   capturedFields: Record<string, string>;
   history: HistoryTurn[];
@@ -32,7 +38,11 @@ interface PersistedState {
   done: boolean;
 }
 
-const STORAGE_KEY = 'atiende_onboarding_v2';
+// v3 agrega accountType. Versions previas (v2) son ignoradas (loadPersistedState
+// devuelve null) — el usuario re-arranca el onboarding y elige nuevamente.
+// Aceptamos esa pequeña fricción en el upgrade porque no podemos asumir el
+// account_type retroactivamente.
+const STORAGE_KEY = 'atiende_onboarding_v3';
 // Two opening bubbles: Valeria introduces herself, then asks the first
 // question. Rendered sequentially via addAiMessage so the user sees them as
 // separate chat bubbles (Valeria's persona is the agent defined in
@@ -48,7 +58,7 @@ function loadPersistedState(): PersistedState | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || parsed.version !== 2) return null;
+    if (!parsed || parsed.version !== 3) return null;
     return parsed as PersistedState;
   } catch {
     return null;
@@ -75,7 +85,8 @@ function clearPersistedState(): void {
 
 export function OnboardingChat() {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>('channel');
+  const [phase, setPhase] = useState<Phase>('account_type');
+  const [accountType, setAccountType] = useState<AccountType | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [vertical, setVertical] = useState<VerticalEnum | null>(null);
   const [capturedFields, setCapturedFields] = useState<Record<string, string>>({});
@@ -95,6 +106,7 @@ export function OnboardingChat() {
   // to avoid stale closures when the callback fires after the animation delay.
   const verticalRef = useRef<VerticalEnum | null>(null);
   const capturedFieldsRef = useRef<Record<string, string>>({});
+  const accountTypeRef = useRef<AccountType | null>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -107,6 +119,9 @@ export function OnboardingChat() {
   useEffect(() => {
     capturedFieldsRef.current = capturedFields;
   }, [capturedFields]);
+  useEffect(() => {
+    accountTypeRef.current = accountType;
+  }, [accountType]);
 
   useEffect(() => {
     scrollToBottom();
@@ -148,7 +163,8 @@ export function OnboardingChat() {
   const persist = useCallback(
     (next: Partial<PersistedState>) => {
       const base: PersistedState = {
-        version: 2,
+        version: 3,
+        accountType,
         vertical,
         capturedFields,
         history: historyRef.current,
@@ -158,7 +174,7 @@ export function OnboardingChat() {
       };
       savePersistedState({ ...base, ...next });
     },
-    [vertical, capturedFields, totalRequired, capturedRequired, historyRef],
+    [accountType, vertical, capturedFields, totalRequired, capturedRequired, historyRef],
   );
 
   // ── Generation step (when done) ──
@@ -188,6 +204,9 @@ export function OnboardingChat() {
           answers: currentFields,
           businessName: bName,
           botName: agentBotName,
+          // accountType decide tenants.account_type — el webhook de Stripe
+          // y el flujo de invitaciones lo usan para gating de features.
+          accountType: accountTypeRef.current ?? 'personal',
         }),
       });
       if (!res.ok) {
@@ -282,6 +301,10 @@ export function OnboardingChat() {
             history: historyRef.current.slice(0, -1),
             userMessage: userText,
             uploadedContent: uploadedContent.length > 0 ? uploadedContent : undefined,
+            // accountType cambia el system prompt de Valeria: si es
+            // 'consultorio' agrega preguntas sobre el equipo (cuántos
+            // doctores, especialidades). Si es 'personal' las omite.
+            accountType,
           }),
         });
 
@@ -326,7 +349,8 @@ export function OnboardingChat() {
         ];
 
         savePersistedState({
-          version: 2,
+          version: 3,
+          accountType,
           vertical: data.vertical ?? vertical,
           capturedFields: data.capturedFields,
           history: historyRef.current,
@@ -354,7 +378,7 @@ export function OnboardingChat() {
         await addAiMessage('Error de red. Revisa tu conexión e intenta de nuevo.');
       }
     },
-    [vertical, capturedFields, historyRef, addAiMessage, uploadFile, handleGenerationComplete],
+    [accountType, vertical, capturedFields, historyRef, addAiMessage, uploadFile, handleGenerationComplete],
   );
 
   // ── Queue-based turn handler — input stays unlocked ──
@@ -395,6 +419,40 @@ export function OnboardingChat() {
     [addUserMessage, processOneItem],
   );
 
+  // ── Account type selection (FIRST step, Wave 5 PR 4) ──
+  // Si el usuario tenía un onboarding en curso (v3 persisted) saltamos
+  // directo a 'conversation' y rehidratamos. Sino vamos a 'channel'.
+  const handleAccountTypeSelect = useCallback(
+    (type: AccountType) => {
+      setAccountType(type);
+      const persisted = loadPersistedState();
+      if (persisted && !persisted.done && persisted.history.length > 0) {
+        // Re-arrancamos directo en conversation con la elección de account_type
+        // que el usuario acaba de hacer (sobreescribe la persistida — el
+        // selector es la fuente de verdad de este turno).
+        hydratedRef.current = true;
+        setVertical(persisted.vertical);
+        setCapturedFields(persisted.capturedFields);
+        setTotalRequired(persisted.totalRequired);
+        setCapturedRequired(persisted.capturedRequired);
+        historyRef.current = persisted.history;
+        for (const turn of persisted.history) {
+          if (turn.role === 'user') {
+            addUserMessage(turn.content);
+          } else {
+            addAiMessageSilent(turn.content);
+          }
+        }
+        setPhase('conversation');
+        setShowInput(true);
+      } else {
+        // Cuenta nueva → mostrar selector de canal (web/whatsapp).
+        setPhase('channel');
+      }
+    },
+    [addAiMessageSilent, addUserMessage, historyRef],
+  );
+
   // ── Channel selection ──
   const handleChannelSelect = useCallback(
     (ch: 'web' | 'whatsapp') => {
@@ -414,34 +472,16 @@ export function OnboardingChat() {
         return;
       }
 
-      // Web channel → try to rehydrate, else show initial prompt.
-      const persisted = loadPersistedState();
-      if (persisted && !persisted.done && persisted.history.length > 0) {
-        hydratedRef.current = true;
-        setVertical(persisted.vertical);
-        setCapturedFields(persisted.capturedFields);
-        setTotalRequired(persisted.totalRequired);
-        setCapturedRequired(persisted.capturedRequired);
-        historyRef.current = persisted.history;
-        // Replay history as silent messages.
-        for (const turn of persisted.history) {
-          if (turn.role === 'user') {
-            addUserMessage(turn.content);
-          } else {
-            addAiMessageSilent(turn.content);
-          }
+      // Web channel → cuenta nueva (la rehidratación ya pasó en
+      // handleAccountTypeSelect si había persisted state).
+      (async () => {
+        for (const msg of INITIAL_AI_MESSAGES) {
+          await addAiMessage(msg);
+          historyRef.current.push({ role: 'assistant', content: msg });
         }
-        setShowInput(true);
-      } else {
-        (async () => {
-          for (const msg of INITIAL_AI_MESSAGES) {
-            await addAiMessage(msg);
-            historyRef.current.push({ role: 'assistant', content: msg });
-          }
-        })();
-      }
+      })();
     },
-    [addAiMessage, addAiMessageSilent, addUserMessage, historyRef],
+    [addAiMessage, historyRef],
   );
 
   // ── Send handler ──
@@ -495,6 +535,11 @@ export function OnboardingChat() {
               Configura tu agente AI en minutos
             </p>
           </div>
+
+          {/* Account type selector — primer paso (Wave 5 PR 4) */}
+          {phase === 'account_type' && (
+            <AccountTypeSelector onSelect={handleAccountTypeSelect} />
+          )}
 
           {/* Channel selector */}
           {phase === 'channel' && <ChannelSelector onSelect={handleChannelSelect} />}
@@ -572,14 +617,15 @@ export function OnboardingChat() {
             </div>
           )}
 
-          {/* Done state */}
+          {/* Done state — CTAs cambian según account_type (Wave 5 PR 4) */}
           {phase === 'done' && (
             <div className="text-center py-8 animate-element animate-delay-100">
               <div className="text-5xl mb-4">🎉</div>
               <h3 className="text-2xl font-semibold mb-2">¡Tu agente está listo!</h3>
               <p className="text-muted-foreground mb-6">
-                Asistente de {businessName || verticalDisplayName} configurado con{' '}
-                {Object.keys(capturedFields).length} datos.
+                {accountType === 'consultorio'
+                  ? `Tu consultorio ${businessName || verticalDisplayName} está configurado. Ahora invitá a tu equipo y conectá WhatsApp.`
+                  : `Asistente de ${businessName || verticalDisplayName} configurado con ${Object.keys(capturedFields).length} datos.`}
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
@@ -588,12 +634,21 @@ export function OnboardingChat() {
                 >
                   Conectar WhatsApp
                 </button>
-                <button
-                  onClick={() => router.push('/preview')}
-                  className="px-6 py-3 rounded-2xl border border-zinc-200 text-zinc-900 font-medium hover:bg-zinc-50 transition-colors"
-                >
-                  Ver preview
-                </button>
+                {accountType === 'consultorio' ? (
+                  <button
+                    onClick={() => router.push('/settings/team')}
+                    className="px-6 py-3 rounded-2xl border border-zinc-200 text-zinc-900 font-medium hover:bg-zinc-50 transition-colors"
+                  >
+                    Invitar al equipo
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => router.push('/preview')}
+                    className="px-6 py-3 rounded-2xl border border-zinc-200 text-zinc-900 font-medium hover:bg-zinc-50 transition-colors"
+                  >
+                    Ver preview
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -603,7 +658,7 @@ export function OnboardingChat() {
       </main>
 
       {/* Input */}
-      {showInput && phase !== 'generating' && phase !== 'done' && phase !== 'channel' && (
+      {showInput && phase !== 'generating' && phase !== 'done' && phase !== 'channel' && phase !== 'account_type' && (
         <footer className="border-t border-zinc-100 py-4">
           <ChatInput
             onSend={handleSend}
