@@ -42,7 +42,7 @@ export default async function BillingPage() {
     return (
       <div className="h-full flex items-center justify-center px-8">
         <div className="max-w-xl text-center animate-element">
-          <h1 className="text-3xl font-light tracking-tighter text-zinc-900 mb-3">
+          <h1 className="text-2xl font-semibold text-zinc-900 mb-3">
             Facturación
           </h1>
           <div className="bg-[hsl(var(--brand-blue-soft))] ring-1 ring-[hsl(var(--brand-blue)/0.2)] rounded-2xl p-6">
@@ -78,7 +78,7 @@ export default async function BillingPage() {
       {/* Header */}
       <header className="animate-element flex items-end justify-between gap-6 pb-5 border-b border-zinc-100">
         <div>
-          <h1 className="text-3xl font-light tracking-tighter text-zinc-900">
+          <h1 className="text-2xl font-semibold text-zinc-900">
             Tu plan y facturación
           </h1>
           <p className="text-sm text-zinc-500 mt-1">
