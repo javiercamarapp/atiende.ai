@@ -117,7 +117,7 @@ const TOUR_STEPS: TourStep[] = [
     icon: Clock,
     title: 'Recordatorios automáticos',
     description:
-      '24 h antes y 2 h antes de cada cita, el paciente recibe un recordatorio por WhatsApp con opción de confirmar o reagendar. Menos no-shows, más ingresos.',
+      '24 horas antes de cada cita, el paciente recibe un recordatorio por WhatsApp con opción de confirmar o reagendar. Menos no-shows, más ingresos.',
   },
   {
     icon: RefreshCw,
@@ -259,7 +259,7 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
 
       {/* ── Welcome tour (premium) ── */}
       <Dialog open={tourOpen} onOpenChange={setTourOpen}>
-        <DialogContent className="sm:max-w-[520px] p-0 overflow-hidden gap-0 border border-zinc-200/70 shadow-2xl shadow-zinc-900/10">
+        <DialogContent className="sm:max-w-[520px] p-0 overflow-hidden gap-0 border border-zinc-200/70 shadow-2xl shadow-zinc-900/10 bg-white text-zinc-900">
           <DialogHeader className="sr-only">
             <DialogTitle>Tour del Calendario</DialogTitle>
             <DialogDescription>
@@ -313,13 +313,14 @@ export function CalendarOnboarding({ autoOpen }: { autoOpen: boolean }) {
             </div>
           </div>
 
-          {/* Copy block */}
-          <div className="px-7 pt-5 pb-6 min-h-[170px] flex flex-col">
+          {/* Copy block — fondo blanco explícito para legibilidad
+              independientemente del tema de la app (dark mode, glass-card, etc) */}
+          <div className="px-7 pt-5 pb-6 min-h-[170px] flex flex-col bg-white">
             <div key={`copy-${stepIndex}`} className="animate-element">
               <h3 className="text-[19px] font-semibold text-zinc-900 tracking-tight leading-tight">
                 {TOUR_STEPS[stepIndex].title}
               </h3>
-              <p className="mt-2 text-[13.5px] text-zinc-600 leading-relaxed">
+              <p className="mt-2 text-[14px] text-zinc-700 leading-relaxed">
                 {TOUR_STEPS[stepIndex].description}
               </p>
             </div>
@@ -411,18 +412,15 @@ function StepHero({ step, index }: { step: TourStep; index: number }) {
     );
   }
   if (index === 2) {
-    // Reminders: clock + notification chips
+    // Reminders: clock + notification chip (24h antes only)
     return (
       <div className="relative flex items-center gap-3">
         <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-xl shadow-amber-400/30 animate-float">
           <Icon className="w-7 h-7 text-white" strokeWidth={1.75} />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className="stagger-item inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white ring-1 ring-zinc-200 shadow-sm text-[10.5px] font-medium text-zinc-700">
-            <span className="w-1 h-1 rounded-full bg-amber-500" /> 24 h antes
-          </span>
-          <span className="stagger-item inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white ring-1 ring-zinc-200 shadow-sm text-[10.5px] font-medium text-zinc-700">
-            <span className="w-1 h-1 rounded-full bg-rose-500" /> 2 h antes
+          <span className="stagger-item inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white ring-1 ring-zinc-200 shadow-sm text-[11.5px] font-semibold text-zinc-800">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse-soft" /> 24 horas antes
           </span>
         </div>
       </div>
