@@ -61,9 +61,57 @@ export async function POST(req: NextRequest) {
     durationMs: Date.now() - startTime,
   });
 
+  // ─── Per-doctor subscription events (Wave 5 PR 3) ─────────────────────
+  // Detectamos por metadata.billing_type='per_doctor' que seteamos en
+  // createDoctorCheckout. Estos NO van por la lógica de tenant-level
+  // billing — cada doctor tiene su propia subscription.
+  if (
+    event.type === 'customer.subscription.created' ||
+    event.type === 'customer.subscription.updated' ||
+    event.type === 'customer.subscription.deleted'
+  ) {
+    const sub = event.data.object as unknown as {
+      id: string;
+      status: string;
+      metadata?: Record<string, string>;
+      trial_end?: number | null;
+      items?: { data?: Array<{ price?: { metadata?: Record<string, string>; id?: string } }> };
+    };
+    const subMeta = sub.metadata || sub.items?.data?.[0]?.price?.metadata;
+    if (subMeta?.billing_type === 'per_doctor' && subMeta?.staff_id) {
+      try {
+        const { handleDoctorSubscriptionEvent } = await import('@/lib/billing/per-doctor');
+        await handleDoctorSubscriptionEvent({
+          subscriptionId: sub.id,
+          status: sub.status as Parameters<typeof handleDoctorSubscriptionEvent>[0]['status'],
+          plan: subMeta.plan as Parameters<typeof handleDoctorSubscriptionEvent>[0]['plan'],
+          staffId: subMeta.staff_id,
+          trialEnd: sub.trial_end ?? null,
+        });
+      } catch (err) {
+        console.error('[stripe webhook] per-doctor handler failed:', err);
+      }
+      // Per-doctor subscription handled — early return para no aplicar la
+      // lógica tenant-level que abajo asume que `customer = tenant.customer`.
+      return NextResponse.json({ received: true, type: 'per_doctor_subscription' });
+    }
+    // Si no es per_doctor, sigue al handler tenant-level abajo.
+  }
+
   if (event.type === 'checkout.session.completed') {
     const s = event.data.object as unknown as Record<string, unknown>;
     const meta = s.metadata as Record<string, string> | undefined;
+
+    // Per-doctor checkout completion: el subscription event va a llegar
+    // separado, así que aquí solo log + return early para no entrar a la
+    // lógica tenant-level.
+    if (meta?.billing_type === 'per_doctor' || meta?.staff_id) {
+      console.info('[stripe webhook] per-doctor checkout completed', {
+        staff_id: meta.staff_id,
+        plan: meta.plan,
+      });
+      return NextResponse.json({ received: true, type: 'per_doctor_checkout' });
+    }
 
     // Appointment payment (Patient Payment Portal, Phase 1) — distinto al
     // flujo de suscripciones del tenant. kind='appointment_payment' lo
